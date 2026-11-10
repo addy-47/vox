@@ -38,7 +38,7 @@ const TurnBubble = memo(({ turn }: { turn: TurnRow }) => {
             <Markdown content={turn.user_text} variant="bubble" />
           </div>
           <div className="flex justify-end items-center mt-1 select-none">
-            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70 font-medium">
+            <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/70 font-medium">
               {formatTime(turn.created_at)}
             </span>
           </div>
@@ -51,15 +51,15 @@ const TurnBubble = memo(({ turn }: { turn: TurnRow }) => {
           <Sparkles size={11} className="text-[rgb(var(--accent))]" />
           <span>{HISTORY_COPY.voxLabel.toLowerCase()}</span>
         </div>
-        <div className="max-w-[90%] sm:max-w-[80%] w-fit rounded-xl rounded-bl-xs px-4 py-3 bg-[rgb(var(--card))] border border-[rgba(var(--foreground),0.08)] shadow-xs select-text">
+        <div className="w-full rounded-xl rounded-bl-xs px-4 py-3 bg-[rgb(var(--card))] border border-[rgba(var(--foreground),0.08)] shadow-xs select-text">
           <div className="text-[13.5px] text-[rgb(var(--foreground))] leading-relaxed break-words font-normal">
             <Markdown content={turn.assistant_text} variant="bubble" />
           </div>
           <div className="flex items-center justify-between gap-4 mt-2 select-none pt-0.5">
-            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/40">
+            <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/40">
               #{turn.turn_id}
             </span>
-            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70 font-medium ml-auto">
+            <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/70 font-medium ml-auto">
               {formatTime(turn.created_at)}
             </span>
           </div>
@@ -112,7 +112,7 @@ export const DetailPanel = memo(
             className="py-12 border-0 bg-transparent"
           />
         ) : (
-          <div className="w-full space-y-6 max-w-3xl mx-auto pb-6">
+          <div className="w-full space-y-6 pb-6">
             {visibleTurns.map((turn) => (
               <TurnBubble key={turn.id} turn={turn} />
             ))}

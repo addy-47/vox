@@ -6,6 +6,7 @@ import { formatCardDate } from "./recallDateUtils";
 import { RECALL_CARD_WIDTH, RECALL_CARD_HEIGHT } from "./recallArcMath";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { isBoundaryCard, isSkeletonCard, type CarouselItemData } from "./recallTypes";
+import { SESSION_COPY } from "@/data/sessionCopy";
 
 export interface RecallSessionCardProps {
   item: CarouselItemData;
@@ -84,7 +85,8 @@ export const RecallSessionCard = memo(({
         style={{ width: RECALL_CARD_WIDTH, height: RECALL_CARD_HEIGHT }}
         className={cn(
           "rounded-2xl p-4 flex flex-col justify-between select-none cursor-pointer text-left transition-colors",
-          "glass-card bg-[rgb(var(--card))]/70 border backdrop-blur-md",
+          isActive ? "glass-card backdrop-blur-md" : "bg-[rgb(var(--card))]/80",
+          "border",
           isActive
             ? "border-[rgba(var(--accent),0.6)] shadow-[0_0_25px_rgba(var(--accent),0.28)]"
             : "border-[rgba(var(--border),0.08)] hover:border-[rgba(var(--accent),0.3)] hover:shadow-lg"
@@ -115,8 +117,9 @@ export const RecallSessionCard = memo(({
       onKeyDown={handleKeyDown}
       style={{ width: RECALL_CARD_WIDTH, height: RECALL_CARD_HEIGHT }}
       className={cn(
-        "group relative rounded-2xl p-4 flex flex-col justify-between select-none cursor-pointer text-left transition-all",
-        "bg-[rgb(var(--card))] border shadow-md",
+        "group relative rounded-2xl p-4 flex flex-col justify-between select-none cursor-pointer text-left transition-[border-color,box-shadow,background-color] duration-150",
+        isActive ? "bg-[rgb(var(--card))] backdrop-blur-md" : "bg-[rgb(var(--card))]/85",
+        "border shadow-md",
         isActive
           ? "border-[rgba(var(--accent),0.75)] shadow-[0_0_28px_rgba(var(--accent),0.35)] ring-1 ring-[rgba(var(--accent),0.4)]"
           : "border-[rgba(var(--border),0.08)] hover:border-[rgba(var(--border),0.2)]"
@@ -144,7 +147,7 @@ export const RecallSessionCard = memo(({
           )}
           {onDelete && (
             <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-              <Tooltip label="Delete session" side="top">
+              <Tooltip label={SESSION_COPY.deleteSessionAriaLabel} side="top">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -152,7 +155,7 @@ export const RecallSessionCard = memo(({
                     onDelete(session.id);
                   }}
                   className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.1)] transition-colors cursor-pointer"
-                  aria-label="Delete session"
+                  aria-label={SESSION_COPY.deleteSessionAriaLabel}
                 >
                   <Trash2 size={12} />
                 </button>
@@ -169,7 +172,7 @@ export const RecallSessionCard = memo(({
         </h3>
 
         {(projectName || session.project_id) && (
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.08)] w-fit text-[10.5px] font-mono text-[rgb(var(--foreground-muted))] leading-none">
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.08)] w-fit text-[11px] font-mono text-[rgb(var(--foreground-muted))] leading-none">
             <Code2 size={11} className="text-[rgb(var(--accent))] shrink-0" />
             <span className="truncate max-w-[120px]">
               {projectName || session.project_id}
@@ -181,7 +184,7 @@ export const RecallSessionCard = memo(({
       {/* Bottom: Turn count */}
       <div className="shrink-0 pt-1 flex items-center justify-between text-[11px] font-mono text-[rgb(var(--foreground-muted))]/70">
         <span>
-          {session.turn_count} {session.turn_count === 1 ? "turn" : "turns"}
+          {session.turn_count} {session.turn_count === 1 ? SESSION_COPY.turnSingular : SESSION_COPY.turnPlural}
         </span>
       </div>
     </div>

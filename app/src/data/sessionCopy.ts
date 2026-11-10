@@ -41,6 +41,8 @@ export const SESSION_COPY = {
   newProjectPlaceholder: "New project name",
   createProjectAriaLabel: "Create project",
   newInProjectAriaLabel: "New conversation in project",
+  timelineScrubberAriaLabel: "Timeline Scrubber",
+  deleteSessionAriaLabel: "Delete session",
   turnSingular: "turn",
   turnPlural: "turns",
   actions: {

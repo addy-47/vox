@@ -27,22 +27,6 @@ export interface MonthWindow {
   label: string;
 }
 
-export type HistoryView = "day" | "month";
-
-export function ringRadiusFor(width: number, height: number): number {
-  return Math.min(width * 0.46, (height * 0.54) / 0.42);
-}
-
-export function orbitCapacityFor(
-  width: number,
-  height: number,
-  cardWidth: number = 220
-): number {
-  const radius = ringRadiusFor(width, height);
-  const slots = (2 * Math.PI * radius) / (cardWidth * 1.15);
-  return Math.min(24, Math.max(12, Math.floor(slots)));
-}
-
 export function toDayKey(ms: number): string {
   const d = new Date(ms);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
@@ -112,28 +96,6 @@ export function formatDayHeroLabel(dayKey: string): string {
     month: "short",
   });
   return `${monthShort.toUpperCase()} ${d}`;
-}
-
-export function formatDayHeroParts(dayKey: string): { month: string; day: string } {
-  if (!dayKey) return { month: "", day: "" };
-  const [y, m, d] = dayKey.split("-").map(Number);
-  if (!y || !m || !d) return { month: "", day: "" };
-  const monthShort = new Date(y, m - 1, 1).toLocaleDateString(undefined, {
-    month: "short",
-  });
-  return {
-    month: monthShort.toUpperCase(),
-    day: String(d),
-  };
-}
-
-export function formatWeekdayLabel(dayKey: string): string {
-  if (!dayKey) return "";
-  const [y, m, d] = dayKey.split("-").map(Number);
-  if (!y || !m || !d) return "";
-  return new Date(y, m - 1, d)
-    .toLocaleDateString(undefined, { weekday: "long" })
-    .toUpperCase();
 }
 
 export function formatDayYearLabel(dayKey: string): string {

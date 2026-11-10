@@ -21,6 +21,7 @@ import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { usePageDrawer } from "@/shared/context/PageDrawerContext";
 import { useSessionStore } from "@/store/sessionStore";
 import { useRemoteStore } from "@/store/remoteStore";
+import { useRecallSearchStore } from "@/store/recallSearchStore";
 import { getStackSize } from "@/shared/lib/overlayStack";
 import { isCompactWidth, isRealMobileDevice } from "./breakpoints";
 import { stageTop } from "./stageMetrics";
@@ -608,6 +609,8 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
   const isSettings = location.pathname === "/settings";
   const isHome = location.pathname === "/";
+  const searchStoreActive = useRecallSearchStore((s) => s.isSearchMode);
+  const isSearchMode = isHome && (searchStoreActive || location.search.includes("mode=search"));
   const isMemory = location.pathname === "/memory";
   const isMonitoring = location.pathname === "/monitoring";
 
@@ -633,12 +636,12 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
       {/* ── Content Area ──────────────────────────────────────────────────── */}
       <div data-spatial-zone="stage" style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative", minHeight: 0 }}>
-        {/* Ambient Background — visible on Home, History, Settings; disabled on Memory & Monitoring */}
+        {/* Ambient Background — visible on Home, History, Settings; disabled on Memory & Monitoring; paused in Search Mode */}
         {!ambientDisabled && (
           <AmbientBackground
             instanceId="layout"
             originY={ambientOriginY}
-            paused={!["Idle", "Paused", "Sleeping"].includes(interactionState) || isResizing}
+            paused={isSearchMode || !["Idle", "Paused", "Sleeping"].includes(interactionState) || isResizing}
             rippleSpeedMultiplier={rippleSpeedMultiplier}
             rippleShape="circle"
           />

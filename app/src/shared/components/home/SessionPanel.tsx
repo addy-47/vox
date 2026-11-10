@@ -103,27 +103,16 @@ export const SessionPanel = memo(({ onClose, onSearch }: SessionPanelProps) => {
       return;
     }
     if (typeof window === "undefined") return;
-    if ("requestIdleCallback" in window) {
-      const handle = window.requestIdleCallback(() => {
-        setChronologicalRenderLimit((prev) => {
-          if (prev < allChronologicalSessions.length) {
-            return allChronologicalSessions.length;
-          }
-          return prev;
-        });
-      }, { timeout: 300 });
-      return () => window.cancelIdleCallback(handle);
-    } else {
-      const timer = setTimeout(() => {
-        setChronologicalRenderLimit((prev) => {
-          if (prev < allChronologicalSessions.length) {
-            return allChronologicalSessions.length;
-          }
-          return prev;
-        });
-      }, 100);
-      return () => clearTimeout(timer);
-    }
+    // EdgePanel drawer slide is 220ms; defer full list expansion until the slide finishes to maintain 60 FPS
+    const timer = window.setTimeout(() => {
+      setChronologicalRenderLimit((prev) => {
+        if (prev < allChronologicalSessions.length) {
+          return allChronologicalSessions.length;
+        }
+        return prev;
+      });
+    }, 260);
+    return () => window.clearTimeout(timer);
   }, [panelActive, allChronologicalSessions.length]);
 
   const displayedChronologicalSessions = useMemo(() => {
@@ -319,7 +308,7 @@ export const SessionPanel = memo(({ onClose, onSearch }: SessionPanelProps) => {
         ref={scrollRef}
         onScroll={handleScroll}
         data-session-scroll
-        className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col -mt-px"
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar flex flex-col -mt-px"
       >
         {/* ── Section 1: Pinned Conversations ── */}
         <section className="flex flex-col pb-1">

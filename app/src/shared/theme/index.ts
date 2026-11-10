@@ -46,6 +46,92 @@ import {
 } from "./notificationCategoryTokens";
 import { beginFlipTrace, endFlipTrace, traceFlipTargets } from "./trace";
 
+// ── Complementary accent ────────────────────────────────────────────────────
+// Rotates the primary accent hue by 210° to produce a harmonious secondary
+// (cyan → violet-purple, blue → orange-gold, etc.). Written to
+// --accent-complementary alongside every --accent write so components never
+// need to hardcode a specific purple/violet value.
+
+function hsl2rgb(h: number, s: number, l: number): [number, number, number] {
+  if (s === 0) {
+    const v = Math.round(l * 255);
+    return [v, v, v];
+  }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const hue2rgb = (t: number) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [
+    Math.round(hue2rgb(h + 1 / 3) * 255),
+    Math.round(hue2rgb(h) * 255),
+    Math.round(hue2rgb(h - 1 / 3) * 255),
+  ];
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (max + min - d) : d / (max + min);
+  let h = 0;
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  else if (max === g) h = ((b - r) / d + 2) / 6;
+  else h = ((r - g) / d + 4) / 6;
+  return [h, s, l];
+}
+
+/**
+ * Returns the CSS RGB triplet string for the complementary/secondary accent.
+ * Derived harmonically from the primary accent:
+ * - Pink/magenta primaries (#f291d4) pair with celestial purple (168, 85, 247).
+ * - Cyan/azure primaries (#00dbe9) pair with celestial purple (168, 85, 247).
+ * - Purple/violet primaries pair with radiant rose-pink (242, 145, 212).
+ * - Other accents rotate harmonically by +0.22 (~80°) along the color wheel.
+ */
+function complementaryTriplet(rgbTriplet: string): string {
+  const parts = rgbTriplet.split(",").map((s) => parseInt(s.trim(), 10));
+  if (parts.length !== 3 || parts.some(isNaN)) return "168, 85, 247";
+  const [r, g, b] = parts;
+  const [h, s, l] = rgbToHsl(r / 255, g / 255, b / 255);
+
+  const hDeg = h * 360;
+  let targetH: number;
+  if (hDeg >= 290 && hDeg <= 355) {
+    // Pink / rose primary -> celestial cosmic purple (168, 85, 247)
+    targetH = 271 / 360;
+  } else if (hDeg >= 160 && hDeg <= 230) {
+    // Cyan / azure primary -> celestial cosmic purple
+    targetH = 271 / 360;
+  } else if (hDeg > 230 && hDeg < 290) {
+    // Purple / violet primary -> radiant fuchsia pink
+    targetH = 319 / 360;
+  } else {
+    // Other accents -> harmonic split-complementary
+    targetH = ((h + 0.22) % 1 + 1) % 1;
+  }
+
+  const sComp = Math.min(Math.max(s, 0.80), 0.92);
+  const lComp = Math.min(Math.max(l, 0.58), 0.66);
+  const [cr, cg, cb] = hsl2rgb(targetH, sComp, lComp);
+  return `${cr}, ${cg}, ${cb}`;
+}
+
+/** Writes --accent-complementary alongside an --accent write. */
+function applyComplementaryToken(accentTriplet: string): void {
+  document.documentElement.style.setProperty(
+    "--accent-complementary",
+    complementaryTriplet(accentTriplet)
+  );
+}
+
 /**
  * Custom-property flip: the element-level `transition-property` fan-out was
  * removed (it forced WebKitGTK to build a transition per element per changed
@@ -56,7 +142,7 @@ import { beginFlipTrace, endFlipTrace, traceFlipTargets } from "./trace";
  */
 const FLIP_TOKEN_KEYS = [
   "background", "foreground", "foreground-muted", "accent", "accent-dark",
-  "accent-muted", "accent-foreground", "card", "border", "sidebar", "field",
+  "accent-muted", "accent-foreground", "accent-complementary", "card", "border", "sidebar", "field",
   "signal", "field-energy", "connection-glow", "connection-core",
   "hub-connector-active-opacity", "hub-connector-tick35-opacity",
   "hub-connector-tick65-opacity",
@@ -194,6 +280,7 @@ let currentTokenValues: Map<string, string> | null = null;
  */
 const INLINE_OWNED_TOKENS: ReadonlySet<string> = new Set([
   "accent",
+  "accent-complementary",
   ...NOTIFICATION_TOKEN_PROPS.map((prop) => prop.replace(/^--/, "")),
 ]);
 
@@ -299,6 +386,7 @@ function animateTokensToNewTheme(
         newAccentInline,
         root.getAttribute("data-theme") === "light"
       );
+      applyComplementaryToken(newAccentInline);
       currentTokenValues = new Map(endValues);
       currentTokenValues.set("accent", newAccentInline);
       // Let the final state paint before transitions and blur resume.
@@ -468,11 +556,13 @@ function armGateClose(delayMs: number) {
 function writeThemeToDom(appearance: ThemeAppearance) {
   const root = document.documentElement;
   root.setAttribute("data-theme", appearance.theme);
-  root.style.setProperty("--accent", hexToRgb(appearance.accent_seed));
+  const accentTriplet = hexToRgb(appearance.accent_seed);
+  root.style.setProperty("--accent", accentTriplet);
   applyNotificationCategoryTokens(
-    hexToRgb(appearance.accent_seed),
+    accentTriplet,
     appearance.theme === "light"
   );
+  applyComplementaryToken(accentTriplet);
   if (appearance.theme === "light") {
     root.classList.add("light");
     root.classList.remove("dark");
@@ -681,6 +771,7 @@ export function previewAccent(accentSeed: string): void {
       triplet,
       root.getAttribute("data-theme") === "light"
     );
+    applyComplementaryToken(triplet);
   });
 }
 

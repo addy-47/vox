@@ -3,6 +3,7 @@ import {
   getSessions,
   getCachedSessions,
   deleteSession,
+  searchHistory,
   resolveSessionTitle,
   type SessionRow,
 } from "@/services/persistenceService";
@@ -10,8 +11,9 @@ import { getProjects, type ProjectRow } from "@/services/projectsService";
 import { onSessionsChanged } from "@/services/eventsService";
 import type { CarouselItemData } from "./recallTypes";
 import { useDetailPanelTurns } from "./useDetailPanelTurns";
+import { useRecallSearchStore, type SortOrder } from "@/store/recallSearchStore";
 
-export type SortOrder = "newest" | "oldest" | "turns";
+export type { SortOrder };
 
 export function useRecallSearch() {
   const [sessions, setSessions] = useState<SessionRow[]>(() => {
@@ -20,18 +22,45 @@ export function useRecallSearch() {
   });
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(() => !getCachedSessions());
-  const [searchQuery, setSearchQuery] = useState("");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
-  const [userNavigatedIndex, setUserNavigatedIndex] = useState<number | null>(null);
+
+  const searchQuery = useRecallSearchStore((s) => s.searchQuery);
+  const setSearchQuery = useRecallSearchStore((s) => s.setSearchQuery);
+  const sortOrder = useRecallSearchStore((s) => s.sortOrder);
+  const setSortOrder = useRecallSearchStore((s) => s.setSortOrder);
+  const userNavigatedIndex = useRecallSearchStore((s) => s.userNavigatedIndex);
+  const setUserNavigatedIndex = useRecallSearchStore((s) => s.setUserNavigatedIndex);
 
   // Selected session for DetailPanel drawer
   const [selectedSession, setSelectedSession] = useState<SessionRow | null>(null);
+  const [searchResults, setSearchResults] = useState<SessionRow[] | null>(null);
   const {
     turns,
     loading: turnsLoading,
     error: turnsError,
     retry: retryFetchTurns,
   } = useDetailPanelTurns(selectedSession);
+
+  // Debounced backend search across session titles and turn transcripts
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchResults(null);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      searchHistory(q, null, 100)
+        .then((hits) => {
+          setSearchResults(hits.map((h) => h.session));
+        })
+        .catch((e: unknown) => {
+          console.warn("[useRecallSearch] searchHistory error:", e);
+          setSearchResults(null);
+        });
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
 
   // Fetch initial data & subscribe to background changes
   const refreshData = useCallback(async () => {
@@ -72,18 +101,14 @@ export function useRecallSearch() {
     return map;
   }, [projects]);
 
-  // Reset user navigated index when search query or sort order changes
-  useEffect(() => {
-    setUserNavigatedIndex(null);
-  }, [searchQuery, sortOrder]);
-
   // Filtered and sorted sessions
-  // Timeline axis flows left-to-right (past -> future) chronologically
   const filteredSessions = useMemo(() => {
-    let result = [...sessions];
+    const baseList = searchResults ?? sessions;
+    let result = [...baseList];
 
+    // Client-side title and project filter fallback while search is pending
     const q = searchQuery.trim().toLowerCase();
-    if (q) {
+    if (q && searchResults === null) {
       result = result.filter((s) => {
         const title = resolveSessionTitle(s).toLowerCase();
         const project = (s.project_id ? projectNameMap.get(s.project_id) ?? s.project_id : "").toLowerCase();
@@ -93,26 +118,20 @@ export function useRecallSearch() {
 
     if (sortOrder === "turns") {
       result.sort((a, b) => b.turn_count - a.turn_count);
-    } else {
-      // Both "newest" and "oldest" sort chronologically left-to-right (past -> future)
+    } else if (sortOrder === "oldest") {
       result.sort((a, b) => a.created_at - b.created_at);
+    } else {
+      // Default: "newest" sorts most recent first
+      result.sort((a, b) => b.created_at - a.created_at);
     }
 
     return result;
-  }, [sessions, searchQuery, sortOrder, projectNameMap]);
+  }, [sessions, searchResults, searchQuery, sortOrder, projectNameMap]);
 
-  // Carousel items (sessions with right-hand skeleton placeholders for symmetry)
+  // Carousel items: real sessions without fake skeleton cards
   const carouselItems = useMemo<CarouselItemData[]>(() => {
-    if (filteredSessions.length === 0) return [];
-    if (sortOrder !== "turns") {
-      const skeletons: CarouselItemData[] = [
-        { id: "skeleton-slot-1", isSkeleton: true },
-        { id: "skeleton-slot-2", isSkeleton: true },
-      ];
-      return [...filteredSessions, ...skeletons];
-    }
     return filteredSessions;
-  }, [filteredSessions, sortOrder]);
+  }, [filteredSessions]);
 
   const maxRealIndex = Math.max(0, filteredSessions.length - 1);
 
@@ -122,13 +141,8 @@ export function useRecallSearch() {
     if (userNavigatedIndex !== null) {
       return Math.max(0, Math.min(userNavigatedIndex, maxRealIndex));
     }
-    // "newest" focuses the most recent session
-    if (sortOrder === "newest") {
-      return maxRealIndex;
-    }
-    // "oldest" or "turns" focuses the first item
     return 0;
-  }, [filteredSessions.length, userNavigatedIndex, sortOrder, maxRealIndex]);
+  }, [filteredSessions.length, userNavigatedIndex, maxRealIndex]);
 
   const handleDeleteSession = useCallback(async (id: number) => {
     try {

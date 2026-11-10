@@ -1,6 +1,33 @@
 # Phase 14 Work Log
 
-## 2026-11-10 — Backend Test Seams Clean-up & AEC Feed Pacing
+## 2026-11-10 — Recall Coverflow 60 FPS Physics, Glow Feathering & Lead Review Hardening
+
+- **Coverflow Scroll Physics & Memo Stabilization (`RecallArcCarousel.tsx`, `RecallSessionCard.tsx`)**:
+  - Decoupled `handleWheel` from immediate integer snapping (`isWheelingRef`), allowing fluid trackpad and wheel momentum with snapping only on rest.
+  - Wrapped `onSelect` in referentially stable `handleCardSelect` callback, protecting `React.memo` across all non-active cards on integer steps.
+  - Replaced layout-thrashing `display: none` / `block` toggling inside RAF with `visibility: hidden` and static `will-change: transform, opacity`.
+  - Replaced `transition-all` on cards with targeted `transition-[border-color,box-shadow,background-color] duration-150`.
+  - Preserved the existing 3D arc curvature (`recallArcMath.ts`).
+- **Glow Blur Optimization & Atmospheric Halo (`SearchModeOrbHalo.tsx`)**:
+  - Preserved user-requested `blur-xl` feathered cosmic glow (`--accent` + `--accent-complementary`).
+  - Removed infinite opacity breathe animation and continuous spin keyframe during scroll, isolating the glow to a static hardware layer (`transform-gpu`, `translateZ(0)`).
+- **Natural Timeline Sorting & Skeleton Removal (`useRecallSearch.ts`)**:
+  - Removed fake pulsing skeleton cards.
+  - "Newest first" now sorts newest-first (`b.created_at - a.created_at`) with index 0 (newest session) centered, and older conversations progressing naturally to the right.
+  - Connected existing backend Turso `searchHistory()` with 150ms debounce for deep search across titles and turns.
+- **SessionPanel Lag & Drawer Stabilization (`useSessionPanel.ts`, `SessionPanel.tsx`, `Home.tsx`)**:
+  - Seeded `useSessionPanel` immediately with `getCachedSessions()`.
+  - Deferred chronological session expansion to 260ms (after the 220ms drawer slide completes) to maintain 60 FPS during open gestures.
+  - Added `overscroll-contain` to session scroll container.
+  - Guarded `<DetailPanel>` in `Home.tsx` with `!isSearchMode` to eliminate redundant drawer mounts.
+- **Scrubber & Design Floor Alignment (`RecallTimelineScrubber.tsx`, `DetailPanel.tsx`, `SearchRecallView.tsx`)**:
+  - Fixed duplicate month keys across years (`${m.year}-${m.label}`).
+  - Decoupled bar geometry from `activeIndex` in scrubber memo.
+  - Aligned all `10px` and `10.5px` micro-copy to the Vox design system 11px floor (`text-2xs` / `text-[11px]`).
+- **Verification**:
+  - `pnpm exec tsc --noEmit` passed with 0 errors across entire workspace.
+  - Vitest passed 11/11 tests (`DetailPanel.dom.test.tsx`, `historyEmptyState.regression.test.ts`, `useDetailPanelTurns.test.ts`).
+  - `./scripts/verify-targets.sh` passed 100% (0 warnings / 0 errors across desktop and Android).
 
 - **AEC Pacing & Backlog Headroom (`audio_capture/barge_in.rs`, `services/audio/aec.rs`)**:
   - Paced `push_slice` ring buffer feed in `EchoScene` fixture (`occupied_len() >= frame * 4`), resolving synthetic queue overrun where 6s audio was dumped into AEC in <5ms.

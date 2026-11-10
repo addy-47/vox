@@ -70,7 +70,9 @@ export const SessionProjectsSection = memo(
           setIsCreatingProject(false);
           return refresh();
         })
-        .catch(() => {});
+        .catch((e: unknown) => {
+          console.warn("[SessionProjectsSection] Failed to create project:", e);
+        });
     }, [projectName, createNewProject, refresh]);
 
     // Real-time project reorder with local optimistic IDs

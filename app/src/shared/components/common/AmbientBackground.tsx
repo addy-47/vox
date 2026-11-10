@@ -98,6 +98,9 @@ export const AmbientBackground = React.memo(({
         animId = null;
       }
       isRunning = false;
+      if (rippleRef.current) {
+        rippleRef.current.style.animationPlayState = "paused";
+      }
     };
 
     const update = () => {
