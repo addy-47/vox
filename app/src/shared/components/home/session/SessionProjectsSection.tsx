@@ -1,10 +1,9 @@
 import React, { memo, useCallback, useMemo, useState, useRef, useEffect } from "react";
-import { FolderPlus, Check, X } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { AnimatePresence, motion, Reorder } from "framer-motion";
 import { type ProjectGroup } from "@/shared/hooks/useSessionPanel";
 import { type ProjectRow } from "@/services/projectsService";
 import { SESSION_COPY } from "@/data/sessionCopy";
-import { Tooltip } from "@/shared/ui/Tooltip";
 import { ProjectRowItem } from "./ProjectRowItem";
 import { useRenderTrace } from "@/shared/hooks/useRenderTrace";
 
@@ -34,6 +33,8 @@ export interface SessionProjectsSectionProps {
   onMoveSessionToProject: (id: number, projectId: string | null) => void;
   onDeleteSession: (id: number) => void;
   onCreateSessionInProject: (projectId: string) => void;
+  isCreatingProject: boolean;
+  setIsCreatingProject: (value: boolean | ((prev: boolean) => boolean)) => void;
 }
 
 export const SessionProjectsSection = memo(
@@ -54,8 +55,9 @@ export const SessionProjectsSection = memo(
     onMoveSessionToProject,
     onDeleteSession,
     onCreateSessionInProject,
+    isCreatingProject,
+    setIsCreatingProject,
   }: SessionProjectsSectionProps) => {
-    const [isCreatingProject, setIsCreatingProject] = useState(false);
     const [projectName, setProjectName] = useState("");
     const [dragOverProjectId, setDragOverProjectId] = useState<string | null>(null);
 
@@ -176,78 +178,57 @@ export const SessionProjectsSection = memo(
     );
 
     return (
-      <div className="flex flex-col flex-1 min-h-0">
-        {/* Fixed Projects Section Header */}
-        <section className="shrink-0 flex flex-col gap-1">
-          <div className="flex items-center justify-between px-2 py-0.5">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11.5px] font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))]/60">
-                {SESSION_COPY.projectsSection}
-              </span>
-            </div>
-            <Tooltip label={SESSION_COPY.createProjectAriaLabel} side="left">
-              <button
-                type="button"
-                onClick={() => setIsCreatingProject((v) => !v)}
-                className="flex items-center justify-center w-5 h-5 rounded text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-all cursor-pointer"
-                aria-label={SESSION_COPY.createProjectAriaLabel}
-              >
-                <FolderPlus size={13} />
-              </button>
-            </Tooltip>
-          </div>
-
-          {/* Inline Project Creation */}
-          <AnimatePresence>
-            {isCreatingProject && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden px-2 pb-1"
-              >
-                <div className="flex items-center gap-1.5 border-b border-[rgba(var(--accent),0.5)] focus-within:border-[rgba(var(--accent),0.9)] transition-colors py-1">
-                  <input
-                    autoFocus
-                    value={projectName}
-                    onChange={(e) => setProjectName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleCreateProject();
-                      if (e.key === "Escape") {
-                        setIsCreatingProject(false);
-                        setProjectName("");
-                      }
-                    }}
-                    placeholder={SESSION_COPY.newProjectPlaceholder}
-                    aria-label={SESSION_COPY.createProjectAriaLabel}
-                    className="flex-1 min-w-0 bg-transparent text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleCreateProject}
-                    disabled={!projectName.trim()}
-                    className="flex items-center justify-center w-6 h-6 rounded text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] disabled:opacity-30 cursor-pointer transition-colors"
-                  >
-                    <Check size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
+      <div className="flex flex-col">
+        {/* Inline Project Creation */}
+        <AnimatePresence>
+          {isCreatingProject && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden px-2 pb-1"
+            >
+              <div className="flex items-center gap-1.5 border-b border-[rgba(var(--accent),0.5)] focus-within:border-[rgba(var(--accent),0.9)] transition-colors py-1">
+                <input
+                  autoFocus
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleCreateProject();
+                    if (e.key === "Escape") {
                       setIsCreatingProject(false);
                       setProjectName("");
-                    }}
-                    className="flex items-center justify-center w-6 h-6 rounded text-[rgb(var(--foreground-muted))] hover:bg-[rgba(var(--foreground),0.08)] cursor-pointer transition-colors"
-                  >
-                    <X size={13} />
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </section>
+                    }
+                  }}
+                  placeholder={SESSION_COPY.newProjectPlaceholder}
+                  aria-label={SESSION_COPY.createProjectAriaLabel}
+                  className="flex-1 min-w-0 bg-transparent text-[13px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleCreateProject}
+                  disabled={!projectName.trim()}
+                  className="flex items-center justify-center w-6 h-6 rounded text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] disabled:opacity-30 cursor-pointer transition-colors"
+                >
+                  <Check size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreatingProject(false);
+                    setProjectName("");
+                  }}
+                  className="flex items-center justify-center w-6 h-6 rounded text-[rgb(var(--foreground-muted))] hover:bg-[rgba(var(--foreground),0.08)] cursor-pointer transition-colors"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* Scrollable Projects List */}
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 pt-1 pb-16">
+        {/* Unified Projects List (flows in parent scroll container, no nested scrollbar or dead padding) */}
+        <div className="flex flex-col gap-0.5 pt-0.5">
           {projectIds.length > 0 ? (
             <Reorder.Group
               as="div"

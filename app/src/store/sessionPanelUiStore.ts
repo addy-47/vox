@@ -1,11 +1,7 @@
 import { create } from "zustand";
 
-export type SessionPanelView = "projects" | "history";
-
 interface SessionPanelUiState {
-  viewMode: SessionPanelView;
   expandedProjectIds: string[];
-  setViewMode: (view: SessionPanelView) => void;
   toggleProjectExpanded: (projectId: string) => void;
 }
 
@@ -15,9 +11,7 @@ interface SessionPanelUiState {
  * open/close cycles.
  */
 export const useSessionPanelUiStore = create<SessionPanelUiState>((set) => ({
-  viewMode: "projects",
   expandedProjectIds: [],
-  setViewMode: (viewMode) => set({ viewMode }),
   toggleProjectExpanded: (projectId) =>
     set((s) => ({
       expandedProjectIds: s.expandedProjectIds.includes(projectId)

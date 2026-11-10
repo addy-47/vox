@@ -29,11 +29,10 @@ const preloadRouteChunks = () => {
   // Route chunks load on demand via Suspense; warming them at boot only
   // burns radio/CPU on constrained GPUs for routes the user may never open.
   try {
-    if (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches) return;
+    if (typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches) return;
   } catch (e) {
     console.debug("[App] Failed to check matchMedia pointer:", e);
   }
-  void import("@/pages/History");
   void import("@/pages/Memory");
   void import("@/pages/Settings");
   void import("@/pages/Monitoring");
@@ -46,7 +45,6 @@ import { PairingModal } from "@/shared/components/remote/PairingModal";
 import { AuthorizeDeviceModal } from "@/shared/components/remote/AuthorizeDeviceModal";
 
 // Lazy load secondary pages for performance
-const History = lazy(() => import("@/pages/History").then(m => ({ default: m.History })));
 const Memory = lazy(() => import("@/pages/Memory").then(m => ({ default: m.Memory })));
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
 const Monitoring = lazy(() => import("@/pages/Monitoring").then(m => ({ default: m.Monitoring })));
@@ -411,11 +409,7 @@ const App: React.FC = () => {
                               />
                               <Route
                                 path="/history"
-                                element={
-                                  <RouteReady pathname="/history">
-                                    <ErrorBoundary name="History"><History /></ErrorBoundary>
-                                  </RouteReady>
-                                }
+                                element={<Navigate to="/?mode=search" replace />}
                               />
                               <Route
                                 path="/memory"

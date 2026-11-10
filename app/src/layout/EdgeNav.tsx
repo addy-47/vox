@@ -1,7 +1,7 @@
 import React from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
-import { SlidersHorizontal, House, Activity, History, Network } from "lucide-react";
+import { SlidersHorizontal, House, Activity, Network } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { BottomDockFeather } from "@/shared/ui";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -10,7 +10,6 @@ import { useNavigateWithFeedback } from "./useNavigateWithFeedback";
 
 const navItems = [
   { icon: House, label: "Home", path: "/" },
-  { icon: History, label: "History", path: "/history" },
   { icon: Network, label: "Memory", path: "/memory" },
   { icon: SlidersHorizontal, label: "Settings", path: "/settings" },
 ];

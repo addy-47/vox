@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from "react";
+import { memo, useState } from "react";
 import { Ghost, AlertCircle, RotateCcw, Sparkles } from "lucide-react";
 import { formatDateTime, resolveSessionTitle, type SessionRow, type TurnRow } from "@/services/persistenceService";
 import { EmptyState, OrbitalLoader } from "@/shared/components/common";
@@ -23,11 +23,6 @@ export interface DetailPanelProps {
   error?: string | null;
   onClose: () => void;
   onRetry?: () => void;
-  /**
-   * "drawer" — the bottom-sheet presentation (default). "inline" — renders
-   * only the transcript body, no overlay chrome, for in-place page views on
-   * compact viewports. The parent owns scroll and padding in inline mode.
-   */
   variant?: "drawer" | "inline";
 }
 
@@ -77,11 +72,14 @@ TurnBubble.displayName = "TurnBubble";
 
 export const DetailPanel = memo(
   ({ open, session, turns, loading, error, onClose, onRetry, variant = "drawer" }: DetailPanelProps) => {
+    const currentSessionId = session?.id ?? null;
+    const [prevSessionId, setPrevSessionId] = useState<number | null>(currentSessionId);
     const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_TURNS);
 
-    useEffect(() => {
+    if (currentSessionId !== prevSessionId) {
+      setPrevSessionId(currentSessionId);
       setVisibleCount(INITIAL_VISIBLE_TURNS);
-    }, [session?.id]);
+    }
 
     const visibleTurns = turns.slice(0, visibleCount);
     const hasMoreTurns = turns.length > visibleCount;
@@ -98,11 +96,12 @@ export const DetailPanel = memo(
             <p className="text-[12px] text-[rgb(var(--error))] font-medium max-w-xs leading-relaxed">{error}</p>
             {onRetry && (
               <button
+                type="button"
                 onClick={onRetry}
-                className="px-3 py-1.5 rounded-xl glass-card border border-[rgba(var(--accent),0.3)] text-[11px] font-bold text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors flex items-center gap-1.5 cursor-pointer mt-1"
+                className="px-3.5 py-1.5 rounded-lg glass-card border border-[rgba(var(--accent),0.3)] text-[12px] font-bold text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] transition-colors flex items-center gap-1.5 cursor-pointer mt-1"
               >
-                <RotateCcw size={12} />
-                {HISTORY_COPY.retry}
+                <RotateCcw size={13} />
+                <span>{HISTORY_COPY.retry}</span>
               </button>
             )}
           </div>
@@ -113,16 +112,16 @@ export const DetailPanel = memo(
             className="py-12 border-0 bg-transparent"
           />
         ) : (
-          <div className="w-full space-y-6 pb-6">
+          <div className="w-full space-y-6 max-w-3xl mx-auto pb-6">
             {visibleTurns.map((turn) => (
               <TurnBubble key={turn.id} turn={turn} />
             ))}
-
             {hasMoreTurns && (
               <div className="flex justify-center pt-2">
                 <button
+                  type="button"
                   onClick={() => setVisibleCount((prev) => prev + 20)}
-                  className="px-4 py-2 rounded-xl glass-card text-[11px] font-bold text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer"
+                  className="px-4 py-2 rounded-xl glass-card text-[11px] font-bold text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--accent),0.15)] transition-all cursor-pointer"
                 >
                   {HISTORY_COPY.loadOlderTurns} ({turns.length - visibleCount} {HISTORY_COPY.remaining})
                 </button>
@@ -143,6 +142,7 @@ export const DetailPanel = memo(
         open={open}
         onClose={onClose}
         position="global"
+        zIndex={70}
         ariaLabel={HISTORY_COPY.sessionTranscript}
         resizeHint={HISTORY_COPY.resizeHint}
         bodyClassName="px-6 py-4"
@@ -190,6 +190,5 @@ export const DetailPanel = memo(
     );
   }
 );
-
 
 DetailPanel.displayName = "DetailPanel";
