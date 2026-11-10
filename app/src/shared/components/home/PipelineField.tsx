@@ -5,9 +5,10 @@ import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 interface PipelineFieldProps {
   state: InteractionState;
   volume?: number;
+  paused?: boolean;
 }
 
-export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldProps) => {
+export const PipelineField = React.memo(({ state, volume = 0, paused = false }: PipelineFieldProps) => {
   useMemoryTrace("PipelineField");
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -19,7 +20,7 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
     state === "Working";
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || paused) return;
 
     let targetEnergy: number;
 
@@ -45,7 +46,7 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
     containerRef.current.style.setProperty("--field-energy", targetEnergy.toString());
     containerRef.current.style.setProperty("--field-scale", (0.8 + targetEnergy * 0.4).toString());
     containerRef.current.style.setProperty("--border-alpha", (0.05 + targetEnergy * 0.1).toString());
-  }, [state, volume]);
+  }, [state, volume, paused]);
 
   return (
     <div
@@ -53,7 +54,8 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
       className="absolute inset-0 pointer-events-none overflow-hidden transition-opacity duration-700"
       style={{
         zIndex: 1,
-        opacity: isOrbitOwned ? 0 : 1,
+        opacity: isOrbitOwned || paused ? 0 : 1,
+        display: paused ? "none" : undefined,
         ["--field-energy"]: "0.12",
         ["--field-scale"]: "0.85",
         ["--border-alpha"]: "0.06",

@@ -73,7 +73,13 @@ tursodb ~/.vox/vox.db "SELECT name FROM sqlite_master WHERE type='table';"
 
 **CSG-02 — Test Discipline:** Never write or modify tests without first reading the testing style guide and following the `/create-test` workflow.
 
-**CSG-03 — Root Cause Over Bandaids:** Never patch symptoms while leaving the underlying problem unresolved. No ad hoc conditionals, duplicate logic, silent fallbacks, or special cases merely to make something work. Identify the root cause and fix it at the correct architectural layer.
+**CSG-03 — Root Cause Over Bandaids (First-Step Diagnostic Gate):** Never patch symptoms while leaving the underlying problem unresolved. Before writing or proposing any code change, every agent MUST pause at the initial thinking step and answer these 5 mandatory diagnostic questions:
+1. *What is the fundamental root cause, and is this failure caused upstream (e.g. invalid test asset, artificial delay, test harness pacing, missing prerequisite)?*
+2. *Am I fixing the root cause, or patching a downstream symptom to make a test pass?*
+3. *Is this solving an extremely rare synthetic edge case at the cost of production simplicity?*
+4. *Is this problem already solved by established industry libraries, models, or standard protocols?*
+5. *Am I hand-rolling heuristic math or complex state logic that should belong to an existing crate or neural model?*
+If the failure is caused by an upstream or faulty test input, STOP immediately and report it. Never introduce ad hoc conditionals, magic multipliers, duplicate state buffers, or downstream hacks to appease a broken test. Identify the root cause and fix it at the correct architectural layer.
 
 **CSG-04 — No Yes-Man Behavior:** Never agree with the user, orchestrator, or another agent merely to be compliant. Independently evaluate every proposed solution. Challenge incorrect assumptions, flawed designs, ambiguous requirements, and poor technical decisions. Explain why an approach is flawed and propose a better alternative. Prioritize technical correctness over agreement.
 

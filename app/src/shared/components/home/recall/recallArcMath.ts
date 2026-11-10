@@ -69,18 +69,3 @@ export function calculateArcTransform(offset: number, stageWidth: number): ArcCa
     transform,
   };
 }
-
-/**
- * Bounds the drag offset with smooth elastic resistance when dragging past boundaries.
- */
-export function applyElasticResistance(offset: number, minOffset: number, maxOffset: number): number {
-  if (offset > maxOffset) {
-    const over = offset - maxOffset;
-    return maxOffset + Math.sqrt(over) * 1.5;
-  }
-  if (offset < minOffset) {
-    const over = minOffset - offset;
-    return minOffset - Math.sqrt(over) * 1.5;
-  }
-  return offset;
-}

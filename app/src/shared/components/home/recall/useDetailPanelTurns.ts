@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { getTurns, type SessionRow, type TurnRow } from "@/services/persistenceService";
 
 export interface UseDetailPanelTurnsReturn {
@@ -10,44 +10,46 @@ export interface UseDetailPanelTurnsReturn {
 
 /**
  * Shared hook to manage fetching and retrying turns for a selected session.
- * Guarantees active/unmounted guards across both initial fetch and manual retry cycles.
+ * Guarantees monotonic sequence ID tracking across both initial fetch and manual retry cycles,
+ * preventing race condition state leaks during rapid session switches.
  */
 export function useDetailPanelTurns(session: SessionRow | null): UseDetailPanelTurnsReturn {
   const [turns, setTurns] = useState<TurnRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const activeReqIdRef = useRef(0);
 
   const fetchTurns = useCallback((targetSession: SessionRow) => {
-    let active = true;
+    const reqId = ++activeReqIdRef.current;
     setLoading(true);
     setError(null);
 
     void getTurns(targetSession.id)
       .then((data) => {
-        if (active) setTurns(data);
+        if (reqId === activeReqIdRef.current) setTurns(data);
       })
       .catch((err: unknown) => {
-        if (active) {
+        if (reqId === activeReqIdRef.current) {
           setError(err instanceof Error ? err.message : "Failed to load session transcript");
         }
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (reqId === activeReqIdRef.current) setLoading(false);
       });
-
-    return () => {
-      active = false;
-    };
   }, []);
 
   useEffect(() => {
     if (!session) {
+      activeReqIdRef.current += 1;
       setTurns([]);
       setLoading(false);
       setError(null);
       return;
     }
-    return fetchTurns(session);
+    fetchTurns(session);
+    return () => {
+      activeReqIdRef.current += 1;
+    };
   }, [session, fetchTurns]);
 
   const retry = useCallback(() => {

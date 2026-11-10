@@ -4,9 +4,7 @@ import {
   RECALL_CARD_WIDTH,
   RECALL_CARD_HEIGHT,
 } from "./recallArcMath";
-import {
-  RecallSessionCard,
-} from "./RecallSessionCard";
+import { RecallSessionCard } from "./RecallSessionCard";
 import {
   isBoundaryCard,
   isSkeletonCard,
@@ -24,8 +22,7 @@ export interface RecallArcCarouselProps {
 }
 
 const DRAG_THRESHOLD_PX = 4;
-const MOMENTUM_DAMPING = 0.92;
-const MOMENTUM_STOP = 0.001;
+const SLOT_PX = 190;
 
 export const RecallArcCarousel = memo(({
   items,
@@ -38,15 +35,16 @@ export const RecallArcCarousel = memo(({
   const containerRef = useRef<HTMLDivElement>(null);
   const [stageWidth, setStageWidth] = useState<number>(1000);
 
-  // Maximum selectable index (excludes skeletons to forbid scrolling into placeholders)
+  // Maximum selectable index (excludes skeletons)
   const maxSelectableIndex = useMemo(() => {
     return Math.max(0, items.filter((it) => !isSkeletonCard(it)).length - 1);
   }, [items]);
 
-  // Synchronous live active index updated immediately per frame during drag
+  // Synchronous active card index for visual active styling
   const [liveActiveIndex, setLiveActiveIndex] = useState<number>(activeIndex);
+  const liveActiveIndexRef = useRef<number>(activeIndex);
 
-  // High-frequency animation and physics state stored in refs (zero React re-renders per frame)
+  // Physics animation state stored in refs for 60 FPS zero-re-render direct DOM writes
   const offsetRef = useRef<number>(activeIndex);
   const targetOffsetRef = useRef<number>(activeIndex);
   const velocityRef = useRef<number>(0);
@@ -57,6 +55,7 @@ export const RecallArcCarousel = memo(({
   const lastPointerXRef = useRef<number>(0);
   const lastPointerTimeRef = useRef<number>(0);
   const rafRef = useRef<number | null>(null);
+  const wheelTimerRef = useRef<number | null>(null);
 
   // Map of card wrapper DOM elements for direct transform writes
   const cardNodesRef = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -75,25 +74,33 @@ export const RecallArcCarousel = memo(({
     return () => ro.disconnect();
   }, []);
 
-  // Update DOM transforms and active attributes for each card directly
+  // Update DOM transforms for each card directly without triggering React re-renders
   const applyTransforms = useCallback(() => {
     const currentOffset = offsetRef.current;
     const width = stageWidth;
     const currentCenter = Math.max(0, Math.min(maxSelectableIndex, Math.round(currentOffset)));
+
+    // Only update state when center card actually shifts
+    if (currentCenter !== liveActiveIndexRef.current) {
+      liveActiveIndexRef.current = currentCenter;
+      setLiveActiveIndex(currentCenter);
+    }
 
     items.forEach((item, idx) => {
       const node = cardNodesRef.current.get(idx);
       if (!node) return;
 
       const offsetFromCenter = idx - currentOffset;
-      // Cards beyond viewable range (e.g. |offset| > 4.5) are hidden to release GPU layers
+      // Cards beyond viewable range are hidden via visibility to conserve GPU layers without layout recalculation
       if (Math.abs(offsetFromCenter) > 4.5) {
-        node.style.display = "none";
-        node.style.willChange = "auto";
+        if (node.style.visibility !== "hidden") {
+          node.style.visibility = "hidden";
+        }
         return;
       }
-      node.style.display = "block";
-      node.style.willChange = "transform, opacity";
+      if (node.style.visibility !== "visible") {
+        node.style.visibility = "visible";
+      }
 
       const t = calculateArcTransform(offsetFromCenter, width);
       node.style.transform = t.transform;
@@ -105,8 +112,9 @@ export const RecallArcCarousel = memo(({
     });
   }, [items, stageWidth, maxSelectableIndex]);
 
-  // 60 FPS physics loop with idle dormancy (drops to 0% CPU when at rest)
+  // 60 FPS smooth spring physics loop with idle dormancy (0% CPU at rest)
   const isLoopActiveRef = useRef<boolean>(false);
+  const isWheelingRef = useRef<boolean>(false);
 
   const wakeLoop = useCallback(() => {
     if (isLoopActiveRef.current) return;
@@ -115,38 +123,18 @@ export const RecallArcCarousel = memo(({
     const tick = () => {
       let keepRunning = false;
 
-      if (draggingRef.current) {
+      if (draggingRef.current || isWheelingRef.current) {
         keepRunning = true;
       } else {
-        // Spring easing toward target offset
+        // Smooth exponential ease-out toward targetOffsetRef.current
         const diff = targetOffsetRef.current - offsetRef.current;
-        if (Math.abs(velocityRef.current) > MOMENTUM_STOP) {
-          offsetRef.current += velocityRef.current;
-          velocityRef.current *= MOMENTUM_DAMPING;
-
-          // Clamp to bounds with spring back (hard stop past maxSelectableIndex)
-          if (offsetRef.current < 0) {
-            velocityRef.current = 0;
-            targetOffsetRef.current = 0;
-          } else if (offsetRef.current > maxSelectableIndex) {
-            velocityRef.current = 0;
-            targetOffsetRef.current = maxSelectableIndex;
-            offsetRef.current = maxSelectableIndex;
-          } else {
-            targetOffsetRef.current = Math.round(offsetRef.current);
-          }
-          keepRunning = true;
-        } else if (Math.abs(diff) > 0.001) {
-          offsetRef.current += diff * 0.18;
+        if (Math.abs(diff) > 0.002) {
+          offsetRef.current += diff * 0.16;
           keepRunning = true;
         } else {
           offsetRef.current = targetOffsetRef.current;
         }
       }
-
-      // Synchronize live active card index continuously with drag
-      const rounded = Math.max(0, Math.min(maxSelectableIndex, Math.round(offsetRef.current)));
-      setLiveActiveIndex((prev) => (prev !== rounded ? rounded : prev));
 
       applyTransforms();
 
@@ -159,13 +147,16 @@ export const RecallArcCarousel = memo(({
     };
 
     rafRef.current = requestAnimationFrame(tick);
-  }, [maxSelectableIndex, applyTransforms]);
+  }, [applyTransforms]);
 
   // Sync target when activeIndex prop changes externally (e.g. from scrubber or search)
   useEffect(() => {
-    targetOffsetRef.current = activeIndex;
-    setLiveActiveIndex(activeIndex);
-    wakeLoop();
+    if (Math.abs(targetOffsetRef.current - activeIndex) > 0.01) {
+      targetOffsetRef.current = activeIndex;
+      liveActiveIndexRef.current = activeIndex;
+      setLiveActiveIndex(activeIndex);
+      wakeLoop();
+    }
   }, [activeIndex, wakeLoop]);
 
   // Re-trigger loop on resize or items update
@@ -179,6 +170,9 @@ export const RecallArcCarousel = memo(({
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
+      }
+      if (wheelTimerRef.current !== null) {
+        clearTimeout(wheelTimerRef.current);
       }
       isLoopActiveRef.current = false;
     };
@@ -215,26 +209,28 @@ export const RecallArcCarousel = memo(({
 
     if (!dragMovedRef.current) return;
 
-    // Convert pixel drag to offset units (~180px per card slot)
-    const slotPixels = 180;
-    const offsetDelta = -deltaX / slotPixels;
-    const rawOffset = dragStartOffsetRef.current + offsetDelta;
+    const now = performance.now();
+    const dt = Math.max(1, now - lastPointerTimeRef.current);
+    const dx = e.clientX - lastPointerXRef.current;
+    lastPointerXRef.current = e.clientX;
+    lastPointerTimeRef.current = now;
 
-    // Hard clamp: never scroll past latest session (maxSelectableIndex) into skeleton territory
+    // Moving average of velocity
+    const instVelocity = (-dx / SLOT_PX) * (16.67 / dt);
+    velocityRef.current = velocityRef.current * 0.4 + instVelocity * 0.6;
+
+    // Continuous offset with smooth elastic rubber-banding beyond boundaries
+    const rawOffset = dragStartOffsetRef.current - deltaX / SLOT_PX;
     if (rawOffset < 0) {
-      offsetRef.current = rawOffset * 0.2; // soft resistance at start
+      offsetRef.current = rawOffset * 0.25;
     } else if (rawOffset > maxSelectableIndex) {
-      offsetRef.current = maxSelectableIndex; // HARD CLAMP: cannot drag into skeleton territory
+      const over = rawOffset - maxSelectableIndex;
+      offsetRef.current = maxSelectableIndex + over * 0.25;
     } else {
       offsetRef.current = rawOffset;
     }
 
-    const now = performance.now();
-    const dt = Math.max(1, now - lastPointerTimeRef.current);
-    const dx = e.clientX - lastPointerXRef.current;
-    velocityRef.current = (-dx / slotPixels) * (16 / dt); // normalized to 60fps frame
-    lastPointerXRef.current = e.clientX;
-    lastPointerTimeRef.current = now;
+    targetOffsetRef.current = Math.max(0, Math.min(maxSelectableIndex, Math.round(offsetRef.current)));
     wakeLoop();
   };
 
@@ -250,44 +246,67 @@ export const RecallArcCarousel = memo(({
     }
 
     if (dragMovedRef.current) {
-      // Determine nearest card index and notify parent
-      const predictedOffset = offsetRef.current + velocityRef.current * 6;
-      const clampedIndex = Math.max(0, Math.min(maxSelectableIndex, Math.round(predictedOffset)));
-      targetOffsetRef.current = clampedIndex;
+      // Calculate flick destination with bounded projection
+      const flickProjection = velocityRef.current * 4.2;
+      const predicted = offsetRef.current + flickProjection;
+      const snapIndex = Math.max(0, Math.min(maxSelectableIndex, Math.round(predicted)));
+      targetOffsetRef.current = snapIndex;
       wakeLoop();
-      onSelectIndex(clampedIndex);
+      onSelectIndex(snapIndex);
     }
   };
 
-  // Wheel horizontal navigation
+  // Continuous fluid trackpad and mouse wheel navigation
   const handleWheel = (e: React.WheelEvent) => {
-    if (Math.abs(e.deltaX) > 15 || Math.abs(e.deltaY) > 15) {
-      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      if (Math.abs(delta) > 20) {
-        if (delta > 0) {
-          onSelectIndex(Math.min(activeIndex + 1, maxSelectableIndex));
-        } else {
-          onSelectIndex(Math.max(activeIndex - 1, 0));
-        }
-      }
+    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (Math.abs(delta) < 1) return;
+
+    isWheelingRef.current = true;
+    const step = (delta / SLOT_PX) * 0.65;
+    let nextOffset = offsetRef.current + step;
+    if (nextOffset < 0) {
+      nextOffset = offsetRef.current + step * 0.2;
+    } else if (nextOffset > maxSelectableIndex) {
+      nextOffset = offsetRef.current + step * 0.2;
     }
-  };
+    offsetRef.current = nextOffset;
+    targetOffsetRef.current = nextOffset;
+    wakeLoop();
 
-  // Card click: center it if side card; open transcript drawer if already center
-  const handleCardClick = (idx: number, item: CarouselItemData) => {
-    if (dragMovedRef.current || isSkeletonCard(item)) return;
-
-    if (idx === liveActiveIndex) {
-      if (!isBoundaryCard(item)) {
-        onOpenSession(item);
-      }
-    } else {
-      const clamped = Math.max(0, Math.min(maxSelectableIndex, idx));
-      targetOffsetRef.current = clamped;
+    // Settle cleanly onto nearest card when wheel scrolling rests
+    if (wheelTimerRef.current !== null) {
+      clearTimeout(wheelTimerRef.current);
+    }
+    wheelTimerRef.current = window.setTimeout(() => {
+      isWheelingRef.current = false;
+      const snapTarget = Math.max(0, Math.min(maxSelectableIndex, Math.round(offsetRef.current)));
+      targetOffsetRef.current = snapTarget;
       wakeLoop();
-      onSelectIndex(clamped);
-    }
+      onSelectIndex(snapTarget);
+    }, 120);
   };
+
+  // Referentially stable card selection callback to protect React.memo across non-active cards
+  const handleCardSelect = useCallback(
+    (item: CarouselItemData) => {
+      if (dragMovedRef.current || isSkeletonCard(item)) return;
+
+      const idx = items.findIndex((it) => it.id === item.id);
+      if (idx < 0) return;
+
+      if (idx === liveActiveIndexRef.current) {
+        if (!isBoundaryCard(item)) {
+          onOpenSession(item);
+        }
+      } else {
+        const clamped = Math.max(0, Math.min(maxSelectableIndex, idx));
+        targetOffsetRef.current = clamped;
+        wakeLoop();
+        onSelectIndex(clamped);
+      }
+    },
+    [items, maxSelectableIndex, onOpenSession, onSelectIndex, wakeLoop]
+  );
 
   return (
     <div
@@ -324,13 +343,14 @@ export const RecallArcCarousel = memo(({
               width: RECALL_CARD_WIDTH,
               height: RECALL_CARD_HEIGHT,
               transformStyle: "preserve-3d",
+              willChange: "transform, opacity",
             }}
           >
             <RecallSessionCard
               item={item}
               isActive={isCenter}
               projectName={projectName}
-              onSelect={() => handleCardClick(idx, item)}
+              onSelect={handleCardSelect}
               onDelete={onDeleteSession}
             />
           </div>

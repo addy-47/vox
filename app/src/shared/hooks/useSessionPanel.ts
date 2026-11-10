@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSessionStore } from "@/store/sessionStore";
 import {
   getSessions,
+  getCachedSessions,
   refreshSessions,
   sortSessionsNewestFirst,
   updateSession,
@@ -110,9 +111,9 @@ interface UseSessionPanelReturn {
  * data and stops listening for `sessions_changed`.
  */
 export function useSessionPanel(active: boolean = true): UseSessionPanelReturn {
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [sessions, setSessions] = useState<SessionRow[]>(() => getCachedSessions() ?? []);
   const [projects, setProjects] = useState<ProjectRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !getCachedSessions());
   const [error, setError] = useState<string | null>(null);
   const [projectOrder, setProjectOrder] = useState<string[]>(() => {
     try {

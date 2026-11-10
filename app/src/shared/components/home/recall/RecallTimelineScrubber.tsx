@@ -1,6 +1,7 @@
 import { memo, useMemo, useRef, useCallback } from "react";
 import { type SessionRow } from "@/services/persistenceService";
 import { isBoundaryCard, isSkeletonCard, type CarouselItemData } from "./recallTypes";
+import { SESSION_COPY } from "@/data/sessionCopy";
 
 export interface RecallTimelineScrubberProps {
   items: CarouselItemData[];
@@ -44,13 +45,15 @@ export const RecallTimelineScrubber = memo(({
       }
     });
 
-    return Array.from(months.entries()).map(([label, ratio]) => ({
-      label: label.split(" ")[0],
+    return Array.from(months.entries()).map(([key, ratio]) => ({
+      key,
+      label: key.split(" ")[0],
       ratio,
     }));
   }, [realSessions, realCount]);
 
   // Decimate bars to a maximum of 40 histogram columns for clean rendering
+  // Note: activeIndex is checked during render, keeping this calculation referentially stable
   const histogramBars = useMemo(() => {
     if (realCount === 0) return [];
     const maxBars = 40;
@@ -59,7 +62,6 @@ export const RecallTimelineScrubber = memo(({
       sessionIndex: number;
       ratio: number;
       height: number;
-      isCurrent: boolean;
       turns: number;
     }> = [];
 
@@ -75,19 +77,17 @@ export const RecallTimelineScrubber = memo(({
       const height = Math.round(7 + density * 19);
 
       const ratio = realCount > 1 ? sIdx / (realCount - 1) : 0.5;
-      const isCurrent = entry.originalIndex === activeIndex;
 
       bars.push({
         sessionIndex: entry.originalIndex,
         ratio,
         height,
-        isCurrent,
         turns,
       });
     }
 
     return bars;
-  }, [realSessions, realCount, activeIndex]);
+  }, [realSessions, realCount]);
 
   const handleTrackClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const track = trackRef.current;
@@ -111,7 +111,7 @@ export const RecallTimelineScrubber = memo(({
         ref={trackRef}
         onClick={handleTrackClick}
         className="relative w-full h-8 flex items-end justify-between cursor-pointer py-1 px-1 group"
-        aria-label="Timeline Scrubber"
+        aria-label={SESSION_COPY.timelineScrubberAriaLabel}
         role="slider"
         aria-valuenow={activeIndex}
       >
@@ -120,22 +120,25 @@ export const RecallTimelineScrubber = memo(({
 
         {/* Vertical density bars */}
         <div className="relative w-full h-full flex items-end">
-          {histogramBars.map((bar, i) => (
-            <div
-              key={i}
-              className="absolute bottom-1 -translate-x-1/2 flex flex-col items-center transition-all duration-150"
-              style={{ left: `${(bar.ratio * 100).toFixed(1)}%` }}
-            >
+          {histogramBars.map((bar, i) => {
+            const isCurrent = bar.sessionIndex === activeIndex;
+            return (
               <div
-                style={{ height: `${bar.isCurrent ? Math.max(bar.height + 4, 24) : bar.height}px` }}
-                className={`rounded-full transition-all duration-150 ${
-                  bar.isCurrent
-                    ? "w-[3px] bg-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.9)] z-10"
-                    : "w-[2px] bg-[rgba(var(--foreground-muted),0.35)] group-hover:bg-[rgba(var(--foreground-muted),0.55)] hover:bg-[rgb(var(--foreground))]"
-                }`}
-              />
-            </div>
-          ))}
+                key={i}
+                className="absolute bottom-1 -translate-x-1/2 flex flex-col items-center transition-[left] duration-150"
+                style={{ left: `${(bar.ratio * 100).toFixed(1)}%` }}
+              >
+                <div
+                  style={{ height: `${isCurrent ? Math.max(bar.height + 4, 24) : bar.height}px` }}
+                  className={`rounded-full transition-[height,background-color,box-shadow] duration-150 ${
+                    isCurrent
+                      ? "w-[3px] bg-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.9)] z-10"
+                      : "w-[2px] bg-[rgba(var(--foreground-muted),0.35)] group-hover:bg-[rgba(var(--foreground-muted),0.55)] hover:bg-[rgb(var(--foreground))]"
+                  }`}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -143,8 +146,8 @@ export const RecallTimelineScrubber = memo(({
       <div className="relative w-full h-3.5 px-1">
         {monthMilestones.map((m) => (
           <span
-            key={m.label}
-            className="absolute top-0 -translate-x-1/2 text-[10px] font-mono text-[rgb(var(--foreground-muted))]/60 tracking-wider select-none"
+            key={m.key}
+            className="absolute top-0 -translate-x-1/2 text-[11px] font-mono text-[rgb(var(--foreground-muted))]/60 tracking-wider select-none"
             style={{ left: `${(m.ratio * 100).toFixed(1)}%` }}
           >
             {m.label}

@@ -1,5 +1,5 @@
 import { memo, useRef, useEffect, useState, useCallback } from "react";
-import { ArrowLeft, Search, ChevronDown, Check } from "lucide-react";
+import { Search, ChevronDown, Check } from "lucide-react";
 import { motion } from "framer-motion";
 import { RecallArcCarousel } from "./RecallArcCarousel";
 import { RecallTimelineScrubber } from "./RecallTimelineScrubber";
@@ -8,6 +8,7 @@ import { useRecallSearch, type SortOrder } from "./useRecallSearch";
 import { isBoundaryCard, isSkeletonCard } from "./recallTypes";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { SESSION_COPY } from "@/data/sessionCopy";
+import { isRealMobileDevice } from "@/layout/breakpoints";
 
 export interface SearchRecallViewProps {
   onBackToVoice: () => void;
@@ -117,31 +118,33 @@ export const SearchRecallView = memo(({
   });
 
   return (
-    <div className="absolute inset-0 z-30 flex flex-col items-center justify-between w-full h-full pointer-events-none select-none">
-      {/* ── Top Header Controls (Glides down smoothly directly above the Orb) ── */}
+    <div className="absolute inset-0 z-30 w-full h-full pointer-events-none select-none">
+      {/* ── Top Header Controls (Glides down smoothly directly above the Orb, matching DynamicStatusBadge) ── */}
       <motion.div
-        initial={{ opacity: 0, y: -28 }}
+        initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -24 }}
+        exit={{ opacity: 0, y: -16 }}
         transition={{ type: "spring", stiffness: 320, damping: 28, mass: 0.8 }}
-        className="shrink-0 w-full max-w-xl px-4 pt-[max(0.6rem,env(safe-area-inset-top))] flex flex-col items-center gap-2 pointer-events-auto z-40"
+        className="absolute left-1/2 -translate-x-1/2 z-40 w-full max-w-xl px-4 flex flex-col items-center gap-1.5 pointer-events-auto"
+        style={{
+          top: isRealMobileDevice()
+            ? "calc(50% - min(41vw, 25vh) - 112px - 22.4px)"
+            : "clamp(36px, 8.5vh, 68px)",
+        }}
       >
-        {/* Back to Voice Mode Pill Button */}
+        {/* Back to Voice Mode — simple ghost text, no competing glass surface */}
         <button
           type="button"
           onClick={onBackToVoice}
-          className="group px-4 py-1.5 rounded-full glass-card border border-[rgba(var(--accent),0.25)] hover:border-[rgba(var(--accent),0.55)] bg-[rgba(var(--card),0.85)] hover:bg-[rgb(var(--card))] backdrop-blur-md flex items-center gap-2 text-[12px] font-sans font-medium text-[rgb(var(--foreground))] transition-colors cursor-pointer shadow-sm hover:shadow-[0_0_16px_rgba(var(--accent),0.2)]"
+          className="flex items-center gap-1.5 text-[11.5px] font-sans text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
         >
-          <ArrowLeft size={13} className="text-[rgb(var(--accent))] transition-transform group-hover:-translate-x-0.5" />
-          <span>{SESSION_COPY.backToVoiceMode}</span>
-          <span className="px-1.5 py-0.5 rounded-md bg-[rgba(var(--foreground),0.06)] border border-[rgba(var(--border),0.1)] text-[10px] font-mono text-[rgb(var(--foreground-muted))] leading-none">
-            Esc
-          </span>
+          <span>← {SESSION_COPY.backToVoiceMode}</span>
+          <span className="text-[11px] opacity-50 font-mono">Esc</span>
         </button>
 
         {/* Search Bar matching mockup */}
         <div className="relative w-full max-w-md">
-          <div className="relative flex items-center w-full rounded-2xl glass-card border border-[rgba(var(--border),0.12)] bg-[rgb(var(--card))]/90 hover:border-[rgba(var(--border),0.25)] focus-within:border-violet-400/60 focus-within:shadow-[0_0_20px_rgba(167,139,250,0.22)] backdrop-blur-md transition-colors px-3.5 py-2">
+          <div className="relative flex items-center w-full rounded-2xl glass-card border border-[rgba(var(--border),0.12)] bg-[rgb(var(--card))]/90 hover:border-[rgba(var(--border),0.25)] focus-within:border-[rgba(var(--accent-complementary),0.6)] focus-within:shadow-[0_0_20px_rgba(var(--accent-complementary),0.22)] backdrop-blur-md transition-colors px-3.5 py-2">
             <Search size={15} className="text-[rgb(var(--foreground-muted))] shrink-0 mr-2.5" />
             <input
               ref={searchInputRef}
@@ -153,7 +156,7 @@ export const SearchRecallView = memo(({
               placeholder={SESSION_COPY.searchConversationsPlaceholder}
               className="flex-1 min-w-0 bg-transparent text-[13.5px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 outline-none font-sans"
             />
-            <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.08)] text-[10.5px] font-mono text-[rgb(var(--foreground-muted))]/70 leading-none select-none">
+            <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.08)] text-[11px] font-mono text-[rgb(var(--foreground-muted))]/70 leading-none select-none">
               /
             </span>
           </div>
@@ -205,13 +208,13 @@ export const SearchRecallView = memo(({
 
       {/* ── Middle Stage: Arc Carousel positioned to overlap bottom third of Orb ── */}
       <motion.div
-        initial={{ opacity: 0, y: 70, scale: 0.96 }}
+        initial={{ opacity: 0, y: 60, scale: 0.96 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 60, scale: 0.96 }}
+        exit={{ opacity: 0, y: 50, scale: 0.96 }}
         transition={{ type: "spring", stiffness: 300, damping: 28, mass: 0.85 }}
         className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-auto z-20 w-full"
         style={{
-          top: "calc(50% + clamp(64px, 8.5vh, 80px))",
+          top: "calc(50% + clamp(48px, 6.5vh, 66px))",
         }}
       >
         {carouselItems.length > 0 ? (
@@ -230,13 +233,16 @@ export const SearchRecallView = memo(({
         )}
       </motion.div>
 
-      {/* ── Bottom Scrubber (Pulled tightly closer to Orb & Arc Carousel) ── */}
+      {/* ── Bottom Scrubber (Aligned to exact action button coordinate slot) ── */}
       <motion.div
-        initial={{ opacity: 0, y: 30 }}
+        initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 24 }}
+        exit={{ opacity: 0, y: 20 }}
         transition={{ type: "spring", stiffness: 320, damping: 28, mass: 0.8 }}
-        className="shrink-0 w-full flex flex-col items-center pb-[calc(5.25rem+env(safe-area-inset-bottom))] pointer-events-auto z-30"
+        className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center w-full max-w-xl px-4 pointer-events-auto"
+        style={{
+          top: "calc(80% - 58px + min(65vw, 56vh, 580px) * 0.16)",
+        }}
       >
         <RecallTimelineScrubber
           items={carouselItems}

@@ -29,6 +29,7 @@ import { HomeControls } from "@/shared/components/home/HomeControls";
 
 import { useSessionStore } from "@/store/sessionStore";
 import { useRemoteStore } from "@/store/remoteStore";
+import { useRecallSearchStore } from "@/store/recallSearchStore";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { useHomePage } from "@/shared/hooks/useHomePage";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
@@ -121,23 +122,41 @@ export const Home = memo(() => {
   useMemoryTrace("Home");
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const isSearchMode = searchParams.get("mode") === "search";
+  const isSearchModeStore = useRecallSearchStore((s) => s.isSearchMode);
+  const setIsSearchModeStore = useRecallSearchStore((s) => s.setIsSearchMode);
+  const exitSearchModeStore = useRecallSearchStore((s) => s.exitSearchMode);
+
+  // Search mode is active if URL says so OR if persistent store says so (survives page nav)
+  const isSearchMode = searchParams.get("mode") === "search" || isSearchModeStore;
+
+  // Keep URL query param and store in sync
+  useEffect(() => {
+    if (isSearchMode && searchParams.get("mode") !== "search") {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("mode", "search");
+        return next;
+      }, { replace: true });
+    }
+  }, [isSearchMode, searchParams, setSearchParams]);
 
   const enterSearchMode = useCallback(() => {
+    setIsSearchModeStore(true);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set("mode", "search");
       return next;
     }, { replace: true });
-  }, [setSearchParams]);
+  }, [setIsSearchModeStore, setSearchParams]);
 
   const exitSearchMode = useCallback(() => {
+    exitSearchModeStore();
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.delete("mode");
       return next;
     }, { replace: true });
-  }, [setSearchParams]);
+  }, [exitSearchModeStore, setSearchParams]);
 
   const [homeDrawerSession, setHomeDrawerSession] = useState<SessionRow | null>(null);
   const {
@@ -321,7 +340,7 @@ export const Home = memo(() => {
   return (
     <div className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none">
       {/* Sentient Field Background Energy */}
-      <PipelineField state={isSearchMode ? "Sleeping" : interactionState} />
+      <PipelineField state={isSearchMode ? "Sleeping" : interactionState} paused={isSearchMode} />
 
       {/* ── Restore ingestion pulse (single reverse-flow toward orb) ── */}
       <RestorePulse signal={restoreSignal} />
@@ -363,7 +382,7 @@ export const Home = memo(() => {
                   telemetryRef={telemetryRef}
                   interactionState={isSearchMode ? "Idle" : (isRemoteActive ? "Sleeping" : interactionState)}
                   isSleeping={isSleeping || isRemoteActive}
-                  paused={isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
+                  paused={isSearchMode || isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
                 />
               </Suspense>
             </ErrorBoundary>
@@ -612,15 +631,17 @@ export const Home = memo(() => {
       </EdgePanel>
 
       {/* ── Detail Transcript Drawer for Shift+Up Shortcut ── */}
-      <DetailPanel
-        open={Boolean(homeDrawerSession)}
-        session={homeDrawerSession}
-        turns={homeTurns}
-        loading={homeTurnsLoading}
-        error={homeTurnsError}
-        onClose={closeDetailDrawer}
-        onRetry={retryHomeTurns}
-      />
+      {!isSearchMode && (
+        <DetailPanel
+          open={Boolean(homeDrawerSession)}
+          session={homeDrawerSession}
+          turns={homeTurns}
+          loading={homeTurnsLoading}
+          error={homeTurnsError}
+          onClose={closeDetailDrawer}
+          onRetry={retryHomeTurns}
+        />
+      )}
     </div>
   );
 });

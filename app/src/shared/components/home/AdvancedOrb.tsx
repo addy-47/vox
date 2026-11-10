@@ -406,7 +406,6 @@ export const VoxOrb = React.memo(({
     onFirstFrameRef.current = onFirstFrame;
   }, [onFirstFrame]);
   const firstFrameFiredRef = useRef(false);
-  const themeApplyLogCountRef = useRef(0); // cyan-flash RCA only — remove with logs
 
   // ── Entrance animation ──────────────────────────────────────────────────
   // The orb container stays invisible until the first WebGL frame is painted,
@@ -769,16 +768,6 @@ export const VoxOrb = React.memo(({
     // Response morph rate
     ctx.curGlow.lerp(ctx.tgtGlow, rate(5.5));
     ctx.curAccent.lerp(ctx.tgtAccent, rate(5.5));
-    // (cyan-flash RCA: first 3 per-tick target resolutions per mount. Remove once found.)
-    try {
-      const n = themeApplyLogCountRef.current ?? 0;
-      if (n < 3) {
-        themeApplyLogCountRef.current = n + 1;
-        console.info(`[trace-orb] tick-target #${n + 1}: state=${state} theme=${themeRef.current.theme || 'EMPTY'} tgtGlow=#${ctx.tgtGlow.getHexString()} tgtAccent=#${ctx.tgtAccent.getHexString()} firstFrame=${firstFrameFiredRef.current}`);
-      }
-    } catch (e) {
-      console.debug("[AdvancedOrb] Tick trace log failed:", e);
-    }
 
     ctx.sharedUni.u_colorGlow.value.copy(ctx.curGlow);
     ctx.sharedUni.u_colorAccent.value.copy(ctx.curAccent);
@@ -810,11 +799,6 @@ export const VoxOrb = React.memo(({
     ctx.renderer.render(ctx.scene, ctx.camera);
     if (!firstFrameFiredRef.current) {
       firstFrameFiredRef.current = true;
-      try {
-        console.info(`[trace-orb] first-frame painted @${performance.now().toFixed(1)}ms: glow=#${ctx.curGlow.getHexString()} accent=#${ctx.curAccent.getHexString()} state=${state}`);
-      } catch (e) {
-        console.debug("[AdvancedOrb] First frame log failed:", e);
-      }
       onFirstFrameRef.current?.();
       // Begin the entrance bloom only once there is a frame to show.
       setEntered(true);
@@ -878,11 +862,6 @@ export const VoxOrb = React.memo(({
     const initAccent = seedForInit
       ? seedForInit.accent.clone()
       : getCSSColor('--accent', '#00dbe9');
-    try {
-      console.info(`[trace-orb] scene-init: accent=#${initAccent.getHexString()} glow=#${initGlow.getHexString()} (fallbacks #00dbe9/#0891b2 = cyan family), state=${stateRef.current}, container=${width}x${height}`);
-    } catch (e) {
-      console.debug("[AdvancedOrb] Scene init log failed:", e);
-    }
 
     const sharedUni = {
       u_time: { value: 0.0 },
