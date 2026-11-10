@@ -32,8 +32,13 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
     let ctx_clone = ctx.clone();
     let ctx_owner = ctx.owner;
 
-    let app_state_arc: tauri::State<'_, Arc<AppState>> = app.state();
-    let app_state = Arc::clone(app_state_arc.inner());
+    let app_state = match app.try_state::<Arc<AppState>>() {
+        Some(st) => Arc::clone(st.inner()),
+        None => {
+            log::warn!("[Pipeline::Transcript] AppState not managed on AppHandle; cannot spawn turn task");
+            return;
+        }
+    };
     let harness_arc = Arc::clone(&state.harness);
     let provider_arc = Arc::clone(&state.llm_provider);
 

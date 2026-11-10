@@ -11,11 +11,9 @@
 //! Run       : cargo nextest run --test e2e_voice_pipeline_test --release --test-threads=1
 //! ============================================================================
 //!
-//! Scenes 1, 2 and 4 exercise the same rig used by all voice seams (real STT, real
+//! Scenes 1, 2, 3 and 4 exercise the same rig used by all voice seams (real STT, real
 //! Kokoro synthesis, real router). Scene 3 uses a real Qwen GGUF via the production
-//! SidecarLlmProvider path with a 10-line persona prompt. Scene 3 is `#[ignore]`d:
-//! the interrupted first inference keeps the sidecar busy, so the merged turn hits the
-//! 30 s idle guard (F-005). Scenes 1, 2 and 4 stay active.
+//! SidecarLlmProvider path with a 10-line persona prompt. All scenes are active.
 
 mod common;
 

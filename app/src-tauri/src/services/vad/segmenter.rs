@@ -32,7 +32,7 @@ const NOISE_FLOOR_ALPHA_UP: f32 = 0.002;
 const MIN_NOISE_FLOOR_RMS: f32 = 0.0005;
 /// Maximum clamped ambient noise floor RMS so loud environments never deafen onset detection.
 const MAX_NOISE_FLOOR_RMS: f32 = 0.025;
-/// Minimum dynamic onset energy gate (RMS) preserving sensitivity in extremely quiet rooms.
+// Minimum dynamic onset energy gate (RMS) preserving sensitivity in extremely quiet rooms.
 const MIN_ONSET_GATE_RMS: f32 = 0.0012;
 
 /// Minimum speech samples (~1.25s @ 16kHz) before early-utterance pause protection relaxes.
@@ -284,14 +284,6 @@ pub fn handle_speech_start(
     );
 
     if let Some(tx) = vox_event_tx {
-        eprintln!(
-            "[VAD TEMP] SpeechStart t_ms={} noise_floor={:.5}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis())
-                .unwrap_or_default(),
-            state.noise_floor_ema
-        );
         if let Err(e) = tx.send(VoxEvent::SpeechStart { owner }) {
             log::warn!("[VAD Actor] Failed to send SpeechStart event: {}", e);
         }
@@ -429,8 +421,6 @@ pub fn process_continuous_segmentation(
     if !state.in_speech {
         let onset_gate =
             compute_dynamic_onset_gate(state, vad.noise_gate_multiplier(), interaction_state);
-        let is_onset_speech = vad_detected && raw_energy >= onset_gate;
-
         // Require slightly firmer confirmation when barging in over active playback
         let base_start_frames = state.speech_start_frames.max(2) as f32;
         let required_onset_score = if interaction_state == InteractionState::Speaking {
@@ -438,6 +428,8 @@ pub fn process_continuous_segmentation(
         } else {
             base_start_frames
         };
+
+        let is_onset_speech = vad_detected && raw_energy >= onset_gate;
 
         if is_onset_speech {
             // Boost onset score for high-SNR speech bursts so clear syllables trigger faster
