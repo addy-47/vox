@@ -71,6 +71,30 @@
       "required": false
     },
     {
+      "id": "smart_turn",
+      "name": "smart-turn",
+      "category": "vad",
+      "subcategory": "turn_detector",
+      "description": "Acoustic end-of-utterance and conversational turn-taking prosody classifier. Distinguishes mid-thought pauses from finished turns.",
+      "parameters": "ONNX INT8",
+      "ram_usage": "~8 MB",
+      "tradeoffs": "Acoustic turn-taking prosody, eliminates premature turn cutoffs",
+      "version": "3.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
+      "files": [
+        {
+          "id": "smart_turn_onnx",
+          "path": "vad/smart_turn.onnx",
+          "size": 8388608,
+          "sha256": "3cb01311ff08a964a7da5a784cb17887e50409cb32e93549ee144e5ce3ca8da0",
+          "required": false
+        }
+      ],
+      "required": false
+    },
+    {
       "id": "vox_translit_rnn",
       "name": "transliteration",
       "category": "translit",

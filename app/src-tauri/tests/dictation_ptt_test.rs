@@ -109,7 +109,6 @@ impl Rig {
             state.pipeline.ingestion_gate.clone(),
             vad_shutdown.clone(),
             event_tx.clone(),
-            Arc::new(AtomicBool::new(false)),
         );
         common::harness::attach_mock_engine_with_llm_vad_to_state(
             &app,

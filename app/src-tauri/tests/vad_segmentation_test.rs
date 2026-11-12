@@ -38,17 +38,14 @@ use vox_lib::{
     },
 };
 
-/// Spawns a real Nemotron STT worker with a partial sink that records emitted
-/// partials and mirrors src/core/engine.rs's incomplete_clause_hint heuristic.
-/// The recording exists so tests can assert that streaming partials flowed and
-/// drove the hint atomic. The hint Arc is returned so VAD can share it.
+/// Spawns a real Nemotron STT worker with a partial sink that records emitted partials.
+/// The recording exists so tests can assert that streaming partials flowed.
 type PartialLog = Arc<std::sync::Mutex<Vec<(u32, String)>>>;
 
 struct RecordingStt {
     stt_tx: mpsc::Sender<SttCommand>,
     pipeline_event_rx: mpsc::Receiver<VoxEvent>,
     partial_log: PartialLog,
-    incomplete_clause_hint: Arc<AtomicBool>,
     engine_shutdown: Arc<AtomicBool>,
     join: std::thread::JoinHandle<()>,
 }
@@ -63,14 +60,10 @@ fn setup_stt_with_partial_recording() -> RecordingStt {
     let (stt_tx, stt_rx) = mpsc::channel::<SttCommand>();
     let (pipeline_event_tx, pipeline_event_rx) = mpsc::channel::<VoxEvent>();
     let partials = Arc::new(std::sync::Mutex::new(Vec::<(u32, String)>::new()));
-    let incomplete_clause_hint = Arc::new(AtomicBool::new(false));
 
     let partials_for_emitter = Arc::clone(&partials);
-    let hint_for_emitter = Arc::clone(&incomplete_clause_hint);
-    let shared_hint = common::harness::incomplete_clause_hint_emitter(hint_for_emitter);
     let partial_emitter: Option<Arc<dyn Fn(u32, String) + Send + Sync>> =
         Some(Arc::new(move |turn_id: u32, text: String| {
-            shared_hint(turn_id, text.clone());
             if let Ok(mut guard) = partials_for_emitter.lock() {
                 guard.push((turn_id, text));
             }
@@ -93,7 +86,6 @@ fn setup_stt_with_partial_recording() -> RecordingStt {
         stt_tx,
         pipeline_event_rx,
         partial_log: partials,
-        incomplete_clause_hint,
         engine_shutdown,
         join,
     }
@@ -111,11 +103,9 @@ fn production_vad_config() -> VadActorConfig {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_vad(
     stt_tx: mpsc::Sender<SttCommand>,
     vox_event_tx: mpsc::Sender<VoxEvent>,
-    incomplete_clause_hint: Arc<AtomicBool>,
     state_atomic: Arc<AtomicU32>,
     turn_id_atomic: Arc<AtomicU32>,
     audio_suppressed: Arc<AtomicBool>,
@@ -141,7 +131,6 @@ fn spawn_vad(
         ingestion_gate,
         vad_shutdown,
         vox_event_tx,
-        incomplete_clause_hint,
     )
 }
 
@@ -154,14 +143,14 @@ fn realtime_passive(state: &AppState) {
 }
 
 
-/// PURPOSE:  Real speech must produce exactly one final transcript per segment.
-/// SCENARIO: EN and HI clips with natural ~0.4 s intra-sentence pauses at the
-///           production silence-duration default, plus a composed clip with a
-///           700 ms pause past the early-utterance window.
+/// PURPOSE:  Real speech must produce exactly one final transcript per segment under standard silence timing.
+/// SCENARIO: EN and HI clips with natural intra-sentence pauses at the
+///           production silence-duration default (400ms), plus a composed clip with a
+///           250 ms intra-utterance pause within the 400 ms silence window.
 /// ASSERTS:  One TranscriptFinal each; similarity >= 0.90 vs ground truth; HI transliterates to ASCII.
 /// CLASS:    happy-path (speech)
 /// REQUIRES: VOX_MODELS_DIR with Earshot + Nemotron.
-/// MUTANT:   Cut the hangover computation so natural pauses split utterances.
+/// MUTANT:   Lower silence duration frames below 250ms so natural pauses split utterances.
 /// NOTE: Scenarios share one VAD/STT worker (re-warming corrupts the ONNX allocator).
 #[test]
 fn passive_streaming_segments_speech_and_suppresses_silence() {
@@ -172,12 +161,11 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
     realtime_passive(&state);
     state.pipeline.set_state(InteractionState::Ready);
 
-    // STT worker with recording partial emitter (hint Arc shared with VAD)
+    // STT worker with recording partial emitter
     let RecordingStt {
         stt_tx,
         pipeline_event_rx,
         partial_log,
-        incomplete_clause_hint: hint_arc,
         engine_shutdown: stt_shutdown,
         join: stt_join,
     } = setup_stt_with_partial_recording();
@@ -198,7 +186,6 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
         let (vad_cmd_tx, mut producer, vad_join) = spawn_vad(
             stt_tx.clone(),
             vox_event_tx,
-            Arc::clone(&hint_arc),
             state_atomic.clone(),
             turn_id_atomic.clone(),
             Arc::clone(&audio_suppressed),
@@ -260,7 +247,6 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
         let (vad_cmd_tx, mut producer, vad_join) = spawn_vad(
             stt_tx.clone(),
             vox_event_tx,
-            Arc::clone(&hint_arc),
             state_atomic.clone(),
             turn_id_atomic.clone(),
             Arc::clone(&audio_suppressed),
@@ -311,13 +297,12 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
         state.pipeline.set_state(InteractionState::Ready);
     }
 
-    // ---------- Subtest C: 700 ms pause inside the early-utterance window ----------
-    // The early-utterance protection (EARLY_UTTERANCE_MIN_END_FRAMES = 50 frames /
-    // 800 ms, active while speech_sample_counter < 20,000 samples / 1.25 s) must hold
-    // a composed 700 ms pause and keep the utterance as one segment.
+    // ---------- Subtest C: 250 ms pause within standard 400 ms silence duration ----------
+    // Standard silence duration (DEFAULT_VAD_SILENCE_DURATION_MS = 400 ms / 25 frames)
+    // must absorb a composed 250 ms pause and keep the utterance unified as one segment.
     {
-        const SPLIT_SAMPLES: usize = 9_600; // 0.6 s of speech — inside the 1.25 s early-utterance window
-        const GAP_SAMPLES: usize = 11_200; // 700 ms pause
+        const SPLIT_SAMPLES: usize = 9_600; // 0.6 s of speech
+        const GAP_SAMPLES: usize = 4_000;   // 250 ms pause (< 400 ms default silence threshold)
 
         state.pipeline.set_state(InteractionState::Ready);
         state.pipeline.turn_id.store(3, Ordering::Relaxed);
@@ -328,7 +313,6 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
         let (vad_cmd_tx, mut producer, vad_join) = spawn_vad(
             stt_tx.clone(),
             vox_event_tx,
-            Arc::clone(&hint_arc),
             state_atomic.clone(),
             turn_id_atomic.clone(),
             Arc::clone(&audio_suppressed),
@@ -352,18 +336,17 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
         );
         assert!(
             !transcript.is_empty(),
-            "composed clip must yield a transcript (700 ms pause absorbed by early-utterance protection)"
+            "composed clip must yield a transcript (250 ms pause absorbed by standard silence duration)"
         );
 
-        // If hangover clipped the 700 ms pause, the split halves would fail ground truth similarity.
+        // Natural pauses inside standard silence duration keep ground truth similarity intact.
         common::scoring::assert_similarity_above(
             &transcript,
             common::ASSET_SUPERTONIC_01_EN_GROUND_TRUTH,
             0.90,
-            "Passive Streaming EN supertonic_01 with 700 ms mid-utterance pause",
+            "Passive Streaming EN supertonic_01 with 250 ms mid-utterance pause",
         );
 
-        // Streaming partials must have flowed into the engine-style hint closure.
         let partial_count = partial_log.lock().map(|guard| guard.len()).unwrap_or(0);
         assert!(
             partial_count > 0,
@@ -393,7 +376,6 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
         let (vad_cmd_tx, mut producer, vad_join) = spawn_vad(
             stt_tx.clone(),
             vox_event_tx,
-            Arc::clone(&hint_arc),
             state_atomic.clone(),
             turn_id_atomic.clone(),
             Arc::clone(&audio_suppressed),
@@ -445,7 +427,6 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
         let (vad_cmd_tx, mut producer, vad_join) = spawn_vad(
             stt_tx.clone(),
             vox_event_tx,
-            Arc::clone(&hint_arc),
             state_atomic.clone(),
             turn_id_atomic.clone(),
             Arc::clone(&audio_suppressed),
@@ -521,7 +502,6 @@ fn silero_vad_segments_speech_and_triggers_auto_silence_stop() {
         ingestion_gate,
         vad_shutdown.clone(),
         vox_event_tx,
-        Arc::new(AtomicBool::new(false)),
     );
 
     // 1. Stream English speech clip
@@ -567,4 +547,23 @@ fn silero_vad_segments_speech_and_triggers_auto_silence_stop() {
         &vox_event_rx,
         "Silero silence guard — vox_event_rx must remain empty for silence frames",
     );
+}
+
+/// PURPOSE:  SmartTurnDetector must gracefully degrade to inactive without errors when model is absent.
+/// SCENARIO: Construct SmartTurnDetector with a non-existent path and evaluate predict_eou.
+/// ASSERTS:  is_loaded is false, predict_eou returns Ok(None).
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   Return Err on absent model path in SmartTurnDetector::new.
+#[test]
+fn smart_turn_detector_gracefully_degrades_when_model_absent() {
+    let fake_path = std::path::PathBuf::from("/non/existent/path/smart_turn.onnx");
+    let detector = vox_lib::services::vad::turn_detector::SmartTurnDetector::new(&fake_path)
+        .expect("SmartTurnDetector::new must succeed with graceful fallback on missing model");
+    assert!(!detector.is_loaded(), "Detector must report not loaded when file is missing");
+    let dummy_audio = vec![0.0f32; 16000];
+    let result = detector
+        .predict_eou(&dummy_audio)
+        .expect("predict_eou must succeed with None when model is absent");
+    assert!(result.is_none(), "predict_eou must return None for dormant detector");
 }

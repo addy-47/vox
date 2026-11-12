@@ -3,6 +3,7 @@ pub mod config;
 pub mod factory;
 pub mod providers;
 pub mod segmenter;
+pub mod turn_detector;
 
 pub use actor::{
     spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles, VadCommand,
@@ -15,10 +16,12 @@ pub use providers::{
     VadBackend, VadEngine,
 };
 pub use segmenter::PreRollBuffer;
+pub use turn_detector::SmartTurnDetector;
 
 pub const MODEL_DIR_VAD: &str = "vad";
 pub const MODEL_FILE_VAD: &str = "ten_vad.onnx";
 pub const MODEL_FILE_VAD_SILERO: &str = "silero_vad.onnx";
+pub const MODEL_FILE_SMART_TURN: &str = "smart_turn.onnx";
 
 /// Input sample rate (Hz) of audio frames evaluated by the VAD actor.
 pub const VAD_INPUT_SAMPLE_RATE: u32 = 16000;

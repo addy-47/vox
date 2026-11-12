@@ -300,9 +300,6 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         .engine_shutdown
         .store(false, Ordering::Relaxed);
 
-    let incomplete_clause_hint = Arc::new(AtomicBool::new(false));
-    let incomplete_clause_hint_for_vad = Arc::clone(&incomplete_clause_hint);
-
     // In remote mode the controller already ran AEC and VAD before sending frames.
     // The host skips both workers and feeds incoming audio directly to STT via
     // SpeechStart / SpeechEnd boundary signals from the audio socket (spec §7.6).
@@ -346,7 +343,6 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
             purged_frames_counter: Arc::new(AtomicU64::new(0)),
             ingestion_gate: Arc::clone(&state.pipeline.ingestion_gate),
             owner_atomic: Arc::clone(&state.owner),
-            incomplete_clause_hint: incomplete_clause_hint_for_vad,
         };
 
         let vad_channels = VadActorChannels {
@@ -379,31 +375,9 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     };
 
     let app_handle = app.clone();
-    let hint_emitter = Arc::clone(&incomplete_clause_hint);
     let partial_emitter = Some(Arc::new(move |turn_id: u32, text: String| {
         let app_state_ref = app_handle.state::<Arc<AppState>>();
         let owner: InteractionOwner = app_state_ref.owner.load(Ordering::Relaxed).into();
-
-        // Heuristic: inspect partial text for trailing incomplete syntax (conjunctions, prepositions, or <=3 words)
-        // and update the VAD actor's incomplete_clause_hint lock-free atomic flag.
-        let trimmed = text.trim();
-        let word_count = trimmed.split_whitespace().count();
-        let ends_with_conjunction = trimmed.ends_with(" and")
-            || trimmed.ends_with(" or")
-            || trimmed.ends_with(" but")
-            || trimmed.ends_with(" the")
-            || trimmed.ends_with(" a")
-            || trimmed.ends_with(" an")
-            || trimmed.ends_with(" to")
-            || trimmed.ends_with(" of")
-            || trimmed.ends_with(" in")
-            || trimmed.ends_with("on")
-            || trimmed.ends_with("और")
-            || trimmed.ends_with("के")
-            || trimmed.ends_with("से")
-            || trimmed.ends_with("पर");
-        let is_incomplete = word_count <= 3 || ends_with_conjunction;
-        hint_emitter.store(is_incomplete, Ordering::Relaxed);
 
         let target = target_window(owner);
         log::debug!(

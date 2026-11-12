@@ -24,25 +24,10 @@ use crate::{
     utils::audio_filters::FilterBank,
 };
 
-/// Fast downward adaptation rate for ambient noise floor when room gets quieter.
-const NOISE_FLOOR_ALPHA_DOWN: f32 = 0.05;
-/// Slow upward adaptation rate for ambient noise floor during steady non-speech background noise.
-const NOISE_FLOOR_ALPHA_UP: f32 = 0.002;
-/// Minimum clamped ambient noise floor RMS.
-const MIN_NOISE_FLOOR_RMS: f32 = 0.0005;
-/// Maximum clamped ambient noise floor RMS so loud environments never deafen onset detection.
-const MAX_NOISE_FLOOR_RMS: f32 = 0.025;
-// Minimum dynamic onset energy gate (RMS) preserving sensitivity in extremely quiet rooms.
-const MIN_ONSET_GATE_RMS: f32 = 0.0012;
-
-/// Minimum speech samples (~1.25s @ 16kHz) before early-utterance pause protection relaxes.
-const EARLY_UTTERANCE_PROTECTION_SAMPLES: usize = 20_000;
-/// Minimum silence hangover frames (50 frames = 800ms) during the first 1.25s of an utterance.
-const EARLY_UTTERANCE_MIN_END_FRAMES: usize = 50;
-/// Extra hangover frames (22 frames = 352ms) added when STT partial indicates an incomplete clause.
-const INCOMPLETE_CLAUSE_EXTRA_FRAMES: usize = 22;
-/// Maximum adaptive hangover frames (68 frames = 1088ms) to keep turn-taking responsive.
-const MAX_ADAPTIVE_END_FRAMES: usize = 68;
+/// Minimum silence frames (~304ms @ 16ms/frame) before querying SmartTurn EOU acoustic prosody.
+const SMART_TURN_SILENCE_FRAMES: usize = 19;
+/// Hard ceiling on mid-thought silence grace period (75 frames = 1200ms) to ensure turn always closes.
+const MAX_SILENCE_CEILING_FRAMES: usize = 75;
 
 /// Bounded circular buffer for retaining pre-roll audio before speech onset.
 #[derive(Debug)]
@@ -178,68 +163,6 @@ pub fn process_and_emit_telemetry(
     raw_energy
 }
 
-/// Updates the asymmetric continuous ambient noise floor tracker during non-speech intervals.
-#[inline]
-fn update_noise_floor(state: &mut VadActorState, raw_energy: f32) {
-    if raw_energy < state.noise_floor_ema {
-        state.noise_floor_ema = (1.0 - NOISE_FLOOR_ALPHA_DOWN) * state.noise_floor_ema
-            + NOISE_FLOOR_ALPHA_DOWN * raw_energy;
-    } else {
-        state.noise_floor_ema = (1.0 - NOISE_FLOOR_ALPHA_UP) * state.noise_floor_ema
-            + NOISE_FLOOR_ALPHA_UP * raw_energy;
-    }
-    state.noise_floor_ema = state
-        .noise_floor_ema
-        .clamp(MIN_NOISE_FLOOR_RMS, MAX_NOISE_FLOOR_RMS);
-}
-
-/// Computes the dynamic SNR-aware energy gate for speech onset.
-#[inline]
-fn compute_dynamic_onset_gate(
-    state: &VadActorState,
-    noise_gate_multiplier: f32,
-    interaction_state: InteractionState,
-) -> f32 {
-    let base_gate = state.noise_gate * noise_gate_multiplier;
-    // Require higher SNR margin during Speaking playback to reject residual acoustic echo
-    let snr_multiplier = if interaction_state == InteractionState::Speaking {
-        3.2
-    } else {
-        2.0
-    };
-    // The floor is already clamped to [MIN_NOISE_FLOOR_RMS, MAX_NOISE_FLOOR_RMS], so the
-    // product stays bounded. An upper clamp here would saturate below `floor * multiplier`
-    // in loud ambient conditions (steady fan/hum), collapsing the SNR margin to ~0 dB and
-    // letting noise bursts pass the onset gate — only the absolute lower bound is clamped.
-    let adaptive_gate = (state.noise_floor_ema * snr_multiplier).max(MIN_ONSET_GATE_RMS);
-    // Blend user-configured floor with live room SNR floor so quiet rooms remain sensitive
-    adaptive_gate.max(base_gate * 0.5)
-}
-
-/// Computes the dynamic silence hangover frame count before SpeechEnd is emitted.
-#[inline]
-fn compute_dynamic_end_frames(state: &VadActorState, handles: &VadActorHandles) -> usize {
-    let base_frames = state.speech_end_frames.max(25);
-
-    // 1. Cadence-derived hangover: adapt to the user's observed intra-sentence pause rhythm (+220ms margin)
-    let cadence_ms = state.smoothed_pause_duration_ms + 220.0;
-    let cadence_frames = (cadence_ms as usize / 16).max(base_frames);
-
-    let mut target_frames = base_frames.max(cadence_frames);
-
-    // 2. Early-utterance protection: speakers frequently pause after the first 2-3 words ("What can you...")
-    if state.speech_sample_counter < EARLY_UTTERANCE_PROTECTION_SAMPLES {
-        target_frames = target_frames.max(EARLY_UTTERANCE_MIN_END_FRAMES);
-    }
-
-    // 3. Semantic / syntax continuation hint from live STT partials (conjunctions, prepositions, <=3 words)
-    if handles.incomplete_clause_hint.load(Ordering::Relaxed) {
-        target_frames += INCOMPLETE_CLAUSE_EXTRA_FRAMES;
-    }
-
-    target_frames.clamp(base_frames, MAX_ADAPTIVE_END_FRAMES)
-}
-
 /// Handles speech start event transition, stream resets, and pre-roll transfer.
 pub fn handle_speech_start(
     state: &mut VadActorState,
@@ -248,11 +171,7 @@ pub fn handle_speech_start(
     vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
 ) {
     state.in_speech = true;
-    state.speech_sample_counter = 0;
     state.voiced_samples = 0;
-    handles
-        .incomplete_clause_hint
-        .store(false, Ordering::Relaxed);
 
     let prev_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
     let interaction_state = InteractionState::from(handles.state_atomic.load(Ordering::Relaxed));
@@ -277,10 +196,9 @@ pub fn handle_speech_start(
     state.current_turn_id = expected_turn_id;
 
     log::info!(
-        "[VAD Actor] Speech Start (turn: {}, prev_atomic: {}, noise_floor_rms: {:.5})",
+        "[VAD Actor] Speech Start (turn: {}, prev_atomic: {})",
         state.current_turn_id,
-        prev_turn_id,
-        state.noise_floor_ema
+        prev_turn_id
     );
 
     if let Some(tx) = vox_event_tx {
@@ -328,11 +246,7 @@ pub fn handle_speech_end(
     state.onset_score = 0.0;
     state.active_frames = 0;
     state.inactive_frames = 0;
-    state.speech_sample_counter = 0;
     state.voiced_samples = 0;
-    handles
-        .incomplete_clause_hint
-        .store(false, Ordering::Relaxed);
 
     let atomic_tid = handles.turn_id_atomic.load(Ordering::Relaxed);
     if atomic_tid > 0 {
@@ -393,7 +307,6 @@ pub fn accumulate_speech_frames(
 ) {
     state.utterance_buffer.extend_from_slice(chunk);
     state.samples_since_partial += chunk.len();
-    state.speech_sample_counter += chunk.len();
 
     if state.realtime_tx.is_none() {
         if let Err(e) = stt_tx.send(SttCommand::StreamChunk {
@@ -405,7 +318,7 @@ pub fn accumulate_speech_frames(
     }
 }
 
-/// Executes ContinuousSegmentation mode with SNR-adaptive leaky onset and cadence-aware hangover.
+/// Executes ContinuousSegmentation mode with acoustic VAD and SmartTurn prosodic turn-taking.
 pub fn process_continuous_segmentation(
     chunk: &[f32],
     raw_energy: f32,
@@ -419,20 +332,26 @@ pub fn process_continuous_segmentation(
     let interaction_state = InteractionState::from(handles.state_atomic.load(Ordering::Relaxed));
 
     if !state.in_speech {
-        let onset_gate =
-            compute_dynamic_onset_gate(state, vad.noise_gate_multiplier(), interaction_state);
-        // Require slightly firmer confirmation when barging in over active playback
+        // Continuous adaptive noise floor tracking on non-speech frames
+        // During Speaking, require higher SNR margin and minimum gate floor (0.038 RMS)
+        // to cleanly reject residual acoustic loudspeaker echo before AEC fully converges.
+        let base_gate = state.noise_gate * vad.noise_gate_multiplier();
+        let onset_gate = if interaction_state == InteractionState::Speaking {
+            (state.noise_floor_ema * 3.5).max(base_gate * 2.0).max(0.038)
+        } else {
+            (state.noise_floor_ema * 2.0).max(base_gate * 0.5)
+        };
+        let is_speech_chunk = vad_detected && raw_energy >= onset_gate;
+
+        // Require firmer confirmation when barging in over active playback to prevent echo bleed
         let base_start_frames = state.speech_start_frames.max(2) as f32;
         let required_onset_score = if interaction_state == InteractionState::Speaking {
-            (base_start_frames * 1.5).max(5.0)
+            (base_start_frames * 2.0).max(4.0)
         } else {
             base_start_frames
         };
 
-        let is_onset_speech = vad_detected && raw_energy >= onset_gate;
-
-        if is_onset_speech {
-            // Boost onset score for high-SNR speech bursts so clear syllables trigger faster
+        if is_speech_chunk {
             let snr_boost = if raw_energy >= onset_gate * 2.5 {
                 1.35
             } else {
@@ -447,22 +366,22 @@ pub fn process_continuous_segmentation(
                 state.voiced_samples += chunk.len();
                 accumulate_speech_frames(chunk, state, stt_tx);
             } else {
-                // Retain sub-threshold onset frames in pre-roll so the entire rising edge is preserved
                 state.pre_roll_buffer.push(chunk);
             }
         } else {
-            // Leaky decay instead of instant zero reset so unvoiced plosives (/p/, /t/, /k/) don't wipe progress
+            // Leaky decay so brief unvoiced plosives (/p/, /t/, /k/) don't immediately wipe onset progress
             state.onset_score = (state.onset_score - 0.5).max(0.0);
             if state.onset_score == 0.0 {
                 state.active_frames = 0;
             }
             state.inactive_frames += 1;
-            // Track the ambient floor on every frame that did not qualify as onset speech.
-            // Restricting updates to `!vad_detected` frames biased the floor downward: the
-            // loudest noise bursts (which the neural detector labels "speech") never reached
-            // the tracker, so the gate stayed below the true ambient level precisely when a
-            // steady noise source (fan/hum) produced transient peaks above it.
-            update_noise_floor(state, raw_energy);
+            // Adapt ambient noise floor EMA during non-speech frames
+            if raw_energy < state.noise_floor_ema {
+                state.noise_floor_ema = 0.95 * state.noise_floor_ema + 0.05 * raw_energy;
+            } else {
+                state.noise_floor_ema = 0.998 * state.noise_floor_ema + 0.002 * raw_energy;
+            }
+            state.noise_floor_ema = state.noise_floor_ema.clamp(0.0005, 0.035);
             state.pre_roll_buffer.push(chunk);
         }
     } else {
@@ -473,12 +392,6 @@ pub fn process_continuous_segmentation(
         }
 
         if vad_detected {
-            // If recovering from a mid-sentence micro-pause (>= 4 frames = 64ms), adapt cadence EMA
-            if state.inactive_frames >= 4 {
-                let pause_ms = (state.inactive_frames * 16) as f32;
-                state.smoothed_pause_duration_ms =
-                    0.75 * state.smoothed_pause_duration_ms + 0.25 * pause_ms;
-            }
             state.active_frames += 1;
             state.inactive_frames = 0;
             state.voiced_samples += chunk.len();
@@ -487,16 +400,33 @@ pub fn process_continuous_segmentation(
             state.inactive_frames += 1;
             state.active_frames = 0;
 
-            let dynamic_end_threshold = compute_dynamic_end_frames(state, handles);
-            if state.inactive_frames >= dynamic_end_threshold {
+            let base_end_frames = state.speech_end_frames.max(1);
+            let is_turn_complete = if let Some(ref detector) = state.turn_detector {
+                if state.inactive_frames >= SMART_TURN_SILENCE_FRAMES {
+                    match detector.predict_eou(&state.utterance_buffer) {
+                        Ok(Some(prob)) => {
+                            if prob >= 0.6 {
+                                true
+                            } else {
+                                // Mid-thought pause: hold turn open up to 1200ms ceiling (75 frames)
+                                state.inactive_frames >= MAX_SILENCE_CEILING_FRAMES
+                            }
+                        }
+                        _ => state.inactive_frames >= base_end_frames,
+                    }
+                } else {
+                    false
+                }
+            } else {
+                state.inactive_frames >= base_end_frames
+            };
+
+            if is_turn_complete {
                 handle_speech_end(vad, state, handles, stt_tx, vox_event_tx);
                 state.pre_roll_buffer.push(chunk);
             } else {
                 accumulate_speech_frames(chunk, state, stt_tx);
-                // Also keep feeding recent trailing silence into pre_roll_buffer so if SpeechEnd
-                // fires and the user resumes speaking immediately (< 200ms later), pre_roll_buffer
-                // already holds the boundary context!
-                if state.inactive_frames > dynamic_end_threshold.saturating_sub(20) {
+                if state.inactive_frames > base_end_frames.saturating_sub(20) {
                     state.pre_roll_buffer.push(chunk);
                 }
             }
@@ -626,7 +556,6 @@ mod tests {
                 owner_atomic: Arc::new(std::sync::atomic::AtomicU32::new(
                     InteractionOwner::Assistant as u32,
                 )),
-                incomplete_clause_hint: Arc::new(AtomicBool::new(false)),
             };
             Self {
                 state: VadActorState::new(
@@ -824,30 +753,6 @@ mod tests {
         assert_eq!(rig.events().len(), 1, "the fourth frame must barge in");
     }
 
-    #[test]
-    fn early_utterance_pause_holds_end_for_800ms() {
-        let mut rig = Rig::new(32, 100, 0.01); // base hangover is 6 frames
-        rig.step(true);
-        rig.step(true);
-        for _ in 0..40 {
-            rig.step(false);
-        }
-        let early = rig.events();
-        assert!(
-            !early
-                .iter()
-                .any(|e| matches!(e, VoxEvent::SpeechEnd { .. })),
-            "turn must stay open for 40 frames of early pause"
-        );
-        for _ in 0..10 {
-            rig.step(false);
-        }
-        let late = rig.events();
-        assert!(
-            late.iter().any(|e| matches!(e, VoxEvent::SpeechEnd { .. })),
-            "turn must close at the 50-frame early-utterance threshold"
-        );
-    }
 
     #[test]
     fn silence_emits_no_events_and_no_stt_commands() {
@@ -1044,87 +949,30 @@ mod tests {
     }
 
     #[test]
-    fn onset_gate_keeps_snr_margin_at_loud_ambient_floor() {
-        let mut state = VadActorState::new(
-            0.5,
-            0.003,
-            400,
-            64,
-            InteractionMode::Passive,
-            AudioOutputMode::Speaker,
-        );
-        state.noise_floor_ema = 0.0227;
+    fn tier1_fallback_uses_configured_silence_duration() {
+        // silence_ms = 160 => 10 frames of 16ms
+        let mut rig = Rig::new(32, 160, 0.01);
+        rig.step(true);
+        rig.step(true); // turn opens
+        assert!(rig.state.in_speech);
 
-        let gate = compute_dynamic_onset_gate(&state, 1.0, InteractionState::Ready);
-        assert!(
-            (gate - 0.0454).abs() < 1e-4,
-            "2x SNR margin must survive at loud ambient floors (got {})",
-            gate
-        );
-
-        let echo_gate = compute_dynamic_onset_gate(&state, 1.0, InteractionState::Speaking);
-        assert!(
-            (echo_gate - 0.0726).abs() < 1e-4,
-            "3.2x echo gate must survive at loud ambient floors (got {})",
-            echo_gate
-        );
-    }
-
-    #[test]
-    fn onset_gate_clamps_to_minimum_in_quiet_room() {
-        let mut state = VadActorState::new(
-            0.5,
-            0.003,
-            400,
-            64,
-            InteractionMode::Passive,
-            AudioOutputMode::Speaker,
-        );
-        state.noise_floor_ema = MIN_NOISE_FLOOR_RMS;
-
-        let gate = compute_dynamic_onset_gate(&state, 1.0, InteractionState::Ready);
-        assert!(
-            gate >= MIN_ONSET_GATE_RMS,
-            "gate must never fall below the absolute minimum (got {})",
-            gate
-        );
-    }
-
-    #[test]
-    fn noise_floor_decays_fast_rises_slow_and_clamps() {
-        let mut state = VadActorState::new(
-            0.5,
-            0.003,
-            400,
-            64,
-            InteractionMode::Passive,
-            AudioOutputMode::Speaker,
-        );
-        state.noise_floor_ema = 0.01;
-
-        for _ in 0..200 {
-            update_noise_floor(&mut state, 0.001);
+        for _ in 0..9 {
+            rig.step(false);
         }
         assert!(
-            state.noise_floor_ema < 0.002,
-            "fast downward adaptation expected (got {})",
-            state.noise_floor_ema
+            rig.state.in_speech,
+            "turn must stay open before silence duration is reached"
         );
 
-        for _ in 0..200 {
-            update_noise_floor(&mut state, MIN_NOISE_FLOOR_RMS);
-        }
+        rig.step(false); // 10th frame reaches configured silence duration
         assert!(
-            (state.noise_floor_ema - MIN_NOISE_FLOOR_RMS).abs() < 1e-6,
-            "floor must clamp to MIN_NOISE_FLOOR_RMS"
+            !rig.state.in_speech,
+            "turn must close upon reaching configured silence duration"
         );
-
-        for _ in 0..50_000 {
-            update_noise_floor(&mut state, 1.0);
-        }
+        let events = rig.events();
         assert!(
-            (state.noise_floor_ema - MAX_NOISE_FLOOR_RMS).abs() < 1e-6,
-            "floor must clamp to MAX_NOISE_FLOOR_RMS"
+            events.iter().any(|e| matches!(e, VoxEvent::SpeechEnd { .. })),
+            "SpeechEnd must be emitted at silence threshold"
         );
     }
 }
