@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type SortOrder = "newest" | "oldest" | "turns";
+export type SortOrder = "newest" | "oldest" | "turns" | "uncompacted";
 
 interface RecallSearchState {
   /** Whether the user is currently in Search / Recall Mode on Home */

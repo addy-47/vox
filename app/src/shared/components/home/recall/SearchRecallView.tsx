@@ -1,11 +1,11 @@
 import { memo, useRef, useEffect, useState, useCallback } from "react";
-import { Search, ChevronDown, Check } from "lucide-react";
+import { Search, ChevronDown, Check, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { RecallArcCarousel } from "./RecallArcCarousel";
 import { RecallTimelineScrubber } from "./RecallTimelineScrubber";
 import { DetailPanel } from "./DetailPanel";
 import { useRecallSearch, type SortOrder } from "./useRecallSearch";
-import { isBoundaryCard, isSkeletonCard } from "./recallTypes";
+import { type SessionRow } from "@/services/persistenceService";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { SESSION_COPY } from "@/data/sessionCopy";
 import { isRealMobileDevice } from "@/layout/breakpoints";
@@ -81,8 +81,8 @@ export const SearchRecallView = memo(({
 
       if ((e.shiftKey && e.key === "ArrowUp") || e.key === "Enter") {
         e.preventDefault();
-        const activeCard = carouselItems[activeIndex];
-        if (activeCard && !isSkeletonCard(activeCard) && !isBoundaryCard(activeCard)) {
+        const activeCard = carouselItems[activeIndex] as SessionRow | undefined;
+        if (activeCard) {
           openSessionDetail(activeCard);
         }
         return;
@@ -117,6 +117,16 @@ export const SearchRecallView = memo(({
     active: isSearchFocused,
   });
 
+  useEffect(() => {
+    const t0 = performance.now();
+    console.info(
+      `[trace-search] SearchRecallView mounted @${t0.toFixed(1)}ms. Sessions: ${sessions.length}, Filtered: ${filteredSessions.length}`
+    );
+    return () => {
+      console.info(`[trace-search] SearchRecallView unmounted @${performance.now().toFixed(1)}ms`);
+    };
+  }, [sessions.length, filteredSessions.length]);
+
   return (
     <div className="absolute inset-0 z-30 w-full h-full pointer-events-none select-none">
       {/* ── Top Header Controls (Glides down smoothly directly above the Orb, matching DynamicStatusBadge) ── */}
@@ -142,10 +152,10 @@ export const SearchRecallView = memo(({
           <span className="text-[11px] opacity-50 font-mono">Esc</span>
         </button>
 
-        {/* Search Bar matching mockup */}
+        {/* Underline Search Input: matching Memory page architecture */}
         <div className="relative w-full max-w-md">
-          <div className="relative flex items-center w-full rounded-2xl glass-card border border-[rgba(var(--border),0.12)] bg-[rgb(var(--card))]/90 hover:border-[rgba(var(--border),0.25)] focus-within:border-[rgba(var(--accent-complementary),0.6)] focus-within:shadow-[0_0_20px_rgba(var(--accent-complementary),0.22)] backdrop-blur-md transition-colors px-3.5 py-2">
-            <Search size={15} className="text-[rgb(var(--foreground-muted))] shrink-0 mr-2.5" />
+          <div className="flex items-center gap-2 py-1.5 border-b border-[rgba(var(--foreground),0.18)] focus-within:border-[rgba(var(--accent),0.8)] transition-colors duration-200 w-full shrink-0">
+            <Search size={13} className="text-[rgb(var(--accent))] shrink-0 opacity-70" />
             <input
               ref={searchInputRef}
               type="text"
@@ -154,17 +164,28 @@ export const SearchRecallView = memo(({
               onFocus={() => setIsSearchFocused(true)}
               onBlur={() => setIsSearchFocused(false)}
               placeholder={SESSION_COPY.searchConversationsPlaceholder}
-              className="flex-1 min-w-0 bg-transparent text-[13.5px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 outline-none font-sans"
+              className="flex-1 min-w-0 bg-transparent text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
             />
-            <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.08)] text-[11px] font-mono text-[rgb(var(--foreground-muted))]/70 leading-none select-none">
-              /
-            </span>
+            {searchQuery ? (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="p-0.5 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer shrink-0 transition-colors"
+                aria-label="Clear search"
+              >
+                <X size={12} />
+              </button>
+            ) : (
+              <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.08)] text-[11px] font-mono text-[rgb(var(--foreground-muted))]/70 leading-none select-none">
+                /
+              </span>
+            )}
           </div>
 
           {/* Subtitle: Count & Sort options */}
           <div className="flex items-center justify-center gap-2 mt-1.5 text-[11.5px] font-sans text-[rgb(var(--foreground-muted))]/70">
             <span>
-              {filteredSessions.length} {filteredSessions.length === 1 ? SESSION_COPY.turnSingular === "turn" ? "conversation" : "conversation" : "conversations"}
+              {filteredSessions.length} {filteredSessions.length === 1 ? "conversation" : "conversations"}
             </span>
             <span>·</span>
 
@@ -176,14 +197,20 @@ export const SearchRecallView = memo(({
                 className="flex items-center gap-1 text-[rgb(var(--foreground))] hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
               >
                 <span>
-                  {sortOrder === "newest" ? SESSION_COPY.sortNewest : sortOrder === "oldest" ? SESSION_COPY.sortOldest : SESSION_COPY.sortTurns}
+                  {sortOrder === "newest"
+                    ? SESSION_COPY.sortNewest
+                    : sortOrder === "oldest"
+                    ? SESSION_COPY.sortOldest
+                    : sortOrder === "turns"
+                    ? SESSION_COPY.sortTurns
+                    : SESSION_COPY.sortUncompacted}
                 </span>
                 <ChevronDown size={12} />
               </button>
 
               {sortMenuOpen && (
                 <div className="absolute top-full mt-1.5 left-1/2 -translate-x-1/2 rounded-xl glass-card border border-[rgba(var(--border),0.15)] bg-[rgb(var(--card))]/95 shadow-xl backdrop-blur-md py-1 min-w-[130px] z-50 animate-in fade-in zoom-in-95">
-                  {(["newest", "oldest", "turns"] as SortOrder[]).map((option) => (
+                  {(["newest", "oldest", "turns", "uncompacted"] as SortOrder[]).map((option) => (
                     <button
                       key={option}
                       type="button"
@@ -194,7 +221,13 @@ export const SearchRecallView = memo(({
                       className="w-full flex items-center justify-between px-3 py-1.5 text-left text-[12px] text-[rgb(var(--foreground))] hover:bg-[rgba(var(--accent),0.08)] cursor-pointer"
                     >
                       <span>
-                        {option === "newest" ? SESSION_COPY.sortNewest : option === "oldest" ? SESSION_COPY.sortOldest : SESSION_COPY.sortTurns}
+                        {option === "newest"
+                          ? SESSION_COPY.sortNewest
+                          : option === "oldest"
+                          ? SESSION_COPY.sortOldest
+                          : option === "turns"
+                          ? SESSION_COPY.sortTurns
+                          : SESSION_COPY.sortUncompacted}
                       </span>
                       {sortOrder === option && <Check size={12} className="text-[rgb(var(--accent))]" />}
                     </button>
@@ -223,6 +256,7 @@ export const SearchRecallView = memo(({
             activeIndex={activeIndex}
             projectNameMap={projectNameMap}
             onSelectIndex={selectIndex}
+            onLiveIndexChange={selectIndex}
             onOpenSession={openSessionDetail}
             onDeleteSession={handleDeleteSession}
           />

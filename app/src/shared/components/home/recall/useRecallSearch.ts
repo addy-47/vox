@@ -42,13 +42,12 @@ export function useRecallSearch() {
 
   // Debounced backend search across session titles and turn transcripts
   useEffect(() => {
-    const q = searchQuery.trim();
-    if (!q) {
-      setSearchResults(null);
-      return;
-    }
-
     const timer = window.setTimeout(() => {
+      const q = searchQuery.trim();
+      if (!q) {
+        setSearchResults(null);
+        return;
+      }
       searchHistory(q, null, 100)
         .then((hits) => {
           setSearchResults(hits.map((h) => h.session));
@@ -116,7 +115,10 @@ export function useRecallSearch() {
       });
     }
 
-    if (sortOrder === "turns") {
+    if (sortOrder === "uncompacted") {
+      result = result.filter((s) => s.uncompacted_turns > 0);
+      result.sort((a, b) => b.uncompacted_turns - a.uncompacted_turns);
+    } else if (sortOrder === "turns") {
       result.sort((a, b) => b.turn_count - a.turn_count);
     } else if (sortOrder === "oldest") {
       result.sort((a, b) => a.created_at - b.created_at);
@@ -166,21 +168,21 @@ export function useRecallSearch() {
 
   const selectIndex = useCallback((index: number) => {
     setUserNavigatedIndex(Math.max(0, Math.min(index, maxRealIndex)));
-  }, [maxRealIndex]);
+  }, [maxRealIndex, setUserNavigatedIndex]);
 
   const nextCard = useCallback(() => {
     setUserNavigatedIndex((prev) => {
       const current = prev ?? (sortOrder === "newest" ? maxRealIndex : 0);
       return Math.min(current + 1, maxRealIndex);
     });
-  }, [maxRealIndex, sortOrder]);
+  }, [maxRealIndex, sortOrder, setUserNavigatedIndex]);
 
   const prevCard = useCallback(() => {
     setUserNavigatedIndex((prev) => {
       const current = prev ?? (sortOrder === "newest" ? maxRealIndex : 0);
       return Math.max(current - 1, 0);
     });
-  }, [maxRealIndex, sortOrder]);
+  }, [maxRealIndex, sortOrder, setUserNavigatedIndex]);
 
   return {
     sessions,

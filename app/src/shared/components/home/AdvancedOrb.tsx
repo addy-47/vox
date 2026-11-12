@@ -549,7 +549,7 @@ export const VoxOrb = React.memo(({
   const [isUserHovering, setIsUserHovering] = useState(false);
 
   useEffect(() => {
-    if (!isCalm || isTransitioning || isUserHovering) {
+    if (paused || !isCalm || isTransitioning || isUserHovering) {
       setIsSettledIdle(false);
       return;
     }
@@ -557,7 +557,7 @@ export const VoxOrb = React.memo(({
       setIsSettledIdle(true);
     }, 3000);
     return () => clearTimeout(timer);
-  }, [isCalm, isTransitioning, isUserHovering]);
+  }, [isCalm, isTransitioning, isUserHovering, paused]);
 
   /**
    * Runtime scene context — populated by the init effect below.
@@ -1042,7 +1042,30 @@ export const VoxOrb = React.memo(({
       work: 0,
     };
 
+    // Immediately paint an initial static frame so the WebGL canvas is never blank or transparent on mount
+    try {
+      renderer.render(scene, camera);
+      if (!firstFrameFiredRef.current) {
+        firstFrameFiredRef.current = true;
+        onFirstFrameRef.current?.();
+        setEntered(true);
+      }
+    } catch (e) {
+      console.debug("[AdvancedOrb] Failed to render initial frame:", e);
+    }
+
+    const handleContextRestored = () => {
+      console.info("[AdvancedOrb] WebGL context restored; re-rendering static frame");
+      try {
+        renderer.render(scene, camera);
+      } catch (e) {
+        console.debug("[AdvancedOrb] Error rendering on context restore:", e);
+      }
+    };
+    renderer.domElement.addEventListener("webglcontextrestored", handleContextRestored);
+
     return () => {
+      renderer.domElement.removeEventListener("webglcontextrestored", handleContextRestored);
       sceneRef.current = null;
       resizeObs.disconnect();
       unsubGate();

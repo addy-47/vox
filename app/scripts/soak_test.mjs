@@ -287,8 +287,8 @@ async function main() {
         },
       },
       {
-        path: "/history",
-        name: "History",
+        path: "/?mode=search",
+        name: "RecallSearch",
         dwellSec: isQuick ? 2.5 : 5,
         interact: async () => {
           // Type into search bar and open session card detail drawer
@@ -299,7 +299,7 @@ async function main() {
                 input.value = "Audio";
                 input.dispatchEvent(new Event("input", { bubbles: true }));
               }
-              const card = document.querySelector('[data-session-card]') || document.querySelector('button.group');
+              const card = document.querySelector('[role="button"]') || document.querySelector('button.group');
               if (card) card.click();
             `,
           });

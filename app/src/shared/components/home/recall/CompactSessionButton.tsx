@@ -8,7 +8,7 @@ import { cn } from "@/shared/lib/utils";
 export interface CompactSessionButtonProps {
   sessionId: number;
   uncompactedTurns: number;
-  variant?: "button" | "icon";
+  variant?: "button" | "icon" | "chip";
   className?: string;
 }
 
@@ -42,6 +42,30 @@ export const CompactSessionButton = memo(({
   const label = isCompacting
     ? HISTORY_COPY.compactingSession
     : HISTORY_COPY.compactSession;
+
+  if (variant === "chip") {
+    return (
+      <Tooltip label={`${label} (${uncompactedTurns})`} side="top">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={handleClick}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded-md border border-[rgba(var(--accent),0.3)] bg-[rgba(var(--accent),0.06)] hover:bg-[rgba(var(--accent),0.15)] text-[11px] font-mono text-[rgb(var(--accent))] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
+            className
+          )}
+          aria-label={`${label} (${uncompactedTurns})`}
+        >
+          {isCompacting ? (
+            <Loader2 size={11} className="animate-spin shrink-0 text-[rgb(var(--accent))]" />
+          ) : (
+            <Shrink size={11} className="shrink-0 text-[rgb(var(--accent))]" />
+          )}
+          <span>{isCompacting ? HISTORY_COPY.compactingSession : HISTORY_COPY.compactSession}</span>
+        </button>
+      </Tooltip>
+    );
+  }
 
   if (variant === "icon") {
     return (

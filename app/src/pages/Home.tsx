@@ -41,6 +41,7 @@ import {
   getCachedSessions,
   type SessionRow,
 } from "@/services/persistenceService";
+import { getProjects } from "@/services/projectsService";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 
 const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; id: number } }) => (
@@ -140,22 +141,39 @@ export const Home = memo(() => {
     }
   }, [isSearchMode, searchParams, setSearchParams]);
 
+  // Prewarm conversation sessions & projects in background idle so EdgePanel & Search Mode open with 0ms IPC lag
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void getSessions().catch(() => {});
+      void getProjects().catch(() => {});
+    }, 60);
+    return () => clearTimeout(timer);
+  }, []);
+
   const enterSearchMode = useCallback(() => {
+    const t0 = performance.now();
+    console.info(`[trace-search] enterSearchMode triggered @${t0.toFixed(1)}ms`);
     setIsSearchModeStore(true);
     setSearchParams((prev) => {
+      if (prev.get("mode") === "search") return prev;
       const next = new URLSearchParams(prev);
       next.set("mode", "search");
       return next;
     }, { replace: true });
+    console.info(`[trace-search] enterSearchMode finished @${performance.now().toFixed(1)}ms (+${(performance.now() - t0).toFixed(1)}ms)`);
   }, [setIsSearchModeStore, setSearchParams]);
 
   const exitSearchMode = useCallback(() => {
+    const t0 = performance.now();
+    console.info(`[trace-search] exitSearchMode triggered @${t0.toFixed(1)}ms`);
     exitSearchModeStore();
     setSearchParams((prev) => {
+      if (!prev.has("mode")) return prev;
       const next = new URLSearchParams(prev);
       next.delete("mode");
       return next;
     }, { replace: true });
+    console.info(`[trace-search] exitSearchMode finished @${performance.now().toFixed(1)}ms (+${(performance.now() - t0).toFixed(1)}ms)`);
   }, [exitSearchModeStore, setSearchParams]);
 
   const [homeDrawerSession, setHomeDrawerSession] = useState<SessionRow | null>(null);
@@ -369,7 +387,17 @@ export const Home = memo(() => {
             className="absolute inset-0 rounded-full border border-[rgb(var(--accent))]/10 transition-all duration-1000 scale-90 opacity-60"
           />
         )}
-        <div className="relative w-full h-full flex items-center justify-center">
+        <div
+          className="relative w-full h-full flex items-center justify-center transition-[mask-image,-webkit-mask-image] duration-500 ease-out"
+          style={{
+            maskImage: isSearchMode
+              ? "linear-gradient(to bottom, black 0%, black 35%, rgba(0,0,0,0.65) 50%, rgba(0,0,0,0.2) 65%, transparent 80%)"
+              : undefined,
+            WebkitMaskImage: isSearchMode
+              ? "linear-gradient(to bottom, black 0%, black 35%, rgba(0,0,0,0.65) 50%, rgba(0,0,0,0.2) 65%, transparent 80%)"
+              : undefined,
+          }}
+        >
           <OrbitField
             interactionState={isSearchMode ? "Idle" : (isRemoteActive ? "Sleeping" : interactionState)}
             activity={isSearchMode ? undefined : activeActivity?.name}
@@ -382,7 +410,7 @@ export const Home = memo(() => {
                   telemetryRef={telemetryRef}
                   interactionState={isSearchMode ? "Idle" : (isRemoteActive ? "Sleeping" : interactionState)}
                   isSleeping={isSleeping || isRemoteActive}
-                  paused={isSearchMode || isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
+                  paused={isPanelOpen("sessions") || isPanelOpen("notifications") || isPanelOpen("help")}
                 />
               </Suspense>
             </ErrorBoundary>
@@ -626,7 +654,7 @@ export const Home = memo(() => {
           sessionPanelUiStore/sessionPanelScrollTop. */}
       <EdgePanel side="left" open={isPanelOpen("sessions")} onClose={closeSessions} minimalHeader>
         <ErrorBoundary name="SessionPanel">
-          <SessionPanel onClose={closeSessions} onSearch={enterSearchMode} />
+          <SessionPanel onClose={closeSessions} onSearch={enterSearchMode} onExitSearch={exitSearchMode} />
         </ErrorBoundary>
       </EdgePanel>
 

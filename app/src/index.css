@@ -15,10 +15,16 @@
   }
 }
 
-/* Search mode orb halo — subtle atmospheric breathe */
+/* Search mode orb halo — atmospheric slow breathe pulse */
 @keyframes vox-halo-breathe {
-  0%, 100% { opacity: 0.82; }
-  50%       { opacity: 1; }
+  0%, 100% {
+    opacity: 0.50;
+    transform: translateZ(0) scale(0.96);
+  }
+  50% {
+    opacity: 0.95;
+    transform: translateZ(0) scale(1.03);
+  }
 }
 
 :root {

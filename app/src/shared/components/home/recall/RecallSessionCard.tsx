@@ -7,6 +7,7 @@ import { RECALL_CARD_WIDTH, RECALL_CARD_HEIGHT } from "./recallArcMath";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { isBoundaryCard, isSkeletonCard, type CarouselItemData } from "./recallTypes";
 import { SESSION_COPY } from "@/data/sessionCopy";
+import { CompactSessionButton } from "./CompactSessionButton";
 
 export interface RecallSessionCardProps {
   item: CarouselItemData;
@@ -181,11 +182,18 @@ export const RecallSessionCard = memo(({
         )}
       </div>
 
-      {/* Bottom: Turn count */}
+      {/* Bottom: Turn count & optional Compaction button */}
       <div className="shrink-0 pt-1 flex items-center justify-between text-[11px] font-mono text-[rgb(var(--foreground-muted))]/70">
         <span>
           {session.turn_count} {session.turn_count === 1 ? SESSION_COPY.turnSingular : SESSION_COPY.turnPlural}
         </span>
+        {session.uncompacted_turns > 0 && (
+          <CompactSessionButton
+            sessionId={session.id}
+            uncompactedTurns={session.uncompacted_turns}
+            variant="chip"
+          />
+        )}
       </div>
     </div>
   );

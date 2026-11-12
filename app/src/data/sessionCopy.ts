@@ -16,6 +16,7 @@ export const SESSION_COPY = {
   sortNewest: "Newest first",
   sortOldest: "Oldest first",
   sortTurns: "Most turns",
+  sortUncompacted: "Needs compaction",
   automations: "Automations",
   customizations: "Customizations",
   comingSoon: "Coming soon",
