@@ -143,3 +143,27 @@ Other verified results:
 - `e2e_voice_pipeline_test` after the ignore: **3/3 pass, 1 skipped (19.45 s)**. Scenes 1, 2 and 4 pass; Scene 3 is skipped under F-005. Before the ignore, the combined run was 3/4: Scene 3 `mid_thought_continuation_combines_both_bursts` failed at the merged-turn persistence assertion after 505.87 s (`the merged turn must persist to the database`, e2e_voice_pipeline_test.rs:481) with `FAIL + LEAK`. Re-run in isolation with no stale sidecars: **same failure, 506.58 s**. Logs show the merge worked (turn 3 was dispatched) but the LLM emitted no token for 30 s: `Stream timed out after 30s idle (turn 3)` → `LLM provider response timed out after 30s`. The scene keeps its exact assertion and is now `#[ignore]` (F-005).
 
 A tauri `state() called before manage() for Arc<AppState>` panic still appears on a worker thread during the E2E and TTS-adjacent runs. It does not fail the test, but it is unresolved test-rig hygiene and is recorded here rather than fixed inside production.
+
+---
+
+## F-006 — Compilation failure in SmartTurnDetector (`src/services/vad/turn_detector.rs`)
+Seam: VAD / Smart Turn-Taking (`services::vad::turn_detector`)
+Tests: `cargo check --tests --release` (blocks full test suite compilation)
+Symptom: `vox_lib` fails to compile with 10 type errors:
+1. `ort::Error<SessionBuilder>` returned by `Session::builder()?.with_intra_threads(1)?` does not implement `Send` / `Sync`, so `?` fails to convert to `anyhow::Error`.
+2. `val.try_extract_tensor::<f32>()` returns `Result<(&Shape, &[f32]), ...>` which does not have a `.view()` method (`error[E0599]: no method named view found for tuple (&ort::value::Shape, &[f32])`).
+Suspected cause: `src/services/vad/turn_detector.rs` lines 31-33 and line 79.
+Impact: Entire workspace (`vox_lib` and all integration tests) fails to compile.
+Status: **FIXED** — backend engineer wrapped builder calls with `.map_err(|e| anyhow!("{e}"))?` and accessed `tensor_view.1.first()`. Test binary compiles and passes (`vad_segmentation_test`: 3/3 passed, 49.89s).
+
+---
+
+## F-007 — Clippy `-D warnings` failures in VAD production modules
+Seam: VAD / Turn Detection (`src/services/vad/{segmenter,turn_detector}.rs`)
+Tests: `cargo clippy --tests --release -- -D warnings -A clippy::disallowed_methods`
+Symptom: Clippy fails on 3 lints in production `vox_lib`:
+1. `src/services/vad/segmenter.rs:500:1`: `empty_line_after_doc_comments` (line 501 is empty between doc comment and `#[cfg(test)] mod tests`).
+2. `src/services/vad/turn_detector.rs:12:5`: `dead_code` on `model_path` field in `SmartTurnDetector`.
+3. `src/services/vad/turn_detector.rs:83:35`: `clippy::manual_range_contains` (`if !(0.0..=1.0).contains(&first_val)` instead of `< 0.0 || > 1.0`).
+Impact: Fails strict clippy gates. Integration tests themselves have zero clippy warnings.
+Status: open — pending backend engineer lint cleanup in `src/`.

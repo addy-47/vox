@@ -88,13 +88,12 @@ pub struct VadActorState {
     pub utterance_buffer: Vec<f32>,
     pub pre_roll_buffer: PreRollBuffer,
     pub realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>>,
+    pub turn_detector: Option<super::turn_detector::SmartTurnDetector>,
 
-    // Dynamic Noise-Floor & Adaptive Cadence / Hangover State
+    // Dynamic Ambient Noise Floor & Energy Integration
     pub noise_floor_ema: f32,
     pub onset_score: f32,
-    pub speech_sample_counter: usize,
     pub voiced_samples: usize,
-    pub smoothed_pause_duration_ms: f32,
 
     // WindowedValidation state tracking
     pub window_active: bool,
@@ -131,7 +130,6 @@ pub struct VadActorHandles {
     pub purged_frames_counter: Arc<AtomicU64>,
     pub ingestion_gate: Arc<AtomicBool>,
     pub owner_atomic: Arc<AtomicU32>,
-    pub incomplete_clause_hint: Arc<AtomicBool>,
 }
 
 /// Communication channels utilized by the VAD actor.
@@ -178,11 +176,18 @@ impl VadActorState {
             ),
             pre_roll_buffer: PreRollBuffer::new(VAD_PRE_ROLL_CAPACITY),
             realtime_tx: None,
-            noise_floor_ema: 0.002, // Initial baseline ambient room noise floor estimate
+            turn_detector: {
+                crate::utils::paths::try_get().and_then(|paths| {
+                    let smart_turn_path = paths
+                        .models
+                        .join(super::MODEL_DIR_VAD)
+                        .join(super::MODEL_FILE_SMART_TURN);
+                    super::turn_detector::SmartTurnDetector::new(&smart_turn_path).ok()
+                })
+            },
+            noise_floor_ema: 0.002,
             onset_score: 0.0,
-            speech_sample_counter: 0,
             voiced_samples: 0,
-            smoothed_pause_duration_ms: 300.0,
             window_active: false,
             window_sample_offset: 0,
             window_speech_detected: false,

@@ -240,7 +240,6 @@ pub fn setup_vad_actor(
     ingestion_gate: Arc<AtomicBool>,
     engine_shutdown: Arc<AtomicBool>,
     vox_event_tx: Sender<VoxEvent>,
-    incomplete_clause_hint: Arc<AtomicBool>,
 ) -> (
     Sender<VadCommand>,
     RbProducer,
@@ -268,7 +267,6 @@ pub fn setup_vad_actor(
         purged_frames_counter: Arc::new(AtomicU64::new(0)),
         ingestion_gate,
         owner_atomic: Arc::new(AtomicU32::new(InteractionOwner::Assistant as u32)),
-        incomplete_clause_hint,
     };
 
     let join_handle = std::thread::Builder::new()
@@ -919,7 +917,6 @@ fn wire_audio_scene(
     vox_event_tx: Sender<VoxEvent>,
     vad_config: VadActorConfig,
     vad_backend: VadBackend,
-    incomplete_clause_hint: Arc<AtomicBool>,
 ) -> WiredAudioScene {
     let cap_rb = HeapRb::<f32>::new(SCENE_RING_BUFFER_SAMPLES);
     let (cap_prod, cap_cons) = cap_rb.split();
@@ -948,7 +945,6 @@ fn wire_audio_scene(
         purged_frames_counter: Arc::new(AtomicU64::new(0)),
         ingestion_gate: Arc::clone(&state.pipeline.ingestion_gate),
         owner_atomic: Arc::clone(&state.owner),
-        incomplete_clause_hint: Arc::clone(&incomplete_clause_hint),
     };
 
     let (vad_cmd_tx, vad_cmd_rx) = mpsc::channel::<VadCommand>();
@@ -988,7 +984,6 @@ pub struct AudioSceneRig {
     pub sink: vox_lib::services::audio::sink::PlaybackStreamContext,
     pub router_join: std::thread::JoinHandle<()>,
     pub audio_suppressed: Arc<AtomicBool>,
-    pub incomplete_clause_hint: Arc<AtomicBool>,
 }
 
 impl AudioSceneRig {
@@ -1004,7 +999,6 @@ impl AudioSceneRig {
         let (engine, sink, ref_cons) =
             create_headless_playback_with_aec_tap(&state, vox_event_tx.clone());
 
-        let incomplete_clause_hint = Arc::new(AtomicBool::new(false));
         let wired = wire_audio_scene(
             &state,
             ref_cons,
@@ -1012,7 +1006,6 @@ impl AudioSceneRig {
             vox_event_tx.clone(),
             vad_config,
             vad_backend,
-            Arc::clone(&incomplete_clause_hint),
         );
 
         attach_rig_engine(
@@ -1039,7 +1032,6 @@ impl AudioSceneRig {
             sink,
             router_join,
             audio_suppressed: wired.audio_suppressed,
-            incomplete_clause_hint,
         }
     }
 }
@@ -1119,23 +1111,7 @@ impl E2eVoiceRig {
         let (engine, sink, ref_cons) =
             create_headless_playback_with_aec_tap(&state, vox_event_tx.clone());
 
-        let incomplete_clause_hint = Arc::new(AtomicBool::new(false));
-        let hint_for_emitter = Arc::clone(&incomplete_clause_hint);
-        let partial_emitter: Option<Arc<dyn Fn(u32, String) + Send + Sync>> =
-            Some(Arc::new(move |_turn_id: u32, text: String| {
-                let trimmed = text.trim();
-                let word_count = trimmed.split_whitespace().count();
-                let ends_with_conjunction = [
-                    " and", " or", " but", " the", " a", " an", " to", " of", " in", "on",
-                    "और", "के", "से", "पर",
-                ]
-                .iter()
-                .any(|suffix| trimmed.ends_with(suffix));
-                hint_for_emitter.store(
-                    word_count <= 3 || ends_with_conjunction,
-                    std::sync::atomic::Ordering::Relaxed,
-                );
-            }));
+        let partial_emitter: Option<Arc<dyn Fn(u32, String) + Send + Sync>> = None;
 
         let nemotron_dir = super::paths::get_nemotron_model_dir();
         let stt_provider = Box::new(
@@ -1203,7 +1179,6 @@ impl E2eVoiceRig {
             vox_event_tx.clone(),
             vad_config,
             vad_backend,
-            incomplete_clause_hint,
         );
 
         attach_rig_engine(
@@ -1419,21 +1394,4 @@ pub fn spawn_state_watcher(
     (seen, handle)
 }
 
-/// Builds the engine-equivalent `partial_emitter` used by the STT actor to set the
-/// VAD actor's `incomplete_clause_hint` from streaming partials. Single home for the
-/// heuristic (mirrors src/core/engine.rs).
-pub fn incomplete_clause_hint_emitter(
-    hint: Arc<AtomicBool>,
-) -> Arc<dyn Fn(u32, String) + Send + Sync> {
-    Arc::new(move |_turn_id: u32, text: String| {
-        let trimmed = text.trim();
-        let word_count = trimmed.split_whitespace().count();
-        let trimmed_upper = trimmed.to_uppercase();
-        let ends_with_clause = [
-            " AND", " OR", " BUT", " THE", " A", " AN", " TO", " OF", " IN", " ON",
-        ]
-        .iter()
-        .any(|suffix| trimmed_upper.ends_with(suffix));
-        hint.store(word_count <= 3 || ends_with_clause, std::sync::atomic::Ordering::Relaxed);
-    })
-}
+

@@ -343,7 +343,6 @@ fn speech_detection_follows_the_audio_output_mode() {
         state.pipeline.ingestion_gate.clone(),
         engine_shutdown.clone(),
         vox_event_tx,
-        Arc::new(AtomicBool::new(false)),
     );
 
     // Case 1: Speaker mode, but state transitions to Ready (playback finished)

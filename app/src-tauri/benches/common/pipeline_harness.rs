@@ -276,23 +276,7 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
     ) as Box<dyn SttProvider>;
 
     let (stt_tx, stt_rx) = mpsc::channel::<SttCommand>();
-    let incomplete_clause_hint = Arc::new(AtomicBool::new(false));
-    let hint_for_emitter = Arc::clone(&incomplete_clause_hint);
-    let partial_emitter: Option<Arc<dyn Fn(u32, String) + Send + Sync>> =
-        Some(Arc::new(move |_turn_id: u32, text: String| {
-            // Mirrors src/core/engine.rs::partial_emitter (incomplete_clause_hint).
-            let trimmed = text.trim();
-            let word_count = trimmed.split_whitespace().count();
-            // Keep identical to tests/common/harness.rs::incomplete_clause_hint_emitter
-            // (the bench crate cannot import the test tree).
-            let trimmed_upper = trimmed.to_uppercase();
-            let ends_with_clause = [
-                " AND", " OR", " BUT", " THE", " A", " AN", " TO", " OF", " IN", " ON",
-            ]
-            .iter()
-            .any(|suffix| trimmed_upper.ends_with(suffix));
-            hint_for_emitter.store(word_count <= 3 || ends_with_clause, Ordering::Relaxed);
-        }));
+    let partial_emitter: Option<Arc<dyn Fn(u32, String) + Send + Sync>> = None;
     let stt_channels = SttActorChannels {
         rx: stt_rx,
         pipeline_event_tx: Some(event_tx.clone()),
@@ -328,7 +312,6 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         purged_frames_counter: Arc::new(AtomicU64::new(0)),
         ingestion_gate: state.pipeline.ingestion_gate.clone(),
         owner_atomic: state.owner.clone(),
-        incomplete_clause_hint: Arc::clone(&incomplete_clause_hint),
     };
 
     let vad_handle = std::thread::Builder::new()
