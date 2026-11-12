@@ -15,35 +15,30 @@ export interface UseDetailPanelTurnsReturn {
  */
 export function useDetailPanelTurns(session: SessionRow | null): UseDetailPanelTurnsReturn {
   const [turns, setTurns] = useState<TurnRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => Boolean(session));
   const [error, setError] = useState<string | null>(null);
   const activeReqIdRef = useRef(0);
 
   const fetchTurns = useCallback((targetSession: SessionRow) => {
     const reqId = ++activeReqIdRef.current;
-    setLoading(true);
-    setError(null);
-
     void getTurns(targetSession.id)
       .then((data) => {
-        if (reqId === activeReqIdRef.current) setTurns(data);
+        if (reqId === activeReqIdRef.current) {
+          setTurns(data);
+          setLoading(false);
+        }
       })
       .catch((err: unknown) => {
         if (reqId === activeReqIdRef.current) {
           setError(err instanceof Error ? err.message : "Failed to load session transcript");
+          setLoading(false);
         }
-      })
-      .finally(() => {
-        if (reqId === activeReqIdRef.current) setLoading(false);
       });
   }, []);
 
   useEffect(() => {
     if (!session) {
       activeReqIdRef.current += 1;
-      setTurns([]);
-      setLoading(false);
-      setError(null);
       return;
     }
     fetchTurns(session);
@@ -54,9 +49,16 @@ export function useDetailPanelTurns(session: SessionRow | null): UseDetailPanelT
 
   const retry = useCallback(() => {
     if (session) {
+      setLoading(true);
+      setError(null);
       fetchTurns(session);
     }
   }, [session, fetchTurns]);
 
-  return { turns, loading, error, retry };
+  return {
+    turns: session ? turns : [],
+    loading: session ? loading : false,
+    error: session ? error : null,
+    retry,
+  };
 }

@@ -10,6 +10,7 @@ import {
 } from "@/services/persistenceService";
 import {
   getProjects,
+  getCachedProjects,
   refreshProjects,
   createProject,
   renameProject,
@@ -112,8 +113,8 @@ interface UseSessionPanelReturn {
  */
 export function useSessionPanel(active: boolean = true): UseSessionPanelReturn {
   const [sessions, setSessions] = useState<SessionRow[]>(() => getCachedSessions() ?? []);
-  const [projects, setProjects] = useState<ProjectRow[]>([]);
-  const [loading, setLoading] = useState(() => !getCachedSessions());
+  const [projects, setProjects] = useState<ProjectRow[]>(() => getCachedProjects() ?? []);
+  const [loading, setLoading] = useState(() => !getCachedSessions() || !getCachedProjects());
   const [error, setError] = useState<string | null>(null);
   const [projectOrder, setProjectOrder] = useState<string[]>(() => {
     try {
@@ -190,23 +191,29 @@ export function useSessionPanel(active: boolean = true): UseSessionPanelReturn {
   useEffect(() => {
     // The panel stays mounted while closed (EdgePanel keeps `children` alive), so
     // an ungated subscription would fetch and re-render the whole hidden
-    // subtree on every `sessions_changed`. Gate both on `active`, and refresh
-    // once on activation so data created while closed still shows up.
+    // subtree on every `sessions_changed`. Gate both on `active`.
     if (!active) return;
     let isMounted = true;
-    // Defer the initial fetch out of the effect body: `refresh` closes over
-    // setState, so calling it synchronously here reads as setState-in-effect.
-    queueMicrotask(() => {
+
+    // When cache is warm, defer revalidation until after the 220ms drawer slide completes
+    // to preserve 60 FPS transition smoothness.
+    const isWarm = getCachedSessions() !== null && getCachedProjects() !== null;
+    const delay = isWarm ? 240 : 0;
+    const timer = setTimeout(() => {
       if (!isMounted) return;
       void refresh();
-    });
+    }, delay);
 
     const unlisten = onSessionsChanged(() => {
       if (!isMounted) return;
       void refresh(true);
     });
 
-    return () => { isMounted = false; unlisten(); };
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      unlisten();
+    };
   }, [active, refresh]);
 
   // No deferred prefetch: fetch only when the panel is opened, decoupled from

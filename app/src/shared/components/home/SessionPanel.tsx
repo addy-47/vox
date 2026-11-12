@@ -4,6 +4,7 @@ import { useRenderTrace } from "@/shared/hooks/useRenderTrace";
 import {
   Plus,
   Search,
+  Mic,
   Bot,
   SlidersHorizontal,
   Loader2,
@@ -25,10 +26,12 @@ import { SessionRowItem } from "./session/SessionRowItem";
 import { SessionProjectsSection } from "./session/SessionProjectsSection";
 import { useEdgePanelActive } from "@/shared/ui/edgePanelActive";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { useRecallSearchStore } from "@/store/recallSearchStore";
 
 interface SessionPanelProps {
   onClose: () => void;
   onSearch: () => void;
+  onExitSearch?: () => void;
 }
 
 /**
@@ -36,10 +39,12 @@ interface SessionPanelProps {
  * Reorganized structure with top action buttons (+ New, Search, Automations, Customizations)
  * and a single scrollable area with sticky non-uppercase headers (Pinned, Projects, Conversations).
  */
-export const SessionPanel = memo(({ onClose, onSearch }: SessionPanelProps) => {
+export const SessionPanel = memo(({ onClose, onSearch, onExitSearch }: SessionPanelProps) => {
   useMemoryTrace("SessionPanel");
   // The panel stays mounted while closed, so its data layer must idle then.
   const panelActive = useEdgePanelActive();
+  const isSearchMode = useRecallSearchStore((s) => s.isSearchMode);
+  const exitSearchModeStore = useRecallSearchStore((s) => s.exitSearchMode);
   const {
     pinnedSessions,
     projects,
@@ -99,8 +104,12 @@ export const SessionPanel = memo(({ onClose, onSearch }: SessionPanelProps) => {
 
   useEffect(() => {
     if (!panelActive) {
-      setChronologicalRenderLimit(25);
-      return;
+      // Defer collapsing the render limit until after the 220ms drawer slide completes
+      // to eliminate synchronous DOM unmounting freeze during slide-out
+      const timer = window.setTimeout(() => {
+        setChronologicalRenderLimit(25);
+      }, 300);
+      return () => window.clearTimeout(timer);
     }
     if (typeof window === "undefined") return;
     // EdgePanel drawer slide is 220ms; defer full list expansion until the slide finishes to maintain 60 FPS
@@ -188,10 +197,27 @@ export const SessionPanel = memo(({ onClose, onSearch }: SessionPanelProps) => {
     });
   }, [createNewSession, onClose, setActiveSessionLabel]);
 
-  const handleSearchConversations = useCallback(() => {
-    onClose();
-    onSearch();
-  }, [onClose, onSearch]);
+  const handleToggleSearchMode = useCallback(() => {
+    const t0 = performance.now();
+    if (isSearchMode) {
+      console.info(`[trace-search] Exit search clicked @${t0.toFixed(1)}ms. Closing panel and returning to Voice Mode...`);
+      onClose();
+      if (onExitSearch) {
+        onExitSearch();
+      } else {
+        exitSearchModeStore();
+      }
+    } else {
+      console.info(`[trace-search] Enter search clicked @${t0.toFixed(1)}ms. Closing panel smoothly...`);
+      onClose();
+      // Allow the 220ms drawer slide to complete cleanly at 60 FPS before activating Search Mode
+      setTimeout(() => {
+        const t1 = performance.now();
+        console.info(`[trace-search] Panel slide finished @${t1.toFixed(1)}ms (+${(t1 - t0).toFixed(1)}ms). Triggering onSearch...`);
+        onSearch();
+      }, 220);
+    }
+  }, [isSearchMode, onClose, onExitSearch, exitSearchModeStore, onSearch]);
 
   const handleCreateInProject = useCallback(
     (projectId: string) => {
@@ -233,7 +259,7 @@ export const SessionPanel = memo(({ onClose, onSearch }: SessionPanelProps) => {
   return (
     <div ref={rootRef} className="flex-1 min-h-0 flex flex-col overflow-hidden select-none font-sans">
       {/* ── Fixed Top Action Rows ── */}
-      <div className="shrink-0 flex flex-col gap-1 px-2 pt-3 pb-2 border-b border-[rgba(var(--border),0.08)]">
+      <div className="shrink-0 flex flex-col gap-1 px-2 pt-3 pb-1.5 border-b border-[rgba(var(--border),0.08)]">
         {/* + New Conversation */}
         <button
           type="button"
@@ -250,15 +276,24 @@ export const SessionPanel = memo(({ onClose, onSearch }: SessionPanelProps) => {
           )}
         </button>
 
-        {/* Search Conversations -> triggers Home Search mode */}
+        {/* Dynamic Search Conversations <-> Voice Mode toggle */}
         <button
           type="button"
-          onClick={handleSearchConversations}
-          aria-label={SESSION_COPY.searchConversationsAriaLabel}
+          onClick={handleToggleSearchMode}
+          aria-label={isSearchMode ? SESSION_COPY.backToVoiceMode : SESSION_COPY.searchConversationsAriaLabel}
           className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left cursor-pointer transition-colors text-[13px] font-medium tracking-normal text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.05)] bg-transparent"
         >
-          <Search size={15} className="shrink-0 text-[rgb(var(--accent))]" />
-          <span>{SESSION_COPY.searchConversations}</span>
+          {isSearchMode ? (
+            <>
+              <Mic size={15} className="shrink-0 text-[rgb(var(--accent))]" />
+              <span>{SESSION_COPY.backToVoiceMode}</span>
+            </>
+          ) : (
+            <>
+              <Search size={15} className="shrink-0 text-[rgb(var(--accent))]" />
+              <span>{SESSION_COPY.searchConversations}</span>
+            </>
+          )}
         </button>
 
         {/* Automations (Disabled with Coming Soon tooltip) */}
@@ -310,14 +345,14 @@ export const SessionPanel = memo(({ onClose, onSearch }: SessionPanelProps) => {
         data-session-scroll
         className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar flex flex-col -mt-px"
       >
-        {/* ── Section 1: Pinned Conversations ── */}
-        <section className="flex flex-col pb-1">
-          <div className="sticky top-0 z-30 px-3 py-1.5 text-[11.5px] font-mono font-medium tracking-normal text-[rgb(var(--foreground-muted))] bg-[rgb(var(--card))] shadow-xs">
-            {SESSION_COPY.pinnedConversations}
-          </div>
-          <div className="flex flex-col gap-0.5 px-1.5 pt-1">
-            {pinnedSessions.length > 0 ? (
-              pinnedSessions.map((session) => (
+        {/* ── Section 1: Pinned Conversations (Rendered strictly when pinned sessions exist) ── */}
+        {pinnedSessions.length > 0 && (
+          <section className="flex flex-col pb-0">
+            <div className="sticky top-0 z-30 px-3 py-1.5 text-[11.5px] font-mono font-medium tracking-normal text-[rgb(var(--foreground-muted))] bg-[rgb(var(--card))] shadow-xs">
+              {SESSION_COPY.pinnedConversations}
+            </div>
+            <div className="flex flex-col gap-0.5 px-1.5 pt-1">
+              {pinnedSessions.map((session) => (
                 <SessionRowItem
                   key={session.id}
                   session={session}
@@ -332,17 +367,13 @@ export const SessionPanel = memo(({ onClose, onSearch }: SessionPanelProps) => {
                   allProjects={allProjects}
                   projectTag={session.project_id ? projectNameMap.get(session.project_id) : undefined}
                 />
-              ))
-            ) : (
-              <span className="px-3 py-1.5 text-[11.5px] text-[rgb(var(--foreground-muted))]/40 italic">
-                {SESSION_COPY.noPinnedSessions}
-              </span>
-            )}
-          </div>
-        </section>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* ── Section 2: Projects ── */}
-        <section className="flex flex-col pb-1">
+        <section className="flex flex-col pb-0">
           <div className="sticky top-0 z-30 px-3 py-1.5 flex items-center justify-between text-[11.5px] font-mono font-medium tracking-normal text-[rgb(var(--foreground-muted))] bg-[rgb(var(--card))] shadow-xs">
             <span>{SESSION_COPY.projectsSection}</span>
             <Tooltip label={SESSION_COPY.createProjectAriaLabel} side="left">

@@ -480,11 +480,11 @@ async function main() {
       });
     });
 
-    // 2.2 History Session Detail Drawer
-    await runTest("drawer", "DetailPanel (History Drawer)", "/history", async () => {
+    // 2.2 Recall Mode Session Detail Drawer
+    await runTest("drawer", "DetailPanel (Recall Drawer)", "/?mode=search", async () => {
       await cdp.send("Runtime.evaluate", {
         expression: `
-          const card = document.querySelector('[data-session-card]') || document.querySelector('button.group') || document.querySelector('[role="article"]');
+          const card = document.querySelector('[role="button"]') || document.querySelector('[data-card-center="true"]') || document.querySelector('button.group');
           if (card) card.click();
           else window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", code: "ArrowUp", shiftKey: true, bubbles: true }));
         `,
@@ -639,7 +639,7 @@ async function main() {
 
     // 4.2 Search Debounce & Keystroke Churn
     await cdp.send("Runtime.evaluate", {
-      expression: `window.history.pushState({}, "", "/history"); window.dispatchEvent(new PopStateEvent("popstate"));`,
+      expression: `window.history.pushState({}, "", "/?mode=search"); window.dispatchEvent(new PopStateEvent("popstate"));`,
     });
     await sleep(800);
 

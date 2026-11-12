@@ -39,6 +39,10 @@ function fetchProjectsFromBackend(): Promise<ProjectRow[]> {
  * invalidation paths must call `refreshProjects` (or let the post-mutation
  * `refresh()` observe the cleared cache).
  */
+export function getCachedProjects(): ProjectRow[] | null {
+  return cachedProjects;
+}
+
 export function getProjects(): Promise<ProjectRow[]> {
   if (cachedProjects) {
     void fetchProjectsFromBackend().catch(() => {});

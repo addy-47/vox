@@ -17,6 +17,7 @@ export interface RecallArcCarouselProps {
   activeIndex: number;
   projectNameMap?: Map<string, string>;
   onSelectIndex: (index: number) => void;
+  onLiveIndexChange?: (index: number) => void;
   onOpenSession: (session: SessionRow) => void;
   onDeleteSession?: (id: number) => void;
 }
@@ -29,6 +30,7 @@ export const RecallArcCarousel = memo(({
   activeIndex,
   projectNameMap,
   onSelectIndex,
+  onLiveIndexChange,
   onOpenSession,
   onDeleteSession,
 }: RecallArcCarouselProps) => {
@@ -43,6 +45,10 @@ export const RecallArcCarousel = memo(({
   // Synchronous active card index for visual active styling
   const [liveActiveIndex, setLiveActiveIndex] = useState<number>(activeIndex);
   const liveActiveIndexRef = useRef<number>(activeIndex);
+  const onLiveIndexChangeRef = useRef(onLiveIndexChange);
+  useEffect(() => {
+    onLiveIndexChangeRef.current = onLiveIndexChange;
+  }, [onLiveIndexChange]);
 
   // Physics animation state stored in refs for 60 FPS zero-re-render direct DOM writes
   const offsetRef = useRef<number>(activeIndex);
@@ -84,6 +90,7 @@ export const RecallArcCarousel = memo(({
     if (currentCenter !== liveActiveIndexRef.current) {
       liveActiveIndexRef.current = currentCenter;
       setLiveActiveIndex(currentCenter);
+      onLiveIndexChangeRef.current?.(currentCenter);
     }
 
     items.forEach((item, idx) => {
@@ -151,6 +158,7 @@ export const RecallArcCarousel = memo(({
 
   // Sync target when activeIndex prop changes externally (e.g. from scrubber or search)
   useEffect(() => {
+    if (draggingRef.current || isWheelingRef.current) return;
     if (Math.abs(targetOffsetRef.current - activeIndex) > 0.01) {
       targetOffsetRef.current = activeIndex;
       liveActiveIndexRef.current = activeIndex;
@@ -163,6 +171,12 @@ export const RecallArcCarousel = memo(({
   useEffect(() => {
     wakeLoop();
   }, [stageWidth, items, wakeLoop]);
+
+  useEffect(() => {
+    console.info(
+      `[trace-search] RecallArcCarousel mounted @${performance.now().toFixed(1)}ms. Items: ${items.length}, activeIndex: ${activeIndex}`
+    );
+  }, [items.length, activeIndex]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -323,6 +337,14 @@ export const RecallArcCarousel = memo(({
       }}
     >
       {items.map((item, idx) => {
+        // Windowing optimization: only mount cards within +/- 8 slots of liveActiveIndex
+        // (Visible arc is +/- 4.5 slots; +/- 8 provides wide headroom buffer for gestures).
+        // Prevents mounting 100+ complex DOM nodes and allocating 100+ GPU layers on first render.
+        const distFromCenter = Math.abs(idx - liveActiveIndex);
+        if (distFromCenter > 8) {
+          return null;
+        }
+
         const isCenter = idx === liveActiveIndex;
         const isSkeleton = isSkeletonCard(item);
         const isBoundary = isBoundaryCard(item);
