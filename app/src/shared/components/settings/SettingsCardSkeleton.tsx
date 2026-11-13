@@ -15,7 +15,8 @@ const getDomainSkeletonHeight = (domainId: string | undefined, layoutMode: "full
   if (layoutMode === "small") return "h-auto";
   switch (domainId) {
     case "appearance":
-      return "min-h-[180px] h-full";
+    case "persona":
+      return layoutMode === "full-max" ? "h-[280px]" : "h-[230px]";
     case "interaction":
     case "speech":
     case "language":

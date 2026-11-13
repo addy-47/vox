@@ -122,6 +122,7 @@ export const Home = memo(() => {
   }, [connectedPeer?.displayName]);
   useMemoryTrace("Home");
 
+  const { isPanelOpen, closePanel } = usePanelStateContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const isSearchModeStore = useRecallSearchStore((s) => s.isSearchMode);
   const setIsSearchModeStore = useRecallSearchStore((s) => s.setIsSearchMode);
@@ -153,6 +154,9 @@ export const Home = memo(() => {
   const enterSearchMode = useCallback(() => {
     const t0 = performance.now();
     console.info(`[trace-search] enterSearchMode triggered @${t0.toFixed(1)}ms`);
+    if (isMobileScreen) {
+      closePanel("sessions");
+    }
     setIsSearchModeStore(true);
     setSearchParams((prev) => {
       if (prev.get("mode") === "search") return prev;
@@ -161,7 +165,7 @@ export const Home = memo(() => {
       return next;
     }, { replace: true });
     console.info(`[trace-search] enterSearchMode finished @${performance.now().toFixed(1)}ms (+${(performance.now() - t0).toFixed(1)}ms)`);
-  }, [setIsSearchModeStore, setSearchParams]);
+  }, [isMobileScreen, closePanel, setIsSearchModeStore, setSearchParams]);
 
   const exitSearchMode = useCallback(() => {
     const t0 = performance.now();
@@ -321,7 +325,6 @@ export const Home = memo(() => {
     };
   }, [toggleMicMute, togglePlaybackMute, isPaused, pause, resume, isEngaged, engage, disengage, setTextModeOpen, interactionMode, isSleeping, interactionState, handlePttStart, handlePttStop, handlePttCancel, pttStatus, isTextModeOpen, isRemoteBlocked]);
 
-  const { isPanelOpen, closePanel } = usePanelStateContext();
   const sessionError = useSessionStore((s) => s.sessionError);
   const clearSessionError = useSessionStore((s) => s.setSessionError);
   // Stable identity: Home re-renders on every streamed transcript token. An
@@ -429,7 +432,7 @@ export const Home = memo(() => {
             transition={{ duration: 0.25, ease: "easeOut" }}
             className="absolute inset-0 flex flex-col justify-between pointer-events-none z-20"
           >
-            <SearchRecallView onBackToVoice={exitSearchMode} />
+            <SearchRecallView onBackToVoice={exitSearchMode} isMobile={isMobileScreen} />
           </motion.div>
         )}
       </AnimatePresence>

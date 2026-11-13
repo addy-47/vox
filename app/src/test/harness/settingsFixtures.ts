@@ -83,7 +83,14 @@ export function minimalSettings(): VoxSettings {
       top_k_facts: 5,
       semantic_similarity_cutoff: 0.35,
     },
-    appearance: { theme: "dark", accent_seed: "#0f766e" },
+    appearance: {
+      theme: "dark",
+      preset: "vox",
+      dark_accent: "#0f766e",
+      light_accent: "#0e7490",
+      dark_bg: "#131315",
+      light_bg: "#f7f6f2",
+    },
     persona: { modular_prompt: "a", realtime_prompt: "b" },
     system: { setup_completed: true },
   };

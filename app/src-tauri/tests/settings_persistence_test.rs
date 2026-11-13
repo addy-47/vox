@@ -54,11 +54,71 @@ fn setting_mutation_recognises_every_live_domain_key() {
         apply_setting_mutation(
             &mut settings,
             "appearance",
-            "accent_seed",
+            "dark_accent",
             &serde_json::json!("#8B5CF6")
         )
-        .expect("appearance.accent_seed mutation failed"),
-        "appearance.accent_seed should be recognized"
+        .expect("appearance.dark_accent mutation failed"),
+        "appearance.dark_accent should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "appearance",
+            "light_accent",
+            &serde_json::json!("#0E7490")
+        )
+        .expect("appearance.light_accent mutation failed"),
+        "appearance.light_accent should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "appearance",
+            "dark_bg",
+            &serde_json::json!("#131315")
+        )
+        .expect("appearance.dark_bg mutation failed"),
+        "appearance.dark_bg should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "appearance",
+            "light_bg",
+            &serde_json::json!("#F7F6F2")
+        )
+        .expect("appearance.light_bg mutation failed"),
+        "appearance.light_bg should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "appearance",
+            "preset",
+            &serde_json::json!("tokyo_night")
+        )
+        .expect("appearance.preset mutation failed"),
+        "appearance.preset should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "appearance",
+            "dark_accent",
+            &serde_json::json!("invalid_color")
+        )
+        .is_err(),
+        "invalid hex string must be rejected"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "appearance",
+            "dark_bg",
+            &serde_json::json!("#123")
+        )
+        .is_err(),
+        "short hex string must be rejected"
     );
 
     // VAD
@@ -365,11 +425,71 @@ fn settings_save_writes_config_files_with_owner_only_permissions() {
         apply_setting_mutation(
             &mut settings,
             "appearance",
-            "accent_seed",
+            "dark_accent",
             &serde_json::json!("#8B5CF6")
         )
-        .expect("appearance.accent_seed mutation failed"),
-        "appearance.accent_seed should be recognized"
+        .expect("appearance.dark_accent mutation failed"),
+        "appearance.dark_accent should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "appearance",
+            "light_accent",
+            &serde_json::json!("#0E7490")
+        )
+        .expect("appearance.light_accent mutation failed"),
+        "appearance.light_accent should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "appearance",
+            "dark_bg",
+            &serde_json::json!("#131315")
+        )
+        .expect("appearance.dark_bg mutation failed"),
+        "appearance.dark_bg should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "appearance",
+            "light_bg",
+            &serde_json::json!("#F7F6F2")
+        )
+        .expect("appearance.light_bg mutation failed"),
+        "appearance.light_bg should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "appearance",
+            "preset",
+            &serde_json::json!("tokyo_night")
+        )
+        .expect("appearance.preset mutation failed"),
+        "appearance.preset should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "appearance",
+            "dark_accent",
+            &serde_json::json!("invalid_color")
+        )
+        .is_err(),
+        "invalid hex string must be rejected"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "appearance",
+            "dark_bg",
+            &serde_json::json!("#123")
+        )
+        .is_err(),
+        "short hex string must be rejected"
     );
 
     let save_res = settings.save();
@@ -400,8 +520,8 @@ fn settings_save_writes_config_files_with_owner_only_permissions() {
         "Raw JSON must contain mutated llm.active.category == server"
     );
     assert_eq!(
-        json_val["appearance"]["accent_seed"], "#8B5CF6",
-        "Raw JSON must contain mutated appearance.accent_seed"
+        json_val["appearance"]["dark_accent"], "#8B5CF6",
+        "Raw JSON must contain mutated appearance.dark_accent"
     );
 
     // Verify providers.jsonc existence and 0600 permissions
@@ -453,10 +573,38 @@ fn settings_reload_preserves_every_mutated_field() {
     assert!(apply_setting_mutation(
         &mut settings,
         "appearance",
-        "accent_seed",
+        "dark_accent",
         &serde_json::json!("#8B5CF6")
     )
-    .expect("appearance.accent_seed mutation failed"));
+    .expect("appearance.dark_accent mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "appearance",
+        "preset",
+        &serde_json::json!("tokyo_night")
+    )
+    .expect("appearance.preset mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "appearance",
+        "light_accent",
+        &serde_json::json!("#2E7DE9")
+    )
+    .expect("appearance.light_accent mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "appearance",
+        "dark_bg",
+        &serde_json::json!("#16161E")
+    )
+    .expect("appearance.dark_bg mutation failed"));
+    assert!(apply_setting_mutation(
+        &mut settings,
+        "appearance",
+        "light_bg",
+        &serde_json::json!("#F2F3F7")
+    )
+    .expect("appearance.light_bg mutation failed"));
     assert!(
         apply_setting_mutation(&mut settings, "vad", "threshold", &serde_json::json!(0.72))
             .expect("vad.threshold mutation failed")
@@ -593,7 +741,11 @@ fn settings_reload_preserves_every_mutated_field() {
     let reloaded = VoxSettings::load();
 
     assert_eq!(reloaded.appearance.theme, "dark");
-    assert_eq!(reloaded.appearance.accent_seed, "#8B5CF6");
+    assert_eq!(reloaded.appearance.preset, "tokyo_night");
+    assert_eq!(reloaded.appearance.dark_accent, "#8B5CF6");
+    assert_eq!(reloaded.appearance.light_accent, "#2E7DE9");
+    assert_eq!(reloaded.appearance.dark_bg, "#16161E");
+    assert_eq!(reloaded.appearance.light_bg, "#F2F3F7");
     assert!((reloaded.vad.threshold - 0.72).abs() < 1e-5);
     assert!((reloaded.vad.ptt_noise_gate - 0.04).abs() < 1e-5);
     assert_eq!(reloaded.vad.vad_backend, VadBackendOption::Earshot);
@@ -717,7 +869,7 @@ fn partial_settings_file_keeps_valid_sections_and_defaults_the_rest() {
     let partial_json = serde_json::json!({
         "appearance": {
             "theme": "nordic_frost",
-            "accent_seed": "#00DBE9"
+            "dark_accent": "#00DBE9"
         },
         "tts": {
             "active": {
@@ -740,7 +892,7 @@ fn partial_settings_file_keeps_valid_sections_and_defaults_the_rest() {
     let recovered = VoxSettings::load();
 
     assert_eq!(recovered.appearance.theme, "nordic_frost");
-    assert_eq!(recovered.appearance.accent_seed, "#00DBE9");
+    assert_eq!(recovered.appearance.dark_accent, "#00DBE9");
     assert_eq!(recovered.tts.active_voice_id, "serene");
     assert_eq!(recovered.tts.active.model, "kokoro");
 
@@ -782,7 +934,7 @@ fn jsonc_comments_are_parsed_in_all_three_config_files() {
         },
         "appearance": {
             "theme": "dark_modern",
-            "accent_seed": "#10B981"
+            "dark_accent": "#10B981"
         }
     }
     "##;
@@ -827,7 +979,7 @@ fn jsonc_comments_are_parsed_in_all_three_config_files() {
     assert!((loaded.vad.threshold - 0.65).abs() < 1e-5);
     assert_eq!(loaded.vad.vad_backend, VadBackendOption::Earshot);
     assert_eq!(loaded.appearance.theme, "dark_modern");
-    assert_eq!(loaded.appearance.accent_seed, "#10B981");
+    assert_eq!(loaded.appearance.dark_accent, "#10B981");
 
     assert_eq!(
         loaded.providers.llm.servers[0].url,
@@ -875,7 +1027,7 @@ fn settings_type_error_falls_back_to_default_section_only() {
         },
         "appearance": {
             "theme": "custom_purple",
-            "accent_seed": "#8B5CF6"
+            "dark_accent": "#8B5CF6"
         }
     }"##;
 
@@ -884,7 +1036,7 @@ fn settings_type_error_falls_back_to_default_section_only() {
     let loaded = VoxSettings::load();
 
     assert_eq!(loaded.appearance.theme, "custom_purple");
-    assert_eq!(loaded.appearance.accent_seed, "#8B5CF6");
+    assert_eq!(loaded.appearance.dark_accent, "#8B5CF6");
 
     assert_eq!(
         loaded.vad.threshold,

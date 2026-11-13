@@ -237,7 +237,7 @@ export const Drawer = memo(
       [height, maxHeight]
     );
 
-    const effectiveZ = zIndex ?? (position === "global" ? 60 : 30);
+    const effectiveZ = zIndex ?? (position === "global" ? 70 : 30);
 
     const drawerNode = (
       <AnimatePresence>

@@ -16,6 +16,7 @@ export interface SearchBarShellProps {
   dropdownPlacement?: "bottom" | "top";
   variant?: "inline" | "modal";
   autoFocus?: boolean;
+  shortcutHint?: string;
   itemCount?: number;
   activeIndex?: number;
   onActiveIndexChange?: (index: number) => void;
@@ -44,6 +45,7 @@ export const SearchBarShell = memo<SearchBarShellProps>(({
   dropdownPlacement = "bottom",
   variant = "inline",
   autoFocus = false,
+  shortcutHint = "/",
   itemCount = 0,
   activeIndex = -1,
   onActiveIndexChange,
@@ -155,9 +157,16 @@ export const SearchBarShell = memo<SearchBarShellProps>(({
       )}
       data-arrow-nav
     >
-      {/* ── Underline Search Input: Shared styling across History and Memory ── */}
-      <div className="flex items-center gap-2 py-1.5 border-b border-[rgba(var(--foreground),0.18)] focus-within:border-[rgba(var(--accent),0.8)] transition-colors duration-200 w-full shrink-0">
-        <Search size={13} className="text-[rgb(var(--accent))] shrink-0 opacity-70" />
+      {/* ── Search Input: Inline uses frosted capsule pill; Modal uses clean underline ── */}
+      <div
+        className={cn(
+          "flex items-center w-full shrink-0 transition-all duration-200",
+          variant === "modal"
+            ? "gap-2 py-2 border-b border-[rgba(var(--foreground),0.15)] focus-within:border-[rgb(var(--accent))]"
+            : "gap-2.5 px-3.5 py-2 rounded-full border border-[rgba(var(--border),0.07)] bg-[rgba(var(--card),0.65)] backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.15),inset_0_1px_0_rgba(255,255,255,0.06)] focus-within:border-[rgba(var(--accent),0.6)] focus-within:shadow-[0_0_24px_rgba(var(--accent),0.20)]"
+        )}
+      >
+        <Search size={14} className="text-[rgb(var(--accent))] shrink-0 opacity-80" />
         <input
           id={id}
           ref={effectiveInputRef}
@@ -175,17 +184,21 @@ export const SearchBarShell = memo<SearchBarShellProps>(({
           aria-autocomplete="list"
           autoComplete="off"
           placeholder={placeholder}
-          className="flex-1 min-w-0 bg-transparent text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
+          className="flex-1 min-w-0 bg-transparent text-[12.5px] font-sans text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
         />
-        {value && (
+        {value ? (
           <button
             type="button"
             onClick={handleClearClick}
-            className="p-0.5 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer shrink-0 transition-colors"
+            className="p-1 rounded-full text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] cursor-pointer shrink-0 transition-colors"
             aria-label={clearAriaLabel}
           >
             <X size={12} />
           </button>
+        ) : (
+          <kbd className="shrink-0 px-1.5 py-0.5 rounded-md bg-[rgba(var(--foreground),0.06)] border border-[rgba(var(--border),0.10)] text-[10.5px] font-mono text-[rgb(var(--foreground-muted))]/70 leading-none select-none">
+            {shortcutHint}
+          </kbd>
         )}
       </div>
 

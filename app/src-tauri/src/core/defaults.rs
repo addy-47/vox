@@ -1,5 +1,9 @@
 pub const DEFAULT_UI_THEME: &str = "dark";
-pub const DEFAULT_UI_ACCENT_SEED: &str = "#00DBE9"; // Default Cyan
+pub const DEFAULT_UI_PRESET: &str = "vox";
+pub const DEFAULT_UI_DARK_ACCENT: &str = "#00DBE9"; // Vox Cyan
+pub const DEFAULT_UI_LIGHT_ACCENT: &str = "#0E7490"; // Deep Cyan
+pub const DEFAULT_UI_DARK_BG: &str = "#131315"; // Matte Graphite
+pub const DEFAULT_UI_LIGHT_BG: &str = "#F7F6F2"; // Warm Linen
 
 pub const DEFAULT_MEMORY_PRIVATE_MODE: bool = false;
 pub const DEFAULT_MEMORY_AUTO_COMPACTION: bool = false;

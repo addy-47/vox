@@ -224,8 +224,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
       set((state) => {
         if (state.draftSettings && state.draftSettings.appearance && cloned.appearance) {
-          cloned.appearance.theme = state.draftSettings.appearance.theme;
-          cloned.appearance.accent_seed = state.draftSettings.appearance.accent_seed;
+          cloned.appearance = {
+            ...cloned.appearance,
+            ...state.draftSettings.appearance,
+          };
         }
         return {
           settings: fetched,
@@ -324,7 +326,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     const flagsState = computeFlagsState(settings, newDraft, get().domainFlags);
 
-    if (domain === "appearance" && (key === "theme" || key === "accent_seed")) {
+    if (domain === "appearance") {
       applyTheme(newDraft.appearance);
 
       if (appearanceDebounceTimer) {

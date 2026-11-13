@@ -10,8 +10,9 @@ use crate::{
             DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED, DEFAULT_MEMORY_PRIVATE_MODE,
             DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF, DEFAULT_MEMORY_SUGGESTION_POLICY,
             DEFAULT_MEMORY_TOP_K_FACTS, DEFAULT_REMOTE_ACCEPTS_CONTROLLERS,
-            DEFAULT_SYSTEM_PROMPT_MODULAR, DEFAULT_SYSTEM_PROMPT_REALTIME, DEFAULT_UI_ACCENT_SEED,
-            DEFAULT_UI_THEME,
+            DEFAULT_SYSTEM_PROMPT_MODULAR, DEFAULT_SYSTEM_PROMPT_REALTIME,
+            DEFAULT_UI_DARK_ACCENT, DEFAULT_UI_DARK_BG, DEFAULT_UI_LIGHT_ACCENT,
+            DEFAULT_UI_LIGHT_BG, DEFAULT_UI_PRESET, DEFAULT_UI_THEME,
         },
         events::{InteractionMode, PipelineMode},
     },
@@ -29,18 +30,26 @@ pub enum AudioOutputMode {
     Headset,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
 pub struct AppearanceSettings {
     pub theme: String,
-    pub accent_seed: String,
+    pub preset: String,
+    pub dark_accent: String,
+    pub light_accent: String,
+    pub dark_bg: String,
+    pub light_bg: String,
 }
 
 impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
             theme: DEFAULT_UI_THEME.into(),
-            accent_seed: DEFAULT_UI_ACCENT_SEED.into(),
+            preset: DEFAULT_UI_PRESET.into(),
+            dark_accent: DEFAULT_UI_DARK_ACCENT.into(),
+            light_accent: DEFAULT_UI_LIGHT_ACCENT.into(),
+            dark_bg: DEFAULT_UI_DARK_BG.into(),
+            light_bg: DEFAULT_UI_LIGHT_BG.into(),
         }
     }
 }

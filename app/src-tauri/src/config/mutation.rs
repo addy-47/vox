@@ -11,7 +11,14 @@ use crate::{
 /// Lists every key `apply_setting_mutation` accepts for a domain, used in rejection messages.
 pub fn supported_keys_for_domain(domain: &str) -> &'static [&'static str] {
     match domain {
-        "appearance" => &["theme", "accent_seed"],
+        "appearance" => &[
+            "theme",
+            "preset",
+            "dark_accent",
+            "light_accent",
+            "dark_bg",
+            "light_bg",
+        ],
         "vad" => &[
             "threshold",
             "ptt_noise_gate",
@@ -142,6 +149,10 @@ fn validate_tts_server_list(servers: &mut [TtsCustomServer]) -> Result<(), Strin
     Ok(())
 }
 
+pub fn is_valid_hex_color(s: &str) -> bool {
+    s.len() == 7 && s.starts_with('#') && s[1..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
 fn apply_appearance_mutation(
     settings: &mut VoxSettings,
     key: &str,
@@ -149,13 +160,54 @@ fn apply_appearance_mutation(
 ) -> Result<bool, String> {
     match key {
         "theme" => {
-            settings.appearance.theme = value.as_str().ok_or("theme must be a string")?.to_string();
+            let t = value.as_str().ok_or("theme must be a string")?;
+            if t.trim().is_empty() {
+                return Err("theme must not be empty".to_string());
+            }
+            settings.appearance.theme = t.to_string();
         }
-        "accent_seed" => {
-            settings.appearance.accent_seed = value
+        "preset" => {
+            let p = value.as_str().ok_or("preset must be a string")?;
+            if p.trim().is_empty() {
+                return Err("preset must not be empty".to_string());
+            }
+            settings.appearance.preset = p.to_string();
+        }
+        "dark_accent" => {
+            let hex = value
                 .as_str()
-                .ok_or("accent_seed must be a string")?
-                .to_string();
+                .ok_or("dark_accent must be a string")?;
+            if !is_valid_hex_color(hex) {
+                return Err(format!("dark_accent must be a valid #RRGGBB hex color, got '{hex}'"));
+            }
+            settings.appearance.dark_accent = hex.to_uppercase();
+        }
+        "light_accent" => {
+            let hex = value
+                .as_str()
+                .ok_or("light_accent must be a string")?;
+            if !is_valid_hex_color(hex) {
+                return Err(format!("light_accent must be a valid #RRGGBB hex color, got '{hex}'"));
+            }
+            settings.appearance.light_accent = hex.to_uppercase();
+        }
+        "dark_bg" => {
+            let hex = value
+                .as_str()
+                .ok_or("dark_bg must be a string")?;
+            if !is_valid_hex_color(hex) {
+                return Err(format!("dark_bg must be a valid #RRGGBB hex color, got '{hex}'"));
+            }
+            settings.appearance.dark_bg = hex.to_uppercase();
+        }
+        "light_bg" => {
+            let hex = value
+                .as_str()
+                .ok_or("light_bg must be a string")?;
+            if !is_valid_hex_color(hex) {
+                return Err(format!("light_bg must be a valid #RRGGBB hex color, got '{hex}'"));
+            }
+            settings.appearance.light_bg = hex.to_uppercase();
         }
         _ => return Ok(false),
     }

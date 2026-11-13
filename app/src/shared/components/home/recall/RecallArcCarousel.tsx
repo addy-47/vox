@@ -23,7 +23,7 @@ export interface RecallArcCarouselProps {
 }
 
 const DRAG_THRESHOLD_PX = 4;
-const SLOT_PX = 190;
+const SLOT_PX = 200;
 
 export const RecallArcCarousel = memo(({
   items,

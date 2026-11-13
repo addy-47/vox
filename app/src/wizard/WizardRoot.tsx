@@ -52,8 +52,18 @@ export const WizardRoot: React.FC = () => {
   );
   
   React.useEffect(() => {
-    // The onboarding flow always starts with the canonical pre-defined accent color.
-    applyTheme({ theme: 'dark', accent_seed: DEFAULT_WIZARD_ACCENT }, { animate: false });
+    // The onboarding flow always starts with the canonical pre-defined appearance.
+    applyTheme(
+      {
+        theme: 'dark',
+        preset: 'vox',
+        dark_accent: DEFAULT_WIZARD_ACCENT,
+        light_accent: '#0e7490',
+        dark_bg: '#131315',
+        light_bg: '#f7f6f2',
+      },
+      { animate: false }
+    );
 
     // Reveal window after a short delay to ensure React is hydrated and CSS is loaded
     // This prevents the initial white flash.

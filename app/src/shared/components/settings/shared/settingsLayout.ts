@@ -30,8 +30,8 @@ export const getDomainCardWidth = (
   }
   if (domainId === "appearance") {
     return layoutMode === "full-min"
-      ? "lg:w-[240px] xl:w-[260px] 2xl:w-[280px]"
-      : "lg:w-[290px] xl:w-[310px]";
+      ? "lg:w-[350px] xl:w-[370px] 2xl:w-[440px]"
+      : "lg:w-[470px]";
   }
   return layoutMode === "full-min" ? "lg:w-[360px] xl:w-[420px] 2xl:w-[520px]" : "lg:w-[520px]";
 };

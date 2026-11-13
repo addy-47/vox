@@ -3,7 +3,7 @@ import { Search, Ghost } from "lucide-react";
 import { ObservationRecord } from "@/services/memoryService";
 import { getActiveDynamicPalette, toMemoryCategory } from "./memoryGraphTypes";
 import { MEMORY_COPY } from "@/data/memoryCopy";
-import { shortcutKeysSuffix } from "@/data/shortcuts";
+import { getShortcutById } from "@/data/shortcuts";
 import { SearchBarShell, HighlightMatch } from "@/shared/ui";
 import { EmptyState } from "@/shared/components/common";
 
@@ -36,12 +36,15 @@ export const MemorySearchBar = memo<MemorySearchBarProps>(({
   const [activeIndex, setActiveIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastCommittedRef = useRef<string | undefined>(searchQuery);
 
+  // Sync external prop updates (e.g. tag filter or reset), never overwrite local typing
   useEffect(() => {
-    if (searchQuery !== undefined && searchQuery !== value) {
+    if (searchQuery !== undefined && searchQuery !== lastCommittedRef.current) {
+      lastCommittedRef.current = searchQuery;
       setValue(searchQuery);
     }
-  }, [searchQuery, value]);
+  }, [searchQuery]);
 
   const palette = useMemo(() => getActiveDynamicPalette(isLightMode), [isLightMode]);
 
@@ -84,14 +87,16 @@ export const MemorySearchBar = memo<MemorySearchBarProps>(({
       setValue(val);
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = setTimeout(() => {
+        lastCommittedRef.current = val;
         onCommitSearch(val);
-      }, 150);
+      }, 250);
     },
     [onCommitSearch]
   );
 
   const handleClear = useCallback(() => {
     setValue("");
+    lastCommittedRef.current = "";
     onCommitSearch("");
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
   }, [onCommitSearch]);
@@ -99,6 +104,7 @@ export const MemorySearchBar = memo<MemorySearchBarProps>(({
   const handleSelectFact = useCallback(
     (factId: string) => {
       onSelectNode(factId);
+      lastCommittedRef.current = value;
       onCommitSearch(value);
       setActiveIndex(-1);
     },
@@ -112,7 +118,8 @@ export const MemorySearchBar = memo<MemorySearchBarProps>(({
       value={value}
       onChange={handleChange}
       onClear={handleClear}
-      placeholder={MEMORY_COPY.searchPlaceholder + shortcutKeysSuffix("memory.search")}
+      placeholder={MEMORY_COPY.searchPlaceholder}
+      shortcutHint={getShortcutById("memory.search")?.keys ?? "Ctrl+K"}
       ariaLabel={MEMORY_COPY.searchInputLabel}
       clearAriaLabel={MEMORY_COPY.clearSearch}
       className={className}
