@@ -225,8 +225,12 @@ export interface MemorySettings {
 }
 
 export interface AppearanceSettings {
-  theme: string;
-  accent_seed: string;
+  theme: "dark" | "light" | string;
+  preset: string;
+  dark_accent: string;
+  light_accent: string;
+  dark_bg: string;
+  light_bg: string;
 }
 
 export interface PersonaSettings {
@@ -303,7 +307,7 @@ export interface DomainFlags {
  * through their domain vehicle (`llm.servers`, `llm.cloud_keys`, …).
  */
 export interface DraftKeyMap {
-  appearance: "theme" | "accent_seed";
+  appearance: "theme" | "preset" | "dark_accent" | "light_accent" | "dark_bg" | "light_bg";
   vad: "threshold" | "ptt_noise_gate" | "silence_duration_ms" | "speech_onset_ms" | "vad_backend";
   stt: "active" | "last_selected" | "transliterate_enabled";
   llm: "active" | "last_selected" | "servers" | "cloud_keys";

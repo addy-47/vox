@@ -77,7 +77,7 @@ export const Modal = memo(
       dismissOnOutside: false, // backdrop handles outside clicks
     });
 
-    const effectiveZ = zIndex ?? (position === "global" ? 60 : 30);
+    const effectiveZ = zIndex ?? (position === "global" ? 70 : 30);
     const shouldReduceMotion = useReducedMotion();
     const isCoarse = isCoarsePointer();
     const fastTransition = shouldReduceMotion || isCoarse;
@@ -135,7 +135,7 @@ export const Modal = memo(
       <AnimatePresence>
         {open && (
           <div
-            className="fixed inset-0 z-[var(--modal-z)] pointer-events-none flex items-center justify-center p-4 sm:p-6"
+            className="fixed inset-0 z-[var(--modal-z)] pointer-events-none flex items-center justify-center p-2.5 sm:p-6"
             style={{ ["--modal-z"]: effectiveZ } as CSSProperties}
           >
             {backdrop && (

@@ -126,11 +126,27 @@ pub async fn dispatch_command(
         }
         "set_appearance" => {
             let theme = args.get("theme").and_then(|v| v.as_str()).map(String::from);
-            let accent_seed = args
-                .get("accent_seed")
+            let preset = args.get("preset").and_then(|v| v.as_str()).map(String::from);
+            let dark_accent = args
+                .get("dark_accent")
                 .and_then(|v| v.as_str())
                 .map(String::from);
-            let result = settings::set_appearance(theme, accent_seed, app.clone()).await?;
+            let light_accent = args
+                .get("light_accent")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let dark_bg = args.get("dark_bg").and_then(|v| v.as_str()).map(String::from);
+            let light_bg = args.get("light_bg").and_then(|v| v.as_str()).map(String::from);
+            let result = settings::set_appearance(
+                theme,
+                preset,
+                dark_accent,
+                light_accent,
+                dark_bg,
+                light_bg,
+                app.clone(),
+            )
+            .await?;
             serde_json::to_value(&result).map_err(|e| VoxIpcError::Internal(e.to_string()))
         }
         "reset_settings" => {

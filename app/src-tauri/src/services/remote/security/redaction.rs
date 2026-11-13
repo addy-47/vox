@@ -74,7 +74,7 @@ mod tests {
         let mut settings = json!({
             "appearance": {
                 "theme": "dark",
-                "accent_seed": "#6366f1"
+                "dark_accent": "#6366f1"
             },
             "llm": {
                 "active": "gpt-4o",
@@ -105,7 +105,7 @@ mod tests {
 
         // Safe fields preserved
         assert_eq!(settings["appearance"]["theme"], "dark");
-        assert_eq!(settings["appearance"]["accent_seed"], "#6366f1");
+        assert_eq!(settings["appearance"]["dark_accent"], "#6366f1");
         assert_eq!(settings["llm"]["active"], "gpt-4o");
         assert_eq!(settings["tts"]["azure_tts"]["region"], "eastus");
         assert_eq!(settings["llm"]["servers"][0]["host"], "10.0.0.5");

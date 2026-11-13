@@ -1,136 +1,5 @@
 # Phase 14 Work Log
 
-## 2026-11-12 — Temporal Scrubber Empty Months & SessionPanel Seam Elimination
-
-- **Temporal Calendar Scrubber (`RecallTimelineScrubber.tsx`)**:
-  - **Temporal Slot Architecture**: Replaced index-based bar placement with true calendar month segmentation. Months span the full date range (e.g. Nov down to Jul). Each month receives an equal dedicated timeline slot.
-  - **Empty Spaces for Inactive Periods**: Months with zero conversations render zero bars, leaving a clean empty baseline track signifying conversational inactivity. Inactive days within a month also render empty baseline gaps.
-  - **Active Month Accent Illumination**: Dynamically identifies the month containing the active Coverflow session (`activeMonthKey`). Illumination applies `text-[rgb(var(--accent))] font-bold drop-shadow-[0_0_8px_rgba(var(--accent),0.7)]` to that month's label, keeping other months muted.
-  - **Zero Month Label Overlap**: Month labels are centered on each month's slot (e.g. 10%, 30%, 50%, 70%, 90%). Adjacent labels maintain a guaranteed 20% separation (~108px) and never collide.
-- **SessionPanel Seam & Slivers Elimination (`SessionPanel.tsx`)**:
-  - **Confirmed Other Agent's RCA**: The clipped text sliver was caused by the 4px `pb-1` on Section 1 creating a bleed window where the outgoing "No pinned conversations" text peeked through before "Projects" reached `top-0`.
-  - **Hidden Empty Pinned Section**: Gated Section 1 strictly behind `pinnedSessions.length > 0`. When 0 pinned sessions exist, the drawer cleanly starts with `Projects`, eliminating placeholder clutter and the bleed source.
-  - **Snug Top Action Spacing**: Reduced `pb-2` to `pb-1.5` on the fixed actions container and set `pb-0` on sections, ensuring sticky headers sit flush under the divider without gaps.
-- **Verification**:
-  - `pnpm exec tsc --noEmit`: PASSED (0 errors).
-  - ESLint `SessionPanel.tsx`, `RecallTimelineScrubber.tsx`: PASSED (0 errors, 0 warnings).
-  - `pnpm lint:arch`: PASSED (all architectural invariants hold).
-  - Vitest: 11/11 tests passed.
-
-## 2026-11-12 — Disappearing Orb RCA, Horizon Glow Breathe & Freeze-Free Search Transition
-
-- **Disappearing Orb Bug RCA & Fix (`AdvancedOrb.tsx`, `Home.tsx`)**:
-  - **Root Cause Confirmed**: When mounting `Home.tsx` while in Search Mode (`?mode=search`), `Home.tsx` previously passed `paused={isSearchMode || ...}` to `VoxOrb`. This forced `useDynamicFPS` to pause rendering immediately upon component mount before `tickFn` could run even once. Consequently, `renderer.render(scene, camera)` and `setEntered(true)` were never called, leaving the WebGL canvas unpainted and styled at `opacity: 0`. Furthermore, after 3 seconds of calm idle in Search Mode, `isSettledIdle` timed out to `true`; because `interactionState` remained `"Idle"` when switching back to Voice Mode, `isSettledIdle` never reset to `false`, permanently blocking the RAF loop until a fresh route navigation in Voice Mode remounted the component.
-  - **Remediation**:
-    - Removed `isSearchMode` from `paused` on `VoxOrb` in `Home.tsx`. In Search Mode, the Orb runs at calm `fpsIdle: 12` (sub-1% CPU) and naturally settles after 3 seconds.
-    - Added an immediate static frame render (`renderer.render(scene, camera)`) and `setEntered(true)` immediately following scene context instantiation in `AdvancedOrb.tsx`, guaranteeing the canvas is never blank or transparent on initial mount regardless of initial pause state.
-    - Updated `isSettledIdle` effect in `AdvancedOrb.tsx` to guard on `paused`, ensuring that resuming from paused state clears `isSettledIdle` and permits 3 seconds of active rendering.
-    - Added a `webglcontextrestored` listener to `renderer.domElement` to re-render the static scene upon WebGL context restoration.
-- **Atmospheric Celestial Halo Glow & Breathe Pulse (`SearchModeOrbHalo.tsx`, `index.css`)**:
-  - Centered halo radial gradient at `50% 75%` (`ellipse 85% 55%`), focusing the ethereal ambient glow tightly on the horizon between the lower hemisphere of the Orb and the session cards.
-  - Extinguished glow above the 50% line (transparent from Y <= 35%), keeping the top half, search bar, and header completely clear of purple light spill.
-  - Upgraded `@keyframes vox-halo-breathe` in `index.css` to a 6s ease-in-out atmospheric pulse (cycling opacity 0.50 to 0.95 and scale 0.96 to 1.03) for vivid organic depth.
-- **Freeze-Free Session Panel Search Toggle (`SessionPanel.tsx`)**:
-  - **Root Cause Confirmed**: When closing `SessionPanel`, `panelActive` flipped to `false`, which immediately invoked `setChronologicalRenderLimit(25)`. This synchronously destroyed and unmounted 70+ DOM session rows on the exact frame the drawer slide-out animation began, locking the main thread and freezing the page.
-  - **Remediation**: Deferred collapsing `chronologicalRenderLimit` by 300ms in `SessionPanel.tsx`, ensuring the 220ms drawer slide completes with zero DOM unmounting mutations.
-  - Enhanced dynamic toggle button in `SessionPanel.tsx`: renders `<Search /> Search conversations` when in Voice Mode and `<Mic /> Back to Voice Mode` when in Search Mode with high-resolution performance tracing (`[trace-search]`).
-- **Verification**:
-  - `cd app && pnpm exec tsc --noEmit`: PASSED (0 errors).
-  - ESLint `shared/components/home/`: PASSED (0 errors).
-  - `pnpm lint:arch`: PASSED (all architectural invariants hold).
-  - Vitest: 11/11 tests passed (`DetailPanel.dom.test.tsx`, `historyEmptyState.regression.test.ts`, `useDetailPanelTurns.test.ts`).
-
-## 2026-11-12 — Revert Square Halo Box & Make Halo Subtle
-
-- **Reverted Square Box Mask (`SearchModeOrbHalo.tsx`)**:
-  - Removed rectangular container with CSS `mask-image` that caused a square clipping boundary on circular blurred elements.
-  - Restored fragment structure with unconstrained `rounded-full` layers.
-  - Shifted radial gradient origin to `50% 36%` (aligned with the upper celestial orb core) with smooth falloff to `transparent` at `62%`.
-  - Calibrated the secondary color halo to subtle intensities (`rgba(var(--accent), 0.14)` and `rgba(var(--accent-complementary), 0.07)` at `0.75` opacity), keeping the bottom section dark and devoid of excess blur or color spill.
-
-## 2026-11-10 — Search Mode Halo Masking, Underline Search Bar, Card Compaction & Live Scrubber Sync
-
-- **Halo Bottom Glow Soft Termination (`SearchModeOrbHalo.tsx`)**:
-  - Shifted radial-gradient origin from `center bottom` to `50% 42%`, centering the ethereal glow around the celestial rising semi-sphere.
-  - Applied vertical alpha gradient mask (`linear-gradient(to bottom, black 0%, black 45%, rgba(0,0,0,0.4) 60%, transparent 74%)`), smoothly extinguishing the glow right beneath the card horizon and eliminating purple light spill down toward the scrubber.
-- **Underline Search Bar Architecture Alignment (`SearchRecallView.tsx`)**:
-  - Replaced the heavy `rounded-2xl glass-card` pill with the clean frameless underline search input matching the Memory page (`SearchBarShell` styling).
-  - Uses `border-b border-[rgba(var(--foreground),0.18)] focus-within:border-[rgba(var(--accent),0.8)]` with subtle search icon and clear button (`X`).
-- **Session Card Compaction Action (`RecallSessionCard.tsx`, `CompactSessionButton.tsx`)**:
-  - Added `variant="chip"` to `CompactSessionButton` with compact styling, spinner state during compaction, and uncompacted turn count in tooltip.
-  - Embedded compaction button directly into `RecallSessionCard` bottom row when `session.uncompacted_turns > 0`.
-- **"Needs Compaction" Sort & Filter Option (`useRecallSearch.ts`, `recallSearchStore.ts`, `SearchRecallView.tsx`, `sessionCopy.ts`)**:
-  - Extended `SortOrder` with `"uncompacted"`.
-  - Added filter logic to prioritize and isolate sessions with `uncompacted_turns > 0`, sorted by highest uncompacted turns first.
-  - Added "Needs compaction" entry to the filter menu below the search bar with live conversation counter update.
-- **Bidirectional Live Scrubber & Scroll Sync (`RecallArcCarousel.tsx`, `RecallTimelineScrubber.tsx`, `SearchRecallView.tsx`)**:
-  - Added `onLiveIndexChange` to `RecallArcCarousel` to notify parent of active center card on every RAF step during wheel/drag momentum.
-  - Guarded external `activeIndex` synchronization in carousel during active user gestures (`draggingRef` / `isWheelingRef`), eliminating jitter.
-  - Replaced exact-index bar matching with proximity-based nearest-bar resolution in `RecallTimelineScrubber`, guaranteeing a highlighted active bar for every session in history.
-  - Added pointer drag scrubbing on the scrubber track for fluid scrubbing.
-- **Verification**:
-  - `pnpm lint:arch`: PASSED (all invariants hold).
-  - ESLint `shared/components/home/recall/`: 0 errors / 0 warnings.
-  - Vitest: 11/11 tests passed (`DetailPanel.dom.test.tsx`, `historyEmptyState.regression.test.ts`, `useDetailPanelTurns.test.ts`).
-  - `stress_drawers.mjs`: PASSED (0 exceptions, DetailPanel close 60 FPS, DOM nodes -140).
-  - `soak_test.mjs --quick`: PASSED (0 DOM delta, -0.357 MB/min drift).
-
-## 2026-11-10 — Recall Coverflow 60 FPS Physics, Glow Feathering & Lead Review Hardening
-
-- **Celestial Rising Semi-Sphere Visual Transformation (`Home.tsx`)**:
-  - Implemented dynamic vertical gradient alpha mask (`linear-gradient(to bottom, black 0%, black 35%, rgba(0,0,0,0.65) 50%, rgba(0,0,0,0.2) 65%, transparent 80%)`) on `OrbitField` & `VoxOrb` during Search Mode.
-  - The Orb visualizes as a rising celestial object from behind the horizon of session cards, eliminating the jarring appearance of cards placed over a solid background sphere.
-- **Search & Drawer Transition Decoupling (`SessionPanel.tsx`, `Home.tsx`, `projectsService.ts`, `useSessionPanel.ts`)**:
-  - Prewarmed `getSessions()` and `getProjects()` in `Home.tsx` during idle (50ms), ensuring caches are hot before the user opens any panel.
-  - Exported `getCachedProjects()` from `projectsService.ts` and seeded `useSessionPanel` initial state synchronously.
-  - Deferred `refresh()` in `useSessionPanel` until 240ms (after the 220ms drawer slide rests) when cache is warm, preventing mid-slide layout thrashing.
-  - Decoupled `onClose()` and `onSearch()` in `SessionPanel.tsx` via `requestAnimationFrame()`, eliminating the mini-freeze when entering search mode.
-- **Deterministic UI Suite Execution (`review-ui`)**:
-  - Updated `stress_drawers.mjs` and `soak_test.mjs` to target `/?mode=search` instead of legacy `/history`.
-  - `pnpm lint:arch`: PASSED (all architectural invariants hold).
-  - ESLint on `shared/components/home/recall/`: 0 errors / 0 warnings.
-  - `stress_drawers.mjs`: PASSED (0 exceptions, Net Heap +1.21 MB, DOM nodes -84).
-  - `soak_test.mjs --quick`: PASSED (0 net heap growth, -0.357 MB/min slope, DOM delta 0, listener delta -4).
-- **Coverflow Scroll Physics & Memo Stabilization (`RecallArcCarousel.tsx`, `RecallSessionCard.tsx`)**:
-  - Decoupled `handleWheel` from immediate integer snapping (`isWheelingRef`), allowing fluid trackpad and wheel momentum with snapping only on rest.
-  - Wrapped `onSelect` in referentially stable `handleCardSelect` callback, protecting `React.memo` across all non-active cards on integer steps.
-  - Replaced layout-thrashing `display: none` / `block` toggling inside RAF with `visibility: hidden` and static `will-change: transform, opacity`.
-  - Replaced `transition-all` on cards with targeted `transition-[border-color,box-shadow,background-color] duration-150`.
-  - Preserved the existing 3D arc curvature (`recallArcMath.ts`).
-- **Glow Blur Optimization & Atmospheric Halo (`SearchModeOrbHalo.tsx`)**:
-  - Preserved user-requested `blur-xl` feathered cosmic glow (`--accent` + `--accent-complementary`).
-  - Removed infinite opacity breathe animation and continuous spin keyframe during scroll, isolating the glow to a static hardware layer (`transform-gpu`, `translateZ(0)`).
-- **Natural Timeline Sorting & Skeleton Removal (`useRecallSearch.ts`)**:
-  - Removed fake pulsing skeleton cards.
-  - "Newest first" now sorts newest-first (`b.created_at - a.created_at`) with index 0 (newest session) centered, and older conversations progressing naturally to the right.
-  - Connected existing backend Turso `searchHistory()` with 150ms debounce for deep search across titles and turns.
-- **SessionPanel Lag & Drawer Stabilization (`useSessionPanel.ts`, `SessionPanel.tsx`, `Home.tsx`)**:
-  - Seeded `useSessionPanel` immediately with `getCachedSessions()`.
-  - Deferred chronological session expansion to 260ms (after the 220ms drawer slide completes) to maintain 60 FPS during open gestures.
-  - Added `overscroll-contain` to session scroll container.
-  - Guarded `<DetailPanel>` in `Home.tsx` with `!isSearchMode` to eliminate redundant drawer mounts.
-- **Scrubber & Design Floor Alignment (`RecallTimelineScrubber.tsx`, `DetailPanel.tsx`, `SearchRecallView.tsx`)**:
-  - Fixed duplicate month keys across years (`${m.year}-${m.label}`).
-  - Decoupled bar geometry from `activeIndex` in scrubber memo.
-  - Aligned all `10px` and `10.5px` micro-copy to the Vox design system 11px floor (`text-2xs` / `text-[11px]`).
-- **Verification**:
-  - `pnpm exec tsc --noEmit` passed with 0 errors across entire workspace.
-  - Vitest passed 11/11 tests (`DetailPanel.dom.test.tsx`, `historyEmptyState.regression.test.ts`, `useDetailPanelTurns.test.ts`).
-  - `./scripts/verify-targets.sh` passed 100% (0 warnings / 0 errors across desktop and Android).
-
-- **AEC Pacing & Backlog Headroom (`audio_capture/barge_in.rs`, `services/audio/aec.rs`)**:
-  - Paced `push_slice` ring buffer feed in `EchoScene` fixture (`occupied_len() >= frame * 4`), resolving synthetic queue overrun where 6s audio was dumped into AEC in <5ms.
-  - Increased `MAX_RENDER_QUEUE_BACKLOG_SAMPLES` from 3200 to 9600 for safe audio headroom.
-  - Re-enabled `solo_playback_over_six_seconds_never_interrupts_with_pipewire_delay` and `double_talk_barge_in_cancels_the_playback_and_opens_listening` (all 7/7 passing).
-- **VAD Threshold & Logging Cleanup (`services/vad/segmenter.rs`)**:
-  - Restored onset confirmation to `(base_start_frames * 1.5).max(5.0)` per specification.
-  - Stripped temporary debug `eprintln!`.
-- **Tauri Mock State Safety (`core/state.rs`, `pipeline/assistant/session.rs`, `pipeline/assistant/transcript.rs`)**:
-  - Converted unconditional `app.state::<Arc<AppState>>()` lookups to `app.try_state()` to allow headless/mock test execution without panicking.
-- **Verification**:
-  - `./scripts/verify-targets.sh` passed 100% (0 warnings / 0 errors across desktop and aarch64-linux-android).
-
-
 ## 2026-10-26 – 2026-10-31 — Remote Control Subsystem Architecture, IPC Dispatcher & Hardening (Compacted)
 
 - **Architecture & Modlet Deconstruction (`services/remote/`)**:
@@ -371,6 +240,68 @@
 
 ---
 
+## 2026-11-10 to 2026-11-12 — Search Mode Halo Masking, Underline Search Bar & Coverflow Physics (Compacted)
+
+- **Halo Masking & Subtle Aura (`SearchModeOrbHalo.tsx`)**: Replaced square container mask with unconstrained `rounded-full` fragment layers. Shifted radial-gradient origin to `50% 36%` with soft falloff at `62%`. Applied vertical alpha gradient mask to terminate glow cleanly above the scrubber.
+- **Underline Search Bar & Session Compaction (`SearchRecallView.tsx`, `RecallSessionCard.tsx`)**: Aligned search input with frameless Memory page underline style. Embedded compact variant button for uncompacted turn counts; added `"uncompacted"` sort and filter menu option.
+- **Bidirectional Scrubber Sync & Physics (`RecallArcCarousel.tsx`, `RecallTimelineScrubber.tsx`)**: Added `onLiveIndexChange` with gesture locks (`draggingRef`, `isWheelingRef`). Replaced exact-index matching with nearest-bar resolution.
+- **Verification**: `pnpm lint:arch` PASSED; Vitest 11/11 tests passed; `stress_drawers.mjs` (0 exceptions, 60 FPS); `soak_test.mjs --quick` (0 DOM delta).
+
+## 2026-11-10 — Recall Coverflow 60 FPS Physics, Glow Feathering & Lead Review Hardening
+
+- **Celestial Rising Semi-Sphere Visual Transformation (`Home.tsx`)**:
+  - Implemented dynamic vertical gradient alpha mask (`linear-gradient(to bottom, black 0%, black 35%, rgba(0,0,0,0.65) 50%, rgba(0,0,0,0.2) 65%, transparent 80%)`) on `OrbitField` & `VoxOrb` during Search Mode.
+  - The Orb visualizes as a rising celestial object from behind the horizon of session cards, eliminating the jarring appearance of cards placed over a solid background sphere.
+- **Search & Drawer Transition Decoupling (`SessionPanel.tsx`, `Home.tsx`, `projectsService.ts`, `useSessionPanel.ts`)**:
+  - Prewarmed `getSessions()` and `getProjects()` in `Home.tsx` during idle (50ms), ensuring caches are hot before the user opens any panel.
+  - Exported `getCachedProjects()` from `projectsService.ts` and seeded `useSessionPanel` initial state synchronously.
+  - Deferred `refresh()` in `useSessionPanel` until 240ms (after the 220ms drawer slide rests) when cache is warm, preventing mid-slide layout thrashing.
+  - Decoupled `onClose()` and `onSearch()` in `SessionPanel.tsx` via `requestAnimationFrame()`, eliminating the mini-freeze when entering search mode.
+- **Deterministic UI Suite Execution (`review-ui`)**:
+  - Updated `stress_drawers.mjs` and `soak_test.mjs` to target `/?mode=search` instead of legacy `/history`.
+  - `pnpm lint:arch`: PASSED (all architectural invariants hold).
+  - ESLint on `shared/components/home/recall/`: 0 errors / 0 warnings.
+  - `stress_drawers.mjs`: PASSED (0 exceptions, Net Heap +1.21 MB, DOM nodes -84).
+  - `soak_test.mjs --quick`: PASSED (0 net heap growth, -0.357 MB/min slope, DOM delta 0, listener delta -4).
+- **Coverflow Scroll Physics & Memo Stabilization (`RecallArcCarousel.tsx`, `RecallSessionCard.tsx`)**:
+  - Decoupled `handleWheel` from immediate integer snapping (`isWheelingRef`), allowing fluid trackpad and wheel momentum with snapping only on rest.
+  - Wrapped `onSelect` in referentially stable `handleCardSelect` callback, protecting `React.memo` across all non-active cards on integer steps.
+  - Replaced layout-thrashing `display: none` / `block` toggling inside RAF with `visibility: hidden` and static `will-change: transform, opacity`.
+  - Replaced `transition-all` on cards with targeted `transition-[border-color,box-shadow,background-color] duration-150`.
+  - Preserved the existing 3D arc curvature (`recallArcMath.ts`).
+- **Glow Blur Optimization & Atmospheric Halo (`SearchModeOrbHalo.tsx`)**:
+  - Preserved user-requested `blur-xl` feathered cosmic glow (`--accent` + `--accent-complementary`).
+  - Removed infinite opacity breathe animation and continuous spin keyframe during scroll, isolating the glow to a static hardware layer (`transform-gpu`, `translateZ(0)`).
+- **Natural Timeline Sorting & Skeleton Removal (`useRecallSearch.ts`)**:
+  - Removed fake pulsing skeleton cards.
+  - "Newest first" now sorts newest-first (`b.created_at - a.created_at`) with index 0 (newest session) centered, and older conversations progressing naturally to the right.
+  - Connected existing backend Turso `searchHistory()` with 150ms debounce for deep search across titles and turns.
+- **SessionPanel Lag & Drawer Stabilization (`useSessionPanel.ts`, `SessionPanel.tsx`, `Home.tsx`)**:
+  - Seeded `useSessionPanel` immediately with `getCachedSessions()`.
+  - Deferred chronological session expansion to 260ms (after the 220ms drawer slide completes) to maintain 60 FPS during open gestures.
+  - Added `overscroll-contain` to session scroll container.
+  - Guarded `<DetailPanel>` in `Home.tsx` with `!isSearchMode` to eliminate redundant drawer mounts.
+- **Scrubber & Design Floor Alignment (`RecallTimelineScrubber.tsx`, `DetailPanel.tsx`, `SearchRecallView.tsx`)**:
+  - Fixed duplicate month keys across years (`${m.year}-${m.label}`).
+  - Decoupled bar geometry from `activeIndex` in scrubber memo.
+  - Aligned all `10px` and `10.5px` micro-copy to the Vox design system 11px floor (`text-2xs` / `text-[11px]`).
+- **Verification**:
+  - `pnpm exec tsc --noEmit` passed with 0 errors across entire workspace.
+  - Vitest passed 11/11 tests (`DetailPanel.dom.test.tsx`, `historyEmptyState.regression.test.ts`, `useDetailPanelTurns.test.ts`).
+  - `./scripts/verify-targets.sh` passed 100% (0 warnings / 0 errors across desktop and Android).
+
+- **AEC Pacing & Backlog Headroom (`audio_capture/barge_in.rs`, `services/audio/aec.rs`)**:
+  - Paced `push_slice` ring buffer feed in `EchoScene` fixture (`occupied_len() >= frame * 4`), resolving synthetic queue overrun where 6s audio was dumped into AEC in <5ms.
+  - Increased `MAX_RENDER_QUEUE_BACKLOG_SAMPLES` from 3200 to 9600 for safe audio headroom.
+  - Re-enabled `solo_playback_over_six_seconds_never_interrupts_with_pipewire_delay` and `double_talk_barge_in_cancels_the_playback_and_opens_listening` (all 7/7 passing).
+- **VAD Threshold & Logging Cleanup (`services/vad/segmenter.rs`)**:
+  - Restored onset confirmation to `(base_start_frames * 1.5).max(5.0)` per specification.
+  - Stripped temporary debug `eprintln!`.
+- **Tauri Mock State Safety (`core/state.rs`, `pipeline/assistant/session.rs`, `pipeline/assistant/transcript.rs`)**:
+  - Converted unconditional `app.state::<Arc<AppState>>()` lookups to `app.try_state()` to allow headless/mock test execution without panicking.
+- **Verification**:
+  - `./scripts/verify-targets.sh` passed 100% (0 warnings / 0 errors across desktop and aarch64-linux-android).
+
 ## 2026-11-10 — Post-Review Clean-Sweep ZBC Refactor (History Fold into Home)
 
 - **Audit Findings Implemented (Zero Backward Compatibility)**:
@@ -443,10 +374,7 @@
    - F-007: 3 clippy lints in `src/services/vad/{segmenter,turn_detector}.rs` pending backend cleanup.
 
 ### Verification
-- `cargo test --test vad_segmentation_test --release`: **3/3 passed (49.89s)**
-  - `test smart_turn_detector_gracefully_degrades_when_model_absent ... ok`
-  - `test silero_vad_segments_speech_and_triggers_auto_silence_stop ... ok`
-  - `test passive_streaming_segments_speech_and_suppresses_silence ... ok`
+- `cargo test --test vad_segmentation_test --release`: **3/3 passed (49.89s)** (graceful degradation, auto silence stop, passive streaming suppression).
 
 ---
 
@@ -464,13 +392,122 @@
 - **Verification**:
   - Dual-target compile gate (`./scripts/verify-targets.sh`): Desktop clippy/tests/binary + Android (`aarch64-linux-android`) clippy passed with **0 warnings / 0 errors**.
   - Architectural lint (`./scripts/lint-arch.sh`): PASSED (all backend architectural invariants hold).
-  - `audio_capture_aec_test`: 7/7 tests passed 3 times consecutively (0 flakes):
-    - `aec_suppresses_the_synthetic_tts_echo`
-    - `aec_worker_honours_the_dynamic_bypass_command`
-    - `aec_worker_passes_every_captured_chunk_through`
-    - `playback_reference_tap_downsamples_48k_to_16k`
-    - `bypass_reproduces_the_echo_interruption`
-    - `double_talk_barge_in_cancels_the_playback_and_opens_listening`
-    - `solo_playback_over_six_seconds_never_interrupts_with_pipewire_delay`
+  - `audio_capture_aec_test`: 7/7 tests passed 3 times consecutively (0 flakes: suppression, bypass, chunk pass-through, tap downsampling, echo interruption, barge-in cancellation, 6s solo playback).
   - Full test suite (`cargo nextest run --release --test-threads=1`): **510 tests run, 510 passed, 0 failed, 4 skipped (100% green)**.
 
+---
+
+## 2026-11-12 — Fix Search Render Crash, Frosted Glass Capsule & Sphere Glow (Compacted)
+
+- **Fix Search Render Crash (`RecallTimelineScrubber.tsx`)**: Resolved `0 / 0 = NaN` division on single-match filters. Added safe fallback guards for 0-result states.
+- **Frosted Glass Command Capsule (`SearchRecallView.tsx`)**: Replaced bare floating underline with a prominent frosted glass capsule. Lifted scrubber stage into the golden ratio pocket.
+- **Middle Sphere Secondary Accent Glow (`SearchModeOrbHalo.tsx`)**: Extended atmosphere glow through the middle up to ~38% height.
+- **Verification**: `tsc`, `lint:arch`, ESLint, and Vitest (11/11 tests) passed.
+
+- **Temporal Calendar Scrubber (`RecallTimelineScrubber.tsx`)**: Replaced index-based bar placement with true calendar month segmentation. Active month accent illumination with zero label overlap.
+- **SessionPanel Seam & Slivers Elimination (`SessionPanel.tsx`)**: Gated pinned section strictly behind `pinnedSessions.length > 0`. Reduced `pb-2` to `pb-1.5` on actions container.
+- **Verification**: `tsc`, `lint:arch`, ESLint, and Vitest (11/11 tests) passed.
+
+## 2026-11-12 — Disappearing Orb RCA, Horizon Glow Breathe & Freeze-Free Search Transition
+
+- **Disappearing Orb Bug RCA & Fix (`AdvancedOrb.tsx`, `Home.tsx`)**:
+  - **Root Cause Confirmed**: When mounting `Home.tsx` while in Search Mode (`?mode=search`), `Home.tsx` previously passed `paused={isSearchMode || ...}` to `VoxOrb`. This forced `useDynamicFPS` to pause rendering immediately upon component mount before `tickFn` could run even once. Consequently, `renderer.render(scene, camera)` and `setEntered(true)` were never called, leaving the WebGL canvas unpainted and styled at `opacity: 0`. Furthermore, after 3 seconds of calm idle in Search Mode, `isSettledIdle` timed out to `true`; because `interactionState` remained `"Idle"` when switching back to Voice Mode, `isSettledIdle` never reset to `false`, permanently blocking the RAF loop until a fresh route navigation in Voice Mode remounted the component.
+  - **Remediation**:
+    - Removed `isSearchMode` from `paused` on `VoxOrb` in `Home.tsx`. In Search Mode, the Orb runs at calm `fpsIdle: 12` (sub-1% CPU) and naturally settles after 3 seconds.
+    - Added an immediate static frame render (`renderer.render(scene, camera)`) and `setEntered(true)` immediately following scene context instantiation in `AdvancedOrb.tsx`, guaranteeing the canvas is never blank or transparent on initial mount regardless of initial pause state.
+    - Updated `isSettledIdle` effect in `AdvancedOrb.tsx` to guard on `paused`, ensuring that resuming from paused state clears `isSettledIdle` and permits 3 seconds of active rendering.
+    - Added a `webglcontextrestored` listener to `renderer.domElement` to re-render the static scene upon WebGL context restoration.
+- **Atmospheric Celestial Halo Glow & Breathe Pulse (`SearchModeOrbHalo.tsx`, `index.css`)**:
+  - Centered halo radial gradient at `50% 75%` (`ellipse 85% 55%`), focusing the ethereal ambient glow tightly on the horizon between the lower hemisphere of the Orb and the session cards.
+  - Extinguished glow above the 50% line (transparent from Y <= 35%), keeping the top half, search bar, and header completely clear of purple light spill.
+  - Upgraded `@keyframes vox-halo-breathe` in `index.css` to a 6s ease-in-out atmospheric pulse (cycling opacity 0.50 to 0.95 and scale 0.96 to 1.03) for vivid organic depth.
+- **Freeze-Free Session Panel Search Toggle (`SessionPanel.tsx`)**:
+  - **Root Cause Confirmed**: When closing `SessionPanel`, `panelActive` flipped to `false`, which immediately invoked `setChronologicalRenderLimit(25)`. This synchronously destroyed and unmounted 70+ DOM session rows on the exact frame the drawer slide-out animation began, locking the main thread and freezing the page.
+  - **Remediation**: Deferred collapsing `chronologicalRenderLimit` by 300ms in `SessionPanel.tsx`, ensuring the 220ms drawer slide completes with zero DOM unmounting mutations.
+  - Enhanced dynamic toggle button in `SessionPanel.tsx`: renders `<Search /> Search conversations` when in Voice Mode and `<Mic /> Back to Voice Mode` when in Search Mode with high-resolution performance tracing (`[trace-search]`).
+- **Verification**:
+  - `cd app && pnpm exec tsc --noEmit`: PASSED (0 errors).
+  - ESLint `shared/components/home/`: PASSED (0 errors).
+  - `pnpm lint:arch`: PASSED (all architectural invariants hold).
+  - Vitest: 11/11 tests passed (`DetailPanel.dom.test.tsx`, `historyEmptyState.regression.test.ts`, `useDetailPanelTurns.test.ts`).
+
+## 2026-11-12 — Appearance Card Redesign & Review Remediation
+
+- **Appearance Card Redesign (`AppearanceCard.tsx`)**:
+  - Replaced tabs with quiet breadcrumb navigation (`CardTitleBar` with `Customise >` and `<`).
+  - Added native full color picker (`HexColorPicker`) in a 2-column studio layout (compact picker left, mode switch & swatches right).
+  - Constrained card height to match `PersonaCard` (`h-[280px] max-h-[280px]` in full-max, `h-[230px]` in full-min), preventing collision with the bottom dock (`EdgeNav`).
+  - Placed `ThemeToggleButton` into the header action slot in Custom view.
+  - Enforced `design-spec.md` §2.1 hairline boundaries on preset pills (`border-[rgba(var(--border),0.08)]` and `border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.08)]`); removed rings, glow shadows, and opaque inline styles.
+  - Normalized all preset theme borders in `themePresets.ts` to neutral hairlines (`"255, 255, 255"` dark, `"0, 0, 0"` light).
+- **Backend & Frontend Review Remediations**:
+  - Backend hex validation (`config/mutation.rs`, `ipc/settings.rs`) rejecting invalid color hex inputs.
+  - Persistence round-trip tests (`settings_persistence_test.rs`): 17/17 passed sequentially.
+  - ZBC cleanup: atomically eliminated legacy `accent_seed` across backend, frontend types, `WizardRoot.tsx`, and `AdvancedOrb.tsx`.
+  - Fixed mobile overlay stacking in `SearchRecallView.tsx` and bound `MemorySearchBar` shortcut hint to SSOT.
+- **Verification**:
+  - Compile gate (`./scripts/verify-targets.sh`): Desktop clippy/bin/tests + Android (`aarch64`) passed with **0 warnings / 0 errors**.
+  - Vitest test suite (`pnpm vitest run`): **34 test files, 269 tests passed (100% green)**.
+
+
+---
+
+## 2026-11-13 — Appearance Card Redesign, Preset Catalog Overhaul & Full Review Remediation
+
+- **Appearance Card Complete Redesign (`AppearanceCard.tsx`)**:
+  - **Breadcrumb Navigation**: Replaced the underline tab strip with `CardTitleBar` breadcrumb action (`Customise >` in Presets view, and `<` back arrow returning to Presets from Custom view).
+  - **Full Native Color Picker**: Restored `HexColorPicker` (`react-colorful`) in the Custom view with segmented selection between `Accent Color` and `Background Tone`. Supported by rAF live previews (`previewAccent` / `previewBackground`) and drag gate management (`beginAccentPreview` / `endAccentPreview` / `beginBackgroundPreview` / `endBackgroundPreview`).
+  - **Eliminated In-Card Theme Toggle**: Removed duplicate `ThemeToggleButton` from the card header (already provided at the page header level).
+  - **Multi-Layer Background Tone Chips**: Replaced flat, indistinguishable near-black circular swatches with multi-layered surface preview chips showing distinct border, card layer, and accent dot contrast.
+- **Preset Catalog & Contrast Overhaul (`themePresets.ts`, `surfaceTokens.ts`)**:
+  - Calibrated all presets (`Tokyo Night`, `Catppuccin`, `One Dark`, `Dracula`, `Nord`, `Night Owl`, `Vox Default`) for high contrast against background, card, and text tokens in both Dark and Light modes. Fixed the inverted card luminance bug in Tokyo Night light mode.
+  - Added two new presets: `Rosé Pine` (Moon & Dawn) and `Solarized` (Dark & Light).
+  - Consolidated palette SSOT: Moved `ACCENT_SWATCHES`, `DARK_BG_PRESETS`, and `LIGHT_BG_PRESETS` into `themePresets.ts`.
+- **Backend Review & ZBC Hardening (`config/mutation.rs`, `ipc/settings.rs`, `settings_persistence_test.rs`)**:
+  - **ZBC Cleanup**: Completely pruned legacy `accent_seed` across backend schemas, types, and callsites in favor of the canonical 5-field appearance shape.
+  - **Hex Validation**: Implemented `is_valid_hex_color(&str) -> bool` and enforced it in `apply_appearance_mutation` and `ipc::settings::set_appearance`.
+  - **Persistence Round-Trip Assertions**: Expanded `settings_reload_preserves_every_mutated_field` to assert all 5 appearance keys (`preset`, `dark_accent`, `light_accent`, `dark_bg`, `light_bg`) and invalid hex string rejection.
+- **Frontend Review Remediation (`index.html`, `SearchRecallView.tsx`, `MemorySearchBar.tsx`, `settingsLayout.ts`)**:
+  - **Boot Script Hoisting**: Renamed `br, bg, bb` in `index.html` to `lightR/lightG/lightB` and `darkR/darkG/darkB`.
+  - **Overlay Stacking Context**: Removed redundant `z-50` wrapper in `SearchRecallView.tsx` on mobile to align with global `z-70` overlay stack; unified `isMobile` screen detection with `Home.tsx`.
+  - **Shortcut SSOT**: Replaced hardcoded `"Ctrl+K"` in `MemorySearchBar.tsx` with `getShortcutById("memory.search")?.keys`.
+  - **Card Width**: Calibrated `getDomainCardWidth("appearance")` in `settingsLayout.ts`.
+- **Verification**:
+  - `pnpm lint:arch`: PASSED (all architectural invariants hold).
+  - `pnpm vitest run src/test/dom/AppearanceCard.dom.test.tsx src/test/themeTransition.regression.test.ts`: PASSED (8/8 tests).
+  - `verify-targets.sh`: PASSED (desktop release and aarch64 Android compile with 0 warnings/0 errors).
+  - `cargo test --release --test settings_persistence_test -- --test-threads=1`: PASSED (17/17 tests).
+
+## 2026-11-13 — Custom Palette Card OKLCH Donut Carousel & Swatches Overhaul
+
+**Task:** Ground-up redesign of the Custom Palette view into a standard 2-ring OKLCH Donut Picker Carousel with curated pairs, chevron navigation, text labels below the donut, and header copy button within the exact card height constraint.
+
+### Changes
+- `app/src/shared/components/settings/appearance/OklchDonutPicker.tsx`
+  - Built a standard two-ring concentric OKLCH Donut Color Picker:
+    - Ring 1 (Outer): 360° OKLCH Hue sweep with draggable handle.
+    - Ring 2 (Inner): Lightness/Luminance sweep with draggable handle.
+    - Center Core: Live color swatch circle with one-click copy.
+  - Eliminated sparkles icon in favor of clean color preview disc.
+  - Full touch/pointer radial hit testing with real-time OKLCH perceptual color math.
+- `app/src/shared/theme/oklchColor.ts`
+  - Added OKLCH conversion utilities (`hexToOklch`, `oklchToHex`) and precomputed conic-gradient stops for accent, dark background, and light background.
+- `app/src/shared/theme/themePresets.ts` & `index.ts`
+  - Added `CURATED_ACCENT_PRESETS` with the 4 user-specified unique pairs:
+    1. Astral Mauve (`#CBA6F7` dark, `#3B1D62` light)
+    2. Sakura Bloom (`#F7A6D2` dark, `#611D47` light)
+    3. Neo Mint (`#A6F7D3` dark, `#22573C` light)
+    4. Solar Amber (`#F9BA5F` dark, `#5A2E05` light)
+- `app/src/shared/components/settings/appearance/AppearanceCard.tsx`
+  - Positioned the standard 2-ring donut prominently on the left.
+  - Placed the carousel footer with chevrons (`ChevronLeft` / `ChevronRight`) and simple text label (`Accent Color` / `Background Tone`) directly below the donut.
+  - Right column: 4 clean, tactile preset rows showing either the 4 curated accent swatches or the 4 background presets.
+  - Header (`CardTitleBar`): Active color hex readout with one-click copy button + `<ThemeToggleButton />`.
+- `app/src/test/dom/AppearanceCard.dom.test.tsx`
+  - Updated swatch assertion to test the new `#CBA6F7` curated accent.
+
+### Verification
+- `pnpm vitest run src/test/dom/AppearanceCard.dom.test.tsx`: 6/6 tests passed.
+- `pnpm lint:arch`: passed with zero violations.
+- `pnpm eslint src/shared/components/settings/appearance/ src/shared/theme/oklchColor.ts`: 0 errors, 0 warnings.
+- `pnpm build`: clean compilation and production build.

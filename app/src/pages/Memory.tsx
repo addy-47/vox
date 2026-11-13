@@ -679,8 +679,8 @@ export const Memory: React.FC = memo(() => {
           position="global"
           title={MEMORY_COPY.searchMemories}
           ariaLabel={MEMORY_COPY.searchMemories}
-          className="w-[min(480px,92vw)] h-[min(540px,72vh)] p-4 rounded-2xl bg-[rgba(var(--card),0.92)] border border-[rgba(var(--border),0.2)] shadow-xl"
-          bodyClassName="h-full flex flex-col min-h-0 overflow-hidden"
+          className="w-full sm:w-[min(540px,92vw)] h-[min(560px,calc(100dvh-96px))] rounded-2xl bg-[rgba(var(--card),0.96)] border border-[rgba(var(--border),0.15)] shadow-2xl backdrop-blur-xl"
+          bodyClassName="h-full flex flex-col min-h-0 overflow-hidden px-4 sm:px-6 py-3"
         >
           <div className="flex flex-col h-full min-h-0 pt-1">
             <MemorySearchBar

@@ -32,7 +32,9 @@ export const RecallTimelineScrubber = memo(({
   // Determine if carousel is ordered newest-to-oldest (default) or oldest-to-newest
   const isNewestFirst = useMemo(() => {
     if (realSessions.length < 2) return true;
-    return realSessions[0].item.created_at >= realSessions[realSessions.length - 1].item.created_at;
+    const first = realSessions[0]?.item?.created_at ?? 0;
+    const last = realSessions[realSessions.length - 1]?.item?.created_at ?? 0;
+    return first >= last;
   }, [realSessions]);
 
   // Construct calendar months array spanning from start month to end month
@@ -112,20 +114,32 @@ export const RecallTimelineScrubber = memo(({
 
       // If month has sessions, place bars temporally inside this month's slot
       // If month has 0 sessions, NO bars are generated — leaving an empty space on the track!
-      if (inMonth.length > 0) {
+      if (inMonth.length === 1) {
+        const entry = inMonth[0];
+        const turns = entry.item.turn_count || 1;
+        const densityFrac = Math.min(1, Math.max(0, (turns - 1) / 15));
+        const height = Math.round(6 + densityFrac * 18);
+        bars.push({
+          sessionIndex: entry.originalIndex,
+          ratio: Math.max(0.01, Math.min(0.99, monthCenterRatio)),
+          height,
+          turns,
+        });
+      } else if (inMonth.length > 1) {
         const maxBarsInMonth = Math.min(inMonth.length, 12);
-        const step = Math.max(1, (inMonth.length - 1) / (maxBarsInMonth - 1));
+        const step = (inMonth.length - 1) / (maxBarsInMonth - 1);
 
         for (let b = 0; b < maxBarsInMonth; b++) {
-          const sIdx = Math.min(inMonth.length - 1, Math.round(b * step));
+          const sIdx = Math.min(inMonth.length - 1, Math.max(0, Math.round(b * step)));
           const entry = inMonth[sIdx];
 
           const turns = entry.item.turn_count || 1;
-          const density = Math.min(1, Math.max(0.15, turns / 12));
-          const height = Math.round(7 + density * 19);
+          const densityFrac = Math.min(1, Math.max(0, (turns - 1) / 15));
+          const height = Math.round(6 + densityFrac * 18);
 
           // Calculate time fraction within the month
-          const rawTimeFrac = (entry.item.created_at - mStartT) / (mEndT - mStartT);
+          const timeSpan = mEndT - mStartT;
+          const rawTimeFrac = timeSpan > 0 ? (entry.item.created_at - mStartT) / timeSpan : 0.5;
           const timeFrac = isNewestFirst ? 1 - rawTimeFrac : rawTimeFrac;
 
           // Inset slightly within month boundaries so bars stay cleanly framed
@@ -152,19 +166,21 @@ export const RecallTimelineScrubber = memo(({
     return { monthMilestones: milestones, histogramBars: bars };
   }, [realSessions, realCount, calendarMonths, isNewestFirst]);
 
-  // Active session and month based on activeIndex
+  // Active session and month based on activeIndex (guarded against empty search results)
   const activeSession = useMemo(() => {
+    if (realSessions.length === 0) return null;
     return realSessions.find((s) => s.originalIndex === activeIndex) ?? realSessions[0];
   }, [realSessions, activeIndex]);
 
   const activeMonthKey = useMemo(() => {
+    if (!activeSession?.item) return "";
     const d = new Date(activeSession.item.created_at);
     return `${d.getFullYear()}-${d.getMonth()}`;
   }, [activeSession]);
 
   // Proximity-based bar matching ensures exactly one bar is highlighted for the active session
   const activeBarIndex = useMemo(() => {
-    if (histogramBars.length === 0) return -1;
+    if (!activeSession || histogramBars.length === 0) return -1;
     const directIdx = histogramBars.findIndex((b) => b.sessionIndex === activeSession.originalIndex);
     if (directIdx >= 0) return directIdx;
 
@@ -235,7 +251,7 @@ export const RecallTimelineScrubber = memo(({
   if (realCount === 0) return null;
 
   return (
-    <div className="w-full max-w-xl px-4 flex flex-col items-center gap-1.5 select-none pointer-events-auto">
+    <div className="w-full flex flex-col items-center gap-1.5 select-none pointer-events-auto">
       {/* Histogram Track (No Chevrons, Tightly Framed) */}
       <div
         ref={trackRef}
@@ -251,6 +267,19 @@ export const RecallTimelineScrubber = memo(({
         {/* Subtle baseline track indicator */}
         <div className="absolute inset-x-0 bottom-1 h-[1.5px] bg-[rgba(var(--foreground),0.12)] rounded-full pointer-events-none" />
 
+        {/* Month boundary delimiter notches on the baseline */}
+        {calendarMonths.length > 1 &&
+          calendarMonths.slice(0, -1).map((_, mIdx) => {
+            const splitRatio = ((mIdx + 1) * (1 / calendarMonths.length)) * 100;
+            return (
+              <div
+                key={`split-${mIdx}`}
+                className="absolute bottom-0.5 -translate-x-1/2 w-[1px] h-2 bg-[rgba(var(--foreground),0.15)] pointer-events-none"
+                style={{ left: `${splitRatio.toFixed(1)}%` }}
+              />
+            );
+          })}
+
         {/* Vertical density bars */}
         <div className="relative w-full h-full flex items-end pointer-events-none">
           {histogramBars.map((bar, i) => {
@@ -261,11 +290,15 @@ export const RecallTimelineScrubber = memo(({
                 className="absolute bottom-1 -translate-x-1/2 flex flex-col items-center transition-[left] duration-150"
                 style={{ left: `${(bar.ratio * 100).toFixed(1)}%` }}
               >
+                {/* Prominent beacon head pip for the active session marker */}
+                {isCurrent && (
+                  <div className="absolute -top-1.5 w-2 h-2 rounded-full bg-[rgb(var(--accent))] border border-[rgb(var(--card))] shadow-[0_0_8px_rgba(var(--accent),1)] z-20 animate-pulse" />
+                )}
                 <div
-                  style={{ height: `${isCurrent ? Math.max(bar.height + 4, 24) : bar.height}px` }}
+                  style={{ height: `${isCurrent ? 28 : bar.height}px` }}
                   className={`rounded-full transition-[height,background-color,box-shadow] duration-150 ${
                     isCurrent
-                      ? "w-[3px] bg-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.9)] z-10"
+                      ? "w-[3.5px] bg-[rgb(var(--accent))] shadow-[0_0_14px_rgba(var(--accent),0.9),0_0_3px_white] z-10"
                       : "w-[2px] bg-[rgba(var(--foreground-muted),0.35)] group-hover:bg-[rgba(var(--foreground-muted),0.55)] hover:bg-[rgb(var(--foreground))]"
                   }`}
                 />

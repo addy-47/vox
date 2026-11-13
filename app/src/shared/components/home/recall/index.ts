@@ -8,4 +8,5 @@ export * from "./DetailPanel";
 export * from "./useRecallSearch";
 export * from "./useDetailPanelTurns";
 export * from "./SearchModeOrbHalo";
+export * from "./RecallSearchModal";
 export * from "./SearchRecallView";

@@ -66,7 +66,7 @@ export type SettingsScope =
  * Maintained as static fallback during bootstrap.
  */
 export const SETTINGS_SCOPE_KEYS: Partial<Record<SettingsScope, readonly string[]>> = {
-  appearance: ["theme", "accent_seed"],
+  appearance: ["theme", "preset", "dark_accent", "light_accent", "dark_bg", "light_bg"],
   // vad / stt / llm / tts mirror the backend contract
   // (`config::mutation::supported_keys_for_domain`), the SSOT for the keys a
   // scope accepts. Without them the dirty check fell back to a whole-scope
@@ -861,8 +861,42 @@ export const CUSTOM_VALUE_COPY = {
 
 export const APPEARANCE_COPY = {
   cardTitle: "Appearance",
+  customTitle: "Custom Palette",
+  customise: "Customise",
+  backToThemes: "Themes",
   copyHex: "Copy hex code",
   copiedHex: "Copied",
+  customThemeLabel: "Custom",
+  customThemeSubtitle: "User tuned",
+  chooseCustomColor: "Choose custom color",
+  segmentedAccent: "Accent",
+  segmentedBackground: "Background",
+  tabs: {
+    themes: "Studio Themes",
+    custom: "Custom Tuning",
+    accent: "Accent",
+    background: "Background",
+  },
+  modes: {
+    dark: "Dark",
+    light: "Light",
+    switchToDark: "Switch to dark mode",
+    switchToLight: "Switch to light mode",
+  },
+  accentSection: {
+    darkTitle: "Dark Accent",
+    lightTitle: "Light Accent",
+    description: "Signal color for highlights, focus rings, and active states.",
+    customPicker: "Custom Accent",
+  },
+  backgroundSection: {
+    darkTitle: "Dark Background",
+    lightTitle: "Light Background",
+    description: "Atmospheric field and surface luminance.",
+    customPicker: "Custom Background",
+  },
+  presetsTitle: "Theme Presets",
+  customIndicator: "Custom",
 } as const;
 
 export const VAD_SETTINGS_COPY = {

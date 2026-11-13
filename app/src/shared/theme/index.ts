@@ -45,92 +45,71 @@ import {
   NOTIFICATION_TOKEN_PROPS,
 } from "./notificationCategoryTokens";
 import { beginFlipTrace, endFlipTrace, traceFlipTargets } from "./trace";
+import {
+  type ThemeVariantTokens,
+  type ThemePresetDefinition,
+  type ThemeAppearance,
+  type CuratedAccentPreset,
+  PRESET_THEMES,
+  ACCENT_SWATCHES,
+  CURATED_ACCENT_PRESETS,
+  DARK_BG_PRESETS,
+  LIGHT_BG_PRESETS,
+  DEFAULT_DARK_ACCENT,
+  DEFAULT_LIGHT_ACCENT,
+  DEFAULT_DARK_BG,
+  DEFAULT_LIGHT_BG,
+  getActiveAccent,
+  getActiveBg,
+} from "./themePresets";
+import {
+  type DerivedSurfaceTokens,
+  hsl2rgb,
+  rgbToHsl,
+  complementaryTriplet,
+  applyComplementaryToken,
+  deriveSurfaceTokens,
+} from "./surfaceTokens";
+import {
+  type OklchColor,
+  hexToOklch,
+  oklchToHex,
+  ACCENT_HUE_CONIC,
+  DARK_BG_CONIC,
+  LIGHT_BG_CONIC,
+} from "./oklchColor";
 
-// ── Complementary accent ────────────────────────────────────────────────────
-// Rotates the primary accent hue by 210° to produce a harmonious secondary
-// (cyan → violet-purple, blue → orange-gold, etc.). Written to
-// --accent-complementary alongside every --accent write so components never
-// need to hardcode a specific purple/violet value.
-
-function hsl2rgb(h: number, s: number, l: number): [number, number, number] {
-  if (s === 0) {
-    const v = Math.round(l * 255);
-    return [v, v, v];
-  }
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-  const hue2rgb = (t: number) => {
-    if (t < 0) t += 1;
-    if (t > 1) t -= 1;
-    if (t < 1 / 6) return p + (q - p) * 6 * t;
-    if (t < 1 / 2) return q;
-    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-    return p;
-  };
-  return [
-    Math.round(hue2rgb(h + 1 / 3) * 255),
-    Math.round(hue2rgb(h) * 255),
-    Math.round(hue2rgb(h - 1 / 3) * 255),
-  ];
-}
-
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  if (max === min) return [0, 0, l];
-  const d = max - min;
-  const s = l > 0.5 ? d / (max + min - d) : d / (max + min);
-  let h = 0;
-  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-  else if (max === g) h = ((b - r) / d + 2) / 6;
-  else h = ((r - g) / d + 4) / 6;
-  return [h, s, l];
-}
-
-/**
- * Returns the CSS RGB triplet string for the complementary/secondary accent.
- * Derived harmonically from the primary accent:
- * - Pink/magenta primaries (#f291d4) pair with celestial purple (168, 85, 247).
- * - Cyan/azure primaries (#00dbe9) pair with celestial purple (168, 85, 247).
- * - Purple/violet primaries pair with radiant rose-pink (242, 145, 212).
- * - Other accents rotate harmonically by +0.22 (~80°) along the color wheel.
- */
-function complementaryTriplet(rgbTriplet: string): string {
-  const parts = rgbTriplet.split(",").map((s) => parseInt(s.trim(), 10));
-  if (parts.length !== 3 || parts.some(isNaN)) return "168, 85, 247";
-  const [r, g, b] = parts;
-  const [h, s, l] = rgbToHsl(r / 255, g / 255, b / 255);
-
-  const hDeg = h * 360;
-  let targetH: number;
-  if (hDeg >= 290 && hDeg <= 355) {
-    // Pink / rose primary -> celestial cosmic purple (168, 85, 247)
-    targetH = 271 / 360;
-  } else if (hDeg >= 160 && hDeg <= 230) {
-    // Cyan / azure primary -> celestial cosmic purple
-    targetH = 271 / 360;
-  } else if (hDeg > 230 && hDeg < 290) {
-    // Purple / violet primary -> radiant fuchsia pink
-    targetH = 319 / 360;
-  } else {
-    // Other accents -> harmonic split-complementary
-    targetH = ((h + 0.22) % 1 + 1) % 1;
-  }
-
-  const sComp = Math.min(Math.max(s, 0.80), 0.92);
-  const lComp = Math.min(Math.max(l, 0.58), 0.66);
-  const [cr, cg, cb] = hsl2rgb(targetH, sComp, lComp);
-  return `${cr}, ${cg}, ${cb}`;
-}
-
-/** Writes --accent-complementary alongside an --accent write. */
-function applyComplementaryToken(accentTriplet: string): void {
-  document.documentElement.style.setProperty(
-    "--accent-complementary",
-    complementaryTriplet(accentTriplet)
-  );
-}
+export type {
+  ThemeVariantTokens,
+  ThemePresetDefinition,
+  ThemeAppearance,
+  DerivedSurfaceTokens,
+  CuratedAccentPreset,
+  OklchColor,
+};
+export {
+  PRESET_THEMES,
+  ACCENT_SWATCHES,
+  CURATED_ACCENT_PRESETS,
+  DARK_BG_PRESETS,
+  LIGHT_BG_PRESETS,
+  DEFAULT_DARK_ACCENT,
+  DEFAULT_LIGHT_ACCENT,
+  DEFAULT_DARK_BG,
+  DEFAULT_LIGHT_BG,
+  getActiveAccent,
+  getActiveBg,
+  hsl2rgb,
+  rgbToHsl,
+  complementaryTriplet,
+  applyComplementaryToken,
+  deriveSurfaceTokens,
+  hexToOklch,
+  oklchToHex,
+  ACCENT_HUE_CONIC,
+  DARK_BG_CONIC,
+  LIGHT_BG_CONIC,
+};
 
 /**
  * Custom-property flip: the element-level `transition-property` fan-out was
@@ -192,7 +171,7 @@ function parseTokenLiteral(raw: string): TokenValue | null {
       r: +rgba[1],
       g: +rgba[2],
       b: +rgba[3],
-      a: rgba[4] === undefined ? 1 : +rgba[4],
+      a: rgba[4] ? Number(rgba[4]) : 1,
     };
   }
   const alpha = t.match(/rgba\(var\(--accent\),\s*([\d.]+)\)/);
@@ -281,6 +260,18 @@ let currentTokenValues: Map<string, string> | null = null;
 const INLINE_OWNED_TOKENS: ReadonlySet<string> = new Set([
   "accent",
   "accent-complementary",
+  "background",
+  "foreground",
+  "foreground-muted",
+  "card",
+  "field",
+  "sidebar",
+  "border",
+  "glass-surface",
+  "glass-deep",
+  "amb-stop-0",
+  "amb-stop-1",
+  "amb-stop-2",
   ...NOTIFICATION_TOKEN_PROPS.map((prop) => prop.replace(/^--/, "")),
 ]);
 
@@ -300,7 +291,9 @@ function rememberTargets(
 }
 
 function targetCacheKey(appearance: ThemeAppearance): string {
-  return `${appearance.theme}::${appearance.accent_seed}`;
+  const accent = getActiveAccent(appearance);
+  const bg = getActiveBg(appearance);
+  return `${appearance.theme}::${accent}::${bg}`;
 }
 
 /**
@@ -396,10 +389,6 @@ function animateTokensToNewTheme(
   requestAnimationFrame(tick);
 }
 
-export interface ThemeAppearance {
-  theme: string;
-  accent_seed: string;
-}
 
 /**
  * Must stay in sync with `--theme-transition-ms` in `index.css`. Invariant 11 in
@@ -555,15 +544,32 @@ function armGateClose(delayMs: number) {
 /** Synchronous by contract — the flip must land in the same task as the click. */
 function writeThemeToDom(appearance: ThemeAppearance) {
   const root = document.documentElement;
+  const isLight = appearance.theme === "light";
   root.setAttribute("data-theme", appearance.theme);
-  const accentTriplet = hexToRgb(appearance.accent_seed);
+
+  const activeAccent = getActiveAccent(appearance);
+  const accentTriplet = hexToRgb(activeAccent);
   root.style.setProperty("--accent", accentTriplet);
-  applyNotificationCategoryTokens(
-    accentTriplet,
-    appearance.theme === "light"
-  );
+  applyNotificationCategoryTokens(accentTriplet, isLight);
   applyComplementaryToken(accentTriplet);
-  if (appearance.theme === "light") {
+
+  const activeBg = getActiveBg(appearance);
+  const surfaces = deriveSurfaceTokens(activeBg, isLight);
+  root.style.setProperty("--background", surfaces.background);
+  root.style.setProperty("--foreground", surfaces.foreground);
+  root.style.setProperty("--foreground-muted", surfaces.foregroundMuted);
+  root.style.setProperty("--card", surfaces.card);
+  root.style.setProperty("--field", surfaces.field);
+  root.style.setProperty("--sidebar", surfaces.sidebar);
+  root.style.setProperty("--border", surfaces.border);
+  root.style.setProperty("--glass-surface", surfaces.glassSurface);
+  root.style.setProperty("--glass-deep", surfaces.glassDeep);
+  root.style.setProperty("--accent-complementary", hexToRgb(surfaces.accentComp));
+  root.style.setProperty("--amb-stop-0", surfaces.ambStop0);
+  root.style.setProperty("--amb-stop-1", surfaces.ambStop1);
+  root.style.setProperty("--amb-stop-2", surfaces.ambStop2);
+
+  if (isLight) {
     root.classList.add("light");
     root.classList.remove("dark");
   } else {
@@ -573,13 +579,17 @@ function writeThemeToDom(appearance: ThemeAppearance) {
 }
 
 function persistForBootScript(appearance: ThemeAppearance) {
-  // The pre-React inline script in index.html replays theme + accent_seed
-  // before first paint. Without this the boot loader renders the default cyan
-  // and the UI flashes on launch.
   try {
     localStorage.setItem(
       "vox_appearance",
-      JSON.stringify({ theme: appearance.theme, accent_seed: appearance.accent_seed })
+      JSON.stringify({
+        theme: appearance.theme,
+        preset: appearance.preset,
+        dark_accent: appearance.dark_accent,
+        light_accent: appearance.light_accent,
+        dark_bg: appearance.dark_bg,
+        light_bg: appearance.light_bg,
+      })
     );
   } catch {
     /* localStorage unavailable; first-paint flash will be a no-op */
@@ -786,6 +796,59 @@ export function endAccentPreview(): void {
   syncGate();
 }
 
+let previewBgFrame: number | null = null;
+let pendingBg: string | null = null;
+
+/** Opens the repaint gate for the duration of a background color drag. */
+export function beginBackgroundPreview(): void {
+  previewGateHeld = true;
+  syncGate();
+}
+
+/**
+ * Queues a live background write. Coalesced to at most one write per animation frame.
+ */
+export function previewBackground(bgHex: string): void {
+  if (typeof document === "undefined") return;
+  pendingBg = bgHex;
+  currentTokenValues = null;
+  if (previewBgFrame !== null) return;
+
+  previewBgFrame = requestAnimationFrame(() => {
+    previewBgFrame = null;
+    const bg = pendingBg;
+    if (bg === null || typeof document === "undefined") return;
+
+    const root = document.documentElement;
+    const isLight = root.getAttribute("data-theme") === "light";
+    const surfaces = deriveSurfaceTokens(bg, isLight);
+    root.style.setProperty("--background", surfaces.background);
+    root.style.setProperty("--foreground", surfaces.foreground);
+    root.style.setProperty("--foreground-muted", surfaces.foregroundMuted);
+    root.style.setProperty("--card", surfaces.card);
+    root.style.setProperty("--field", surfaces.field);
+    root.style.setProperty("--sidebar", surfaces.sidebar);
+    root.style.setProperty("--border", surfaces.border);
+    root.style.setProperty("--glass-surface", surfaces.glassSurface);
+    root.style.setProperty("--glass-deep", surfaces.glassDeep);
+    root.style.setProperty("--accent-complementary", hexToRgb(surfaces.accentComp));
+    root.style.setProperty("--amb-stop-0", surfaces.ambStop0);
+    root.style.setProperty("--amb-stop-1", surfaces.ambStop1);
+    root.style.setProperty("--amb-stop-2", surfaces.ambStop2);
+  });
+}
+
+/** Releases the gate and drops any queued background write. */
+export function endBackgroundPreview(): void {
+  if (previewBgFrame !== null) {
+    cancelAnimationFrame(previewBgFrame);
+    previewBgFrame = null;
+  }
+  pendingBg = null;
+  previewGateHeld = false;
+  syncGate();
+}
+
 /** Test seam: forgets the last applied theme so the next call is a first paint. */
 export function resetThemeStateForTests() {
   lastAppliedTheme = null;
@@ -796,9 +859,14 @@ export function resetThemeStateForTests() {
   burstWindowStart = 0;
   previewGateHeld = false;
   pendingAccentSeed = null;
+  pendingBg = null;
   if (previewAccentFrame !== null) {
     cancelAnimationFrame(previewAccentFrame);
     previewAccentFrame = null;
+  }
+  if (previewBgFrame !== null) {
+    cancelAnimationFrame(previewBgFrame);
+    previewBgFrame = null;
   }
   closeGate();
   setTransitioning(false);

@@ -3,7 +3,7 @@ import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 import { useRenderTrace } from "@/shared/hooks/useRenderTrace";
 import {
   Plus,
-  Search,
+  Binoculars,
   Mic,
   Bot,
   SlidersHorizontal,
@@ -258,8 +258,8 @@ export const SessionPanel = memo(({ onClose, onSearch, onExitSearch }: SessionPa
 
   return (
     <div ref={rootRef} className="flex-1 min-h-0 flex flex-col overflow-hidden select-none font-sans">
-      {/* ── Fixed Top Action Rows ── */}
-      <div className="shrink-0 flex flex-col gap-1 px-2 pt-3 pb-1.5 border-b border-[rgba(var(--border),0.08)]">
+      {/* ── Fixed Top Action Rows (Tightened padding to eliminate dead band above divider) ── */}
+      <div className="shrink-0 flex flex-col gap-1 px-2 pt-2.5 pb-1 bg-[rgb(var(--card))]">
         {/* + New Conversation */}
         <button
           type="button"
@@ -290,7 +290,7 @@ export const SessionPanel = memo(({ onClose, onSearch, onExitSearch }: SessionPa
             </>
           ) : (
             <>
-              <Search size={15} className="shrink-0 text-[rgb(var(--accent))]" />
+              <Binoculars size={15} className="shrink-0 text-[rgb(var(--accent))]" />
               <span>{SESSION_COPY.searchConversations}</span>
             </>
           )}
@@ -338,17 +338,17 @@ export const SessionPanel = memo(({ onClose, onSearch, onExitSearch }: SessionPa
         </div>
       )}
 
-      {/* ── Single Scrollable Container with Sticky Headers (No Uppercase, Zero-Slit Occlusion) ── */}
+      {/* ── Single Scrollable Container with Flush Sticky Headers (Zero-Slit Occlusion, No Negative Margin) ── */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
         data-session-scroll
-        className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar flex flex-col -mt-px"
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar flex flex-col bg-[rgb(var(--card))]"
       >
         {/* ── Section 1: Pinned Conversations (Rendered strictly when pinned sessions exist) ── */}
         {pinnedSessions.length > 0 && (
-          <section className="flex flex-col pb-0">
-            <div className="sticky top-0 z-30 px-3 py-1.5 text-[11.5px] font-mono font-medium tracking-normal text-[rgb(var(--foreground-muted))] bg-[rgb(var(--card))] shadow-xs">
+          <section className="flex flex-col pb-2">
+            <div className="sticky top-0 z-30 px-3 pt-2 pb-1.5 text-[11.5px] font-mono font-medium tracking-normal text-[rgb(var(--foreground-muted))] bg-[rgb(var(--card))] border-t border-[rgba(var(--border),0.08)]">
               {SESSION_COPY.pinnedConversations}
             </div>
             <div className="flex flex-col gap-0.5 px-1.5 pt-1">
@@ -373,8 +373,8 @@ export const SessionPanel = memo(({ onClose, onSearch, onExitSearch }: SessionPa
         )}
 
         {/* ── Section 2: Projects ── */}
-        <section className="flex flex-col pb-0">
-          <div className="sticky top-0 z-30 px-3 py-1.5 flex items-center justify-between text-[11.5px] font-mono font-medium tracking-normal text-[rgb(var(--foreground-muted))] bg-[rgb(var(--card))] shadow-xs">
+        <section className="flex flex-col pb-2">
+          <div className="sticky top-0 z-30 px-3 pt-2 pb-1.5 flex items-center justify-between text-[11.5px] font-mono font-medium tracking-normal text-[rgb(var(--foreground-muted))] bg-[rgb(var(--card))] border-t border-[rgba(var(--border),0.08)]">
             <span>{SESSION_COPY.projectsSection}</span>
             <Tooltip label={SESSION_COPY.createProjectAriaLabel} side="left">
               <button
@@ -413,7 +413,7 @@ export const SessionPanel = memo(({ onClose, onSearch, onExitSearch }: SessionPa
 
         {/* ── Section 3: Conversations (Reverse-Chronological History) ── */}
         <section className="flex flex-col pb-16">
-          <div className="sticky top-0 z-30 px-3 py-1.5 text-[11.5px] font-mono font-medium tracking-normal text-[rgb(var(--foreground-muted))] bg-[rgb(var(--card))] shadow-xs">
+          <div className="sticky top-0 z-30 px-3 pt-2 pb-1.5 text-[11.5px] font-mono font-medium tracking-normal text-[rgb(var(--foreground-muted))] bg-[rgb(var(--card))] border-t border-[rgba(var(--border),0.08)]">
             {SESSION_COPY.conversations}
           </div>
           <div className="flex flex-col gap-0.5 px-1.5">

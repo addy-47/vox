@@ -1,11 +1,19 @@
 /**
- * 3D Cylindrical Arc Math for Vox Recall Carousel.
- * Projects cards along a horizontal cylindrical arc overlapping the Orb bottom.
+ * 3D Progressive Spatial Arc Math for Vox Recall Carousel.
+ * Projects session cards into a deep, progressive spatial composition
+ * overlapping the lower horizon of the Orb.
+ *
+ * Visual hierarchy:
+ * - Center selected card: 100% scale (z=0, y=0, opacity=1.00)
+ * - Distance 1 neighbors: ~88% scale (85–90%), subtle depth & inward angle, text fully readable
+ * - Distance 2 neighbors: ~76% scale (72–80%), receding in perspective
+ * - Distance 3+ neighbors: ~62% down to 50% scale (55–65%), ambient peripheral depth
+ *
  * Pure math functions with zero heap allocation during 60 FPS animation/drag loops.
  */
 
-export const RECALL_CARD_WIDTH = 224;
-export const RECALL_CARD_HEIGHT = 168;
+export const RECALL_CARD_WIDTH = 240;
+export const RECALL_CARD_HEIGHT = 180;
 
 export interface ArcCardTransform {
   x: number;
@@ -19,42 +27,72 @@ export interface ArcCardTransform {
 }
 
 /**
- * Calculates transform properties for a card at a continuous offset from the active center.
- * @param offset Continuous distance from the center slot (e.g. 0 = exact center, -1 = one card to the left)
+ * Calculates progressive scale based on distance from center slot:
+ * - d = 0: 100% (1.00)
+ * - d = 1: 88% (85–90%)
+ * - d = 2: 76% (72–80%)
+ * - d = 3: 62% (55–65%)
+ * - d >= 4: 50%
+ */
+export function getProgressiveScale(d: number): number {
+  if (d <= 1) return 1.0 - d * 0.12;
+  if (d <= 2) return 0.88 - (d - 1) * 0.12;
+  if (d <= 3) return 0.76 - (d - 2) * 0.14;
+  return Math.max(0.62 - (d - 3) * 0.12, 0.48);
+}
+
+/**
+ * Calculates horizontal displacement with progressive spacing so
+ * overlapping cards maintain full title and metadata readability.
+ */
+export function getProgressiveX(offset: number, stageWidth: number): number {
+  const sign = Math.sign(offset);
+  const d = Math.abs(offset);
+  const widthFactor = Math.min(Math.max(stageWidth / 1100, 0.88), 1.15);
+
+  let baseDist: number;
+  if (d <= 1) {
+    baseDist = d * 202;
+  } else if (d <= 2) {
+    baseDist = 202 + (d - 1) * 172;
+  } else if (d <= 3) {
+    baseDist = 374 + (d - 2) * 148;
+  } else {
+    baseDist = 522 + (d - 3) * 120;
+  }
+
+  return sign * baseDist * widthFactor;
+}
+
+/**
+ * Calculates spatial 3D transform properties for a card at a continuous offset from the active center.
+ * @param offset Continuous distance from the center slot (0 = exact center, -1 = left neighbor, +1 = right neighbor)
  * @param stageWidth Total width of the carousel stage in pixels
  */
 export function calculateArcTransform(offset: number, stageWidth: number): ArcCardTransform {
-  // Angular step per card slot in radians (~11.5 degrees)
-  const angularStep = 0.20;
-  // Arc radius proportional to stage width, clamped to comfortable viewing bounds
-  const radius = Math.min(Math.max(stageWidth * 0.75, 600), 1100);
+  const sign = Math.sign(offset);
+  const d = Math.abs(offset);
 
-  const angle = offset * angularStep;
-  const absOffset = Math.abs(offset);
+  // Progressive horizontal placement
+  const x = getProgressiveX(offset, stageWidth);
 
-  // Horizontal translation along circular cylinder
-  const x = radius * Math.sin(angle);
+  // Perspective depth translation: center card is at z=0; flanking cards recede into z < 0
+  const z = -Math.pow(d, 1.25) * 80;
 
-  // Depth translation: center card is at z=0, flanking cards recede into depth (z < 0)
-  const z = radius * (Math.cos(angle) - 1);
+  // Gentle progressive vertical displacement: subtle inward curve towards page center
+  const y = -Math.pow(d, 1.2) * 8;
 
-  // Upward arc curvature matching the mockup: outer cards lift slightly in Y
-  // Lift is proportional to the square of normalized horizontal displacement
-  const normX = Math.min(Math.abs(x) / (radius * 0.85), 1.2);
-  const y = -Math.pow(normX, 2) * 48;
+  // Gentle perspective inward rotation: flanking cards face slightly toward the central focus
+  const rotateY = -sign * Math.min(d * 9, 22);
 
-  // Inward rotation: cards face toward the central focal point
-  // Left cards (offset < 0) rotate positive Y; Right cards rotate negative Y
-  const rotateY = -angle * (180 / Math.PI) * 0.75;
+  // Progressive scale: 100% -> 88% -> 76% -> 62% -> 50%
+  const scale = getProgressiveScale(d);
 
-  // Scale falloff: center card is 1.0, outer cards attenuate down to 0.72
-  const scale = Math.max(1.0 - absOffset * 0.065, 0.70);
-
-  // Opacity falloff: center card is 1.0, outer cards fade gently
-  const opacity = Math.max(1.0 - absOffset * 0.14, 0.25);
+  // Progressive opacity falloff: preserving text readability on neighbors
+  const opacity = Math.max(0.18, 1.0 - Math.pow(d, 1.15) * 0.18);
 
   // Discrete stacking index: center card is highest (z-50)
-  const zIndex = Math.max(50 - Math.round(absOffset * 2), 1);
+  const zIndex = Math.max(50 - Math.round(d * 10), 1);
 
   const transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, ${z.toFixed(1)}px) rotateY(${rotateY.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
 

@@ -93,12 +93,21 @@ function getCSSColor(varName: string, fallbackHex: string): THREE.Color {
   try {
     const raw = localStorage.getItem("vox_appearance");
     if (raw) {
-      const saved = JSON.parse(raw) as { accent_seed?: unknown; theme?: unknown } | null;
-      if (typeof saved?.accent_seed === "string") {
+      const saved = JSON.parse(raw) as {
+        dark_accent?: unknown;
+        light_accent?: unknown;
+        theme?: unknown;
+      } | null;
+      if (!saved) return new THREE.Color(fallbackHex);
+      const isLight = saved.theme === 'light';
+      const accent = isLight
+        ? (typeof saved.light_accent === 'string' ? saved.light_accent : null)
+        : (typeof saved.dark_accent === 'string' ? saved.dark_accent : null);
+      if (accent) {
         if (varName === '--accent-dark' || varName.includes('glow')) {
-          return new THREE.Color(saved.accent_seed).multiplyScalar(saved.theme === 'light' ? 0.70 : 0.40);
+          return new THREE.Color(accent).multiplyScalar(isLight ? 0.70 : 0.40);
         }
-        return new THREE.Color(saved.accent_seed);
+        return new THREE.Color(accent);
       }
     }
   } catch (e) {

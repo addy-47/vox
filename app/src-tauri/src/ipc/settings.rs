@@ -227,16 +227,49 @@ pub async fn update_setting<R: tauri::Runtime>(
     })
 }
 
-/// Updates the client-local appearance (theme and accent seed).
+/// Updates the client-local appearance (theme, preset, accents, and backgrounds).
 #[tauri::command]
 pub async fn set_appearance<R: tauri::Runtime>(
     theme: Option<String>,
-    accent_seed: Option<String>,
+    preset: Option<String>,
+    dark_accent: Option<String>,
+    light_accent: Option<String>,
+    dark_bg: Option<String>,
+    light_bg: Option<String>,
     app: AppHandle<R>,
 ) -> Result<SettingUpdateResult, VoxIpcError> {
     let state: State<'_, Arc<AppState>> = app.state();
 
     {
+        if let Some(ref da) = dark_accent {
+            if !crate::config::mutation::is_valid_hex_color(da) {
+                return Err(VoxIpcError::InvalidArgument(format!(
+                    "dark_accent must be a valid #RRGGBB hex color, got '{da}'"
+                )));
+            }
+        }
+        if let Some(ref la) = light_accent {
+            if !crate::config::mutation::is_valid_hex_color(la) {
+                return Err(VoxIpcError::InvalidArgument(format!(
+                    "light_accent must be a valid #RRGGBB hex color, got '{la}'"
+                )));
+            }
+        }
+        if let Some(ref db) = dark_bg {
+            if !crate::config::mutation::is_valid_hex_color(db) {
+                return Err(VoxIpcError::InvalidArgument(format!(
+                    "dark_bg must be a valid #RRGGBB hex color, got '{db}'"
+                )));
+            }
+        }
+        if let Some(ref lb) = light_bg {
+            if !crate::config::mutation::is_valid_hex_color(lb) {
+                return Err(VoxIpcError::InvalidArgument(format!(
+                    "light_bg must be a valid #RRGGBB hex color, got '{lb}'"
+                )));
+            }
+        }
+
         let mut settings = state
             .settings
             .write()
@@ -244,8 +277,20 @@ pub async fn set_appearance<R: tauri::Runtime>(
         if let Some(t) = theme {
             settings.appearance.theme = t;
         }
-        if let Some(s) = accent_seed {
-            settings.appearance.accent_seed = s;
+        if let Some(p) = preset {
+            settings.appearance.preset = p;
+        }
+        if let Some(da) = dark_accent {
+            settings.appearance.dark_accent = da.to_uppercase();
+        }
+        if let Some(la) = light_accent {
+            settings.appearance.light_accent = la.to_uppercase();
+        }
+        if let Some(db) = dark_bg {
+            settings.appearance.dark_bg = db.to_uppercase();
+        }
+        if let Some(lb) = light_bg {
+            settings.appearance.light_bg = lb.to_uppercase();
         }
     }
 
