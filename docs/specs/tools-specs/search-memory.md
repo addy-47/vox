@@ -2,7 +2,7 @@
 
 > **Document Type:** Tool Behavioral & Interface Specification  
 > **Tool Identifier:** `search_memory`  
-> **Classification:** Cognitive Observation (`ToolFlow::NonTerminal`)  
+> **Classification:** Universal Cognitive Observation  
 > **Target Subsystems:** `services/harness/stages/tools/search_memory.rs`, `services/memory/retrieval.rs`, `services/intelligence/embedding.rs`  
 > **Status:** Approved Target Specification  
 > **Format Rule:** Pure behavioral specification containing zero library-specific code snippets. All behaviors, ranking algorithms, scoring equations, parameters, and contracts are specified with rigorous, language-agnostic precision.
@@ -12,8 +12,7 @@
 ## 1. Tool Metadata & Scope
 
 - **Identifier**: `search_memory`
-- **Domain Availability**: `ToolDomain::All` (Adaptive parameters for Modular Assistant and Realtime S2S)
-- **Flow Category**: `ToolFlow::NonTerminal` (Modular triggers `NonTerminalPhase` / `InteractionState::Working` and speech filler; Realtime yields tool result frame to remote model)
+- **Domain Availability**: `ToolDomain::All` (Valid across Modular Assistant and Realtime S2S)
 - **Description**: Searches episodic project memory for past factual decisions, completed work, blockers, next steps, or technical context across previous turns and sessions.
 
 ### 1.1 Search Scope Boundary
@@ -22,31 +21,8 @@
 
 ---
 
-## 2. Parameter Schemas
+## 2. Parameter Schema
 
-### 2.1 Modular Assistant Schema (`PipelineMode::Modular`)
-```json
-{
-  "name": "search_memory",
-  "description": "Searches project memory for past factual decisions, completed work, blockers, next steps, or technical context.",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "query": {
-        "type": "string",
-        "description": "The semantic search phrase or keyword expression to look up in memory."
-      },
-      "spoken_filler": {
-        "type": "string",
-        "description": "A natural, brief 3 to 5 word spoken filler phrase to say aloud right now while searching (e.g., 'Checking your notes...')."
-      }
-    },
-    "required": ["query"]
-  }
-}
-```
-
-### 2.2 Realtime S2S Schema (`PipelineMode::Realtime`)
 ```json
 {
   "name": "search_memory",
@@ -63,7 +39,6 @@
   }
 }
 ```
-*Note: In Realtime mode, `spoken_filler` is omitted. The remote voice provider natively synthesizes filler audio over WebSocket.*
 
 ### 2.3 Threshold Authority Rule
 The model is strictly prohibited from passing result limits (`k`), cutoff scores, or table targets. The harness controls retrieval volume and quality thresholds deterministically from user settings:
@@ -159,12 +134,12 @@ Memory search completed for 'database migration strategy'. No relevant facts fou
 ## 5. Execution State Transitions & Audio Coordination
 
 ### 5.1 Modular Voice Pipeline (`PipelineMode::Modular`)
-1. **Intake & Intent**: Model invokes `search_memory(query, spoken_filler)`.
-2. **Interim Filler Dispatch**: Harness validates `spoken_filler`, dispatches text to `TtsActor` as `AudioIntent::InterimFiller`, and emits pipeline transition `Thinking` $\to$ `InteractionState::Working`.
-3. **Execution Isolation**: Hybrid RRF search executes off the router thread within `TOOL_EXECUTION_TIMEOUT = 10s`.
-4. **Scratchpad Commit**: `ToolResult` is appended to the turn-local `scratchpad: Vec<ChatMessage>`. Invocations are recorded in `session_tool_calls`.
-5. **Reentrant Pass**: Harness re-enters Phase 2 Step 4 of `execute_turn` with the updated scratchpad, producing the finalized response.
-6. **Playback Handshake**: Response audio transitions `Working` $\to$ `Speaking` $\to$ `Ready`.
+1. **Intake & Intent**: Model invokes `search_memory(query)`.
+2. **Coordinator Authority**: Upon detecting tool invocation in the stream pass, the Harness coordinator transitions pipeline state `Thinking` $\to$ `InteractionState::Working`.
+3. **Execution Isolation**: Hybrid RRF search executes concurrently off the router thread within `TOOL_EXECUTION_TIMEOUT = 10s`.
+4. **Step Boundary Commit**: Tool observation is appended to active dialogue history at the step boundary (`RULE-HARN-07`). Invocations are recorded in `session_tool_calls`.
+5. **Reentrant Step Loop**: Harness executes the next cognitive step with the updated history until terminal response.
+6. **Playback Handshake**: Final response audio transitions `Speaking` $\to$ `Ready` upon playback drainage.
 
 ### 5.2 Error & Timeout Recovery
 - If database read fails, ONNX embedding fails, or the operation exceeds the 10-second deadline:

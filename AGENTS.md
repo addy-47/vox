@@ -64,7 +64,6 @@ tursodb ~/.vox/vox.db "SELECT name FROM sqlite_master WHERE type='table';"
 
 > 🛑 **Before touching code:** Read the corresponding style guide and engineer rule file in `.agents/rules/` for the area you are working on.These are the hard rules that must be followed no matter the task you are working on. 
 >
-> 🛑 **After modifying code:** Use the `/review` discipline to review the diff you have created and check if there are any violations with respect to the corresponding style guide and engineer rule file in `.agents/rules/` for the area you are working on.If there are reiterate until there are no violations.
 
 ### 4.3 Code Style and Engineering Integrity (Non-Negotiable)
 

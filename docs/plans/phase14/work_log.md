@@ -1,5 +1,54 @@
 # Phase 14 Work Log
 
+## 2026-11-13 — Domain 1 Batch 1: Core Types, Enums & Database Schema (ZBC)
+
+- **LLM Core Types & Stream Event Updates (`services/llm/`)**:
+  - Added `Thinking(String)` variant to `LlmStreamEvent` and `LlmResponse` in `provider.rs` and `actor.rs`.
+  - Propagated thinking stream forwarding in `spawn_llm_worker` (`handle_generate`) and added quarantined receive arm in `router.rs`.
+  - Handled `LlmStreamEvent::Thinking` in memory compaction runner (`runner.rs`) and benchmark harness (`llm_harness.rs`).
+- **Zero Backward Compatibility Elimination of `ToolFlow`**:
+  - Deleted `enum ToolFlow` (`Terminal` / `NonTerminal`) and removed `flow` from `CanonicalToolDefinition`.
+  - Removed `flow(&self)` from `ToolDefinition` trait and all implementations (`MemorySearchTool`, `WebSearchTool`, `RespondAndSetTitleTool`, `SetSessionTitleTool`).
+  - Removed `ToolFlow` and `flow` parameter from `ToolExecutor::dispatch_persistence`.
+  - Replaced `tool_flow` query in `services/harness/loop.rs` with explicit terminal tool dispatch check.
+- **Database Schema Version 16 Migration (`persistence/`)**:
+  - Bumped `SCHEMA_VERSION` from 15 to 16 in `persistence/schema.rs`.
+  - Removed `tool_kind TEXT NOT NULL` from `session_tool_calls` table DDL.
+  - Added schema migration for `current_version < 16`: `ALTER TABLE session_tool_calls DROP COLUMN tool_kind;`.
+  - Removed `tool_kind` and `tool_flow` from `persist_tool_call` and `PersistenceEvent::ToolCallExecuted`.
+  - Updated `database_persistence_boundary_test.rs` and `agentic_tool_loop_test.rs`.
+- **Verification**:
+  - Compile Gate: `app/src-tauri/scripts/verify-targets.sh` passed cleanly with 0 warnings / 0 errors across desktop lib, bin, tests, benches, and `aarch64-linux-android`.
+  - Database Boundary Tests: 18/18 passed in `database_persistence_boundary_test.rs`.
+
+---
+
+## 2026-11-13 — Harness v2 Domain 1: 3-Stream Demuxing, Preamble Preservation & Two-Key Latch Specification
+
+- **Trace Protocol Execution & Root Cause Analysis**:
+  - Reverse-engineered v1 token streaming and tool handling flow across `router.rs`, `steps.rs`, `playback.rs`, and `llm.rs`.
+  - Identified fundamental v1 defects: dropped preamble speech (`acc.chunker.clear()`), multi-tool stream truncation on first call, missing `Thinking` token variant, and inverted state machine authority where audio playback callbacks drove cognitive state transitions.
+- **System Architect Validation & Two-Key Quiescence Latch**:
+  - Validated lead architect's critique of the punctuation deadlock in early drafts (sentences ending with `.` leaving chunker empty on finish).
+  - Resolved the causal paradox in §3.1 Bullet 4 and `RULE-HARN-10B`: clauses streamed during tool-enabled steps (`allow_tools == true`) are tagged `InterimFiller`. When `LlmFinished` arrives with 0 tools, `turn_open` is cleared (`false`), and the sound card draining (`on_playback_finished`) checks `!is_turn_open() && pending_synthesis_jobs == 0` regardless of the chunk's `AudioIntent` tag, transitioning deterministically to `Ready`.
+  - Architected the **Two-Key Quiescence Latch**: `turn_open` remains `true` across all intermediate ReAct steps (`0..N`) and only closes on `LlmFinished`. Transition from `Speaking` to `Ready` occurs if and only if BOTH `turn_open == false` AND the sound card buffer has drained (`PlaybackFinished` with `pending_synthesis_jobs == 0`).
+  - Decoupled state authority: Harness coordinator (`loop.rs`) solely owns `Thinking` $\to$ `Working` $\to$ `Speaking` $\to$ `Ready` transitions.
+  - Simplified Turso database migration: replaced redundant `session_tool_calls_v2` table recreation with direct `ALTER TABLE session_tool_calls DROP COLUMN tool_kind;` (verified supported in Turso/libsql).
+- **Specification Alignment (Zero Backward Compatibility / ZBC)**:
+  - Updated `docs/specs/harness-spec.md`:
+    - Updated User Stories (`US-HARN-01` to `US-HARN-07`) for preamble preservation, multi-tool batching, and reasoning token quarantine.
+    - Updated Cognitive Turn Architecture Mermaid diagram to model 3-Stream Demuxer, parallel tool barriers, and the Two-Key Quiescence Latch.
+    - Locked `RULE-HARN-09` (3-Stream Demuxing & Thinking Isolation), `RULE-HARN-10A` (Preamble Speech Preservation), `RULE-HARN-10B` (Stream Audio Intent & Two-Key Quiescence Latch), and `RULE-HARN-11` (Universal Tool Contract & Zero Filler Schemas).
+  - Aligned sibling tool specs (`docs/specs/tools-specs/`):
+    - `lld.md`: Replaced dual classification with Universal Tool Contract (ZBC).
+    - `search-memory.md` & `web-search.md`: Stripped `spoken_filler` and `ToolFlow::NonTerminal`.
+    - `respond-and-set-tile.md`: Replaced `respond_and_set_title` with clean universal `set_title` tool.
+- **Deep Dive Artifacts**:
+  - Synchronized `/home/addy/.gemini/antigravity/brain/0c12a585-e6e0-4aad-bda8-dead1cbc64a6/domain-1-3-stream-demuxing.md` and `docs/plans/phase14/domain-1-stream-demuxing.md`.
+  - Expanded Blast Radius to include provider stream adapters (`chat_completions.rs`, `ollama.rs`, `sidecar.rs`) for `<think>` tag stripping and reasoning delta extraction.
+
+---
+
 ## 2026-11-13 — README Rewrite: Plain-Language Positioning & New Screenshots
 
 - **Structure**: Reordered for a user-first read, modeled on popular open-source agentic READMEs (goose, Jan, Cline): centered logo and one-line tagline, badges and nav, plain two-job summary, hero screenshot, capability sections, screenshot gallery, install, build, shortcuts, architecture, stack, testing, privacy, docs, contributing, license.

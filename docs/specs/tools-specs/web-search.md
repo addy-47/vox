@@ -2,7 +2,7 @@
 
 > **Document Type:** Tool Behavioral & Interface Specification  
 > **Tool Identifier:** `web_search`  
-> **Classification:** Cognitive Observation (`ToolFlow::NonTerminal`)  
+> **Classification:** Universal Cognitive Observation  
 > **Operational Domain:** `ToolDomain::Modular` (Modular Assistant sessions only)  
 > **Target Subsystems:** `services/harness/stages/tools/web_search.rs`, `services/harness/`  
 > **External Crate Dependency:** `nexus-rs` (`submodules/nexus-rs/`)  
@@ -26,7 +26,7 @@ The tool is governed by four system axioms:
 
 - **Identifier**: `web_search`
 - **Domain Availability**: `ToolDomain::Modular` (Modular Assistant sessions only). Realtime S2S models manage web grounding via native provider protocols.
-- **Flow Category**: `ToolFlow::NonTerminal`. Invocation immediately triggers `NonTerminalPhase`, dispatches interim filler audio, transitions the pipeline to `InteractionState::Working`, and initiates a reentrant cognitive turn loop upon evidence acquisition.
+- **Universal Contract**: Implements the Universal Tool Contract without legacy flow categories. Invocations execute asynchronously within the multi-tool batch.
 - **User Settings Gate**: A single user-facing boolean `interaction.web_search_enabled` (default: `true`) gates the tool. When `false`, `web_search` is suppressed from the active tool registry for Modular sessions and the model never sees it in its tool list. The toggle applies live without application restart.
 
 ---
@@ -44,10 +44,6 @@ The tool is governed by four system axioms:
       "query": {
         "type": "string",
         "description": "The search query optimized for search engines (e.g., 'Federal Reserve interest rate decision September 2026')."
-      },
-      "spoken_filler": {
-        "type": "string",
-        "description": "A natural, brief 3 to 5 word spoken filler phrase to say aloud right now while searching (e.g., 'Searching the web now...')."
       },
       "time_filter": {
         "type": "string",
@@ -76,8 +72,8 @@ The tool is governed by four system axioms:
 ```
 
 ### 3.2 Authority Model
-- **Model Owns**: Search query formulation, interim speech filler phrase, recency filter preference (`time_filter`), ranking algorithm preference (`ranking_mode`), passage count preference (`max_passages`), and requested execution deadline (`deadline_ms`).
-- **Harness Owns**: Context budget ceiling computation (`ContextBudgetStage`), deadline clamping (enforcing floor and ceiling), execution timeout watchdog (`TOOL_EXECUTION_TIMEOUT = 13.0s`), speech filler dispatch to `TtsActor`, working history retention, and conversational state transitions.
+- **Model Owns**: Search query formulation, recency filter preference (`time_filter`), ranking algorithm preference (`ranking_mode`), passage count preference (`max_passages`), and requested execution deadline (`deadline_ms`).
+- **Harness Owns**: Context budget ceiling computation (`ContextBudgetStage`), deadline clamping (enforcing floor and ceiling), execution timeout watchdog (`TOOL_EXECUTION_TIMEOUT = 13.0s`), natural preamble streaming via 3-Stream Demuxer, working history retention, and conversational state transitions.
 - **External Crate (`nexus-rs`) Owns**: Stateless multi-engine fanout, SSRF-pinned egress downloads, HTML parsing and markdown extraction, passage chunking, BM25 scoring, and ONNX dense ranking.
 
 ---
@@ -85,11 +81,10 @@ The tool is governed by four system axioms:
 ## 4. Execution Lifecycle & Speech Coordination
 
 ```
-[Model proposes: web_search(query, spoken_filler, ...)]
+[Model proposes: web_search(query, ...)]
                  │
                  ▼
-[Harness: Dispatch spoken_filler to TtsActor (AudioIntent::InterimFiller)]
-[Pipeline: Transition Thinking → InteractionState::Working]
+[Coordinator: Transition Thinking → InteractionState::Working]
                  │
                  ▼
 [Tool: Clamp deadline_ms (floor 1000ms, ceiling 12000ms)]
@@ -101,17 +96,19 @@ The tool is governed by four system axioms:
                  │
                  ▼
 [Observation: <web_search_evidence> or structured <web_search_status>]
-[Harness: Re-enter turn loop Step 4 with observation in scratchpad]
+[Coordinator: Commit step boundary to history (RULE-HARN-07)]
                  │
                  ▼
-[Harness: Model synthesizes spoken response]
-[Harness: Commit turn to ConversationHistoryStage (Option 1 Full Retention)]
+[Coordinator: Re-enter cognitive loop Step 4 with evidence in history]
+                 │
+                 ▼
+[Model: Generates next step or finalized spoken response]
 ```
 
-### 4.1 Invocation & Interim Filler Audio
-1. When the model proposes `web_search`, the harness immediately extracts `spoken_filler` and dispatches it to `TtsActor` as `AudioIntent::InterimFiller`.
-2. The pipeline transitions from `Thinking` to `InteractionState::Working`.
-3. Spoken filler begins physical playback immediately, eliminating dead air while retrieval executes in the background.
+### 4.1 Invocation & Non-Blocking Parallel Audio
+1. If the model speaks natural preamble text before proposing `web_search` (e.g. *"Let me look up the latest news"*), the 3-Stream Demuxer streams those clauses as `AudioIntent::InterimFiller`.
+2. Upon receiving the tool call, the Harness coordinator transitions the pipeline from `Thinking` to `InteractionState::Working`.
+3. Preamble audio continues physical playback concurrently on the sound card while `nexus-rs` executes search in the background with zero blocking.
 
 ### 4.2 Dynamic Deadline Budgeting
 1. The tool evaluates the model's requested `deadline_ms` (or falls back to default based on `ranking_mode`: 4.0s sparse, 5.0s dense, 5.5s hybrid).
