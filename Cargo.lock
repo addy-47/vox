@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "Vox"
-version = "0.8.91"
+version = "0.8.92"
 dependencies = [
  "anyhow",
  "arboard",
