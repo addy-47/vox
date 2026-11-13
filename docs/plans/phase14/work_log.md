@@ -1,5 +1,15 @@
 # Phase 14 Work Log
 
+## 2026-11-13 — README Rewrite: Plain-Language Positioning & New Screenshots
+
+- **Structure**: Reordered for a user-first read, modeled on popular open-source agentic READMEs (goose, Jan, Cline): centered logo and one-line tagline, badges and nav, plain two-job summary, hero screenshot, capability sections, screenshot gallery, install, build, shortcuts, architecture, stack, testing, privacy, docs, contributing, license.
+- **Language**: Removed marketing jargon and internal vocabulary ("ambient intelligence", "sentient", "cognitive memory", "topology", "ephemeral HUD", "acoustic tactility", "capability discovery engine"). Each feature now states what the user does and what they get.
+- **Factual corrections**: dictation hotkey was `Alt+Space`, actual default is `Ctrl+Alt+V`; removed the stale History page reference (route now redirects to Home search mode); replaced the "Turso SQLite" badge with Turso; theme count corrected from six to the built-in preset set; Rust/Node version claims dropped where unverified.
+- **Images**: Replaced the deleted `history.png` reference and adopted the new `home.png`, `search.png`, `memory.png`, and `settings.png` with accurate captions.
+- **Verification**: image paths resolve; nav anchors match headings; HTML tags balanced; fenced code blocks balanced; no jargon terms remain.
+
+---
+
 ## 2026-10-26 – 2026-10-31 — Remote Control Subsystem Architecture, IPC Dispatcher & Hardening (Compacted)
 
 - **Architecture & Modlet Deconstruction (`services/remote/`)**:

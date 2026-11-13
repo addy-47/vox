@@ -4,92 +4,118 @@
 
 # Vox
 
-### Ambient Voice Intelligence for the Native Desktop
+**A voice assistant that lives on your desktop, not in a browser tab.**
+
+Talk to your computer. It talks back, types what you say, and remembers what matters.
 
 <p align="center">
-  <b>A real-time, local-first voice assistant designed to disappear into your operating system.</b><br>
-  Low-latency conversational voice, global instant dictation, persistent cognitive memory, and pluggable AI providers.
+  <a href="https://github.com/addy-47/vox/releases"><img src="https://img.shields.io/badge/Download-Releases-0ea5e9?style=flat-square" alt="Download"></a>
+  <img src="https://img.shields.io/badge/Platform-Linux_%7C_macOS_%7C_Windows-0ea5e9?style=flat-square" alt="Linux, macOS and Windows">
+  <img src="https://img.shields.io/badge/Built_with-Rust_%2B_Tauri-f97316?style=flat-square" alt="Rust and Tauri">
+  <img src="https://img.shields.io/badge/UI-React_19_%2B_Three.js-6366f1?style=flat-square" alt="React 19 and Three.js">
+  <img src="https://img.shields.io/badge/Privacy-Local_first-10b981?style=flat-square" alt="Local first">
+  <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="MIT License">
 </p>
 
 <p align="center">
-  <a href="#what-is-vox">Overview</a> •
-  <a href="#product-tour">Product Tour</a> •
-  <a href="#key-capabilities">Capabilities</a> •
-  <a href="#architecture">Architecture</a> •
-  <a href="#design-principles">Design Principles</a> •
-  <a href="#technology-stack">Tech Stack</a> •
-  <a href="#getting-started">Getting Started</a> •
-  <a href="#testing">Testing</a>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Platform-Linux_%7C_macOS_%7C_Windows-0ea5e9?style=flat-square" alt="Platform">
-  <img src="https://img.shields.io/badge/Backend-Rust_Tauri_v2-f97316?style=flat-square" alt="Rust Tauri v2">
-  <img src="https://img.shields.io/badge/Frontend-React_19_%7C_Three.js-6366f1?style=flat-square" alt="React 19 Three.js">
-  <img src="https://img.shields.io/badge/Storage-Turso_SQLite_MVCC-14b8a6?style=flat-square" alt="Turso SQLite">
-  <img src="https://img.shields.io/badge/Privacy-100%25_Local--First-10b981?style=flat-square" alt="Local First">
+  <a href="#what-you-can-do">Features</a> •
+  <a href="#screenshots">Screenshots</a> •
+  <a href="#install">Install</a> •
+  <a href="#build-from-source">Build</a> •
+  <a href="#keyboard-shortcuts">Shortcuts</a> •
+  <a href="#how-it-works">How it works</a> •
+  <a href="#docs">Docs</a>
 </p>
 
 </div>
 
 ---
 
-## What is Vox?
+Vox is a desktop app for Linux, macOS, and Windows. It does two jobs:
 
-Vox is built around a single premise: **voice interaction should feel like an organic part of your computer**, not another browser tab or chat application you have to constantly manage.
+- **Dictation.** Hold a key, speak, and the words appear in whatever app you are using.
+- **Conversation.** Talk to an assistant that answers out loud, can search the web, and keeps notes about you.
 
-Operating as a persistent, low-latency ambient intelligence layer, Vox listens on an ephemeral HUD, responds with natural cadence, and steps out of your way the moment you finish speaking.
+Your voice never leaves the machine unless you connect a cloud model. All data is stored on your disk.
 
-The system runs two primary interaction tracks:
+> **Status:** Vox is in active development (0.x). Expect rough edges and breaking changes.
 
-* **Assistant Track** — Conversational voice AI operating via continuous ambient VAD or push-to-talk (PTT) with configurable local, remote, or realtime duplex providers.
-* **Dictation Track** — Instant system-wide speech-to-text input triggered via global hotkey (`Alt+Space`), bypassing conversational LLM/TTS stages to inject text directly into the active OS window.
-
-Audio work on latency-sensitive hot paths is strictly decoupled from background reasoning, memory synthesis, and database operations.
+<div align="center">
+  <a href="app/public/home.png">
+    <img src="app/public/home.png" alt="The Vox home screen: a glowing voice orb above a single engage button, with model and system status in the corners" width="100%">
+  </a>
+  <br>
+  <sub>The orb shows what Vox is doing. The corners show live system and model status.</sub>
+</div>
 
 ---
 
-## Product Tour
+## What you can do
 
-Vox marries high-performance native systems programming with an ethereal spatial interface rendered in React 19 and Three.js.
+### Type with your voice, anywhere
+
+Hold `Ctrl+Alt+V` in any app, speak, then release. Vox transcribes your speech and pastes the text where your cursor is. A short pause can also stop the recording. You can send the text to the clipboard instead.
+
+### Have a conversation
+
+Press `Ctrl+Space` to wake Vox, then speak. Vox listens for when you start and stop talking, so you do not need to press anything. Answers come back as speech. You can interrupt at any time: playback stops and the model stops generating.
+
+Prefer to hold a key? Switch to push-to-talk and hold `Space`.
+
+### Ask it to look things up
+
+Web search is on by default. Ask about the news, a recipe, or a technical question, and Vox can fetch answers before it replies. Tool use works with local and cloud models that support it.
+
+### Let it remember you
+
+Vox builds a personal profile from your conversations: your preferences, your projects, the way you like things done. You can review each new fact before it is saved, edit the profile as plain Markdown, or turn learning off.
+
+Long sessions do not run out of context. When a conversation grows too long, Vox summarizes older turns in the background so the assistant stays responsive.
+
+### Bring your own models
+
+Run everything on your machine with Ollama or an on-device model. Or connect a cloud provider you already pay for. Supported setups include:
+
+- Any OpenAI-compatible endpoint
+- Ollama and other local servers
+- NVIDIA NIM, OpenRouter, Groq, Together AI
+- Gemini Live and Deepgram for realtime speech-to-speech
+- Local speech engines for transcription and text-to-speech (Nemotron ASR, Kokoro, Supertonic, ZipVoice, Edge TTS)
+
+Vox tests each model when you add it. It reports time to first token, tokens per second, and whether tool calling actually works, so you see real numbers before you commit.
+
+### Use your phone as a microphone
+
+Pair your phone with Vox Phone over your local Wi-Fi by scanning a QR code. Your laptop keeps doing the work. Your phone becomes the microphone, the speaker, and a second screen. Revoke a device from Settings at any time.
+
+### Make it yours
+
+Pick from built-in themes such as Vox, Tokyo Night, Catppuccin, and Nord, or make your own accent and surface colors. Personas are plain text you can rewrite. Light and dark modes both ship.
+
+---
+
+## Screenshots
 
 <div align="center">
 
-<table border="0" cellpadding="8" cellspacing="0" width="100%">
+<table border="0" cellpadding="12" cellspacing="0" width="100%">
   <tr>
     <td align="center" width="50%" valign="top">
-      <a href="app/public/home.png">
-        <img src="app/public/home.png" alt="Vox home screen" width="100%">
-      </a>
+      <a href="app/public/search.png"><img src="app/public/search.png" alt="Search across past conversations" width="100%"></a>
       <br>
-      <b>Living Resonance Orb & Telemetry HUD</b><br>
-      <sub>Dynamic 3D fluid sphere reacting to voice state with live hardware, throughput, and inference telemetry.</sub>
+      <b>Search.</b> Find any past conversation by keyword, then jump back into voice mode.
     </td>
     <td align="center" width="50%" valign="top">
-      <a href="app/public/history.png">
-        <img src="app/public/history.png" alt="Vox conversation history" width="100%">
-      </a>
+      <a href="app/public/memory.png"><img src="app/public/memory.png" alt="Memory graph of learned facts" width="100%"></a>
       <br>
-      <b>Chronological Orbit Session Archive</b><br>
-      <sub>Spatiotemporal orbital timeline organizing conversations with search, session filtering, and turn inspection.</sub>
+      <b>Memory.</b> Every fact Vox learned, grouped by type. Click the center to browse and edit.
     </td>
   </tr>
   <tr>
-    <td align="center" width="50%" valign="top">
-      <a href="app/public/memory.png">
-        <img src="app/public/memory.png" alt="Vox memory graph" width="100%">
-      </a>
+    <td align="center" colspan="2" valign="top">
+      <a href="app/public/settings.png"><img src="app/public/settings.png" alt="Settings cards for interaction, persona, memory, speech models, language model, and appearance" width="70%"></a>
       <br>
-      <b>Sentient Knowledge Topology</b><br>
-      <sub>Interactive 3D Fibonacci canopy mapping persistent user facts, habits, and durable preferences.</sub>
-    </td>
-    <td align="center" width="50%" valign="top">
-      <a href="app/public/settings.png">
-        <img src="app/public/settings.png" alt="Vox settings" width="100%">
-      </a>
-      <br>
-      <b>Unified Control Center & Model Hub</b><br>
-      <sub>Capability discovery engine with live benchmark probing, hot-swappable providers, and persona tuning.</sub>
+      <b>Settings.</b> Everything in one place: how Vox listens, what it sounds like, which models it uses, and what it remembers.
     </td>
   </tr>
 </table>
@@ -98,175 +124,213 @@ Vox marries high-performance native systems programming with an ethereal spatial
 
 ---
 
-## Key Capabilities
+## Install
 
-### 🎙️ Dual-Track Interaction Architecture
-Vox decouples conversational dialogue from transcription under a unified audio manager:
-* **Assistant Track:** Hands-free conversation powered by acoustic Voice Activity Detection (VAD) or Push-To-Talk for high-intent queries.
-* **Dictation Track:** System-wide transcription with zero LLM/TTS overhead, injecting speech directly into target desktop applications via native OS input paste or clipboard.
+### Download a build
 
-### 🧠 Persistent Cognitive Memory
-* **Personal Memory:** Long-term durable memory synthesized from user interactions. Includes a staging review surface with Google Docs-style diffs to approve, edit, or reject learned preferences.
-* **Working Memory & Compaction:** Session-level context is dynamically tracked. When token usage nears model limits, background compaction summarizes earlier turns while playing acoustic fillers so the assistant never feels stalled.
+Grab the latest package for your platform from [Releases](https://github.com/addy-47/vox/releases). Builds are produced for Linux, macOS, and Windows.
 
-### ⚡ Sub-Millisecond Audio Hot Path & Instant Barge-In
-* **Lock-Free SPSC Queues:** Hardware audio streams run over lock-free single-producer single-consumer ring buffers with zero dynamic allocations in the audio thread.
-* **Instant Barge-In:** When user speech is detected during speech playback, active audio drains flush instantly and LLM generation cancels in <10ms.
+### Requirements
 
-### 🔌 Pluggable AI Provider Architecture
-* **Local On-Device Models:** Runs on CPU/GPU via ONNX Runtime and GGUF backends (optimized for 8GB RAM baselines).
-* **Remote & Cloud Providers:** Connects to OpenAI-compatible endpoints, Ollama servers, and cloud providers (Nvidia NIM, OpenRouter).
-* **Realtime S2S Duplex:** Native WebSocket streaming to duplex voice engines (Gemini Live, Deepgram Voice Agent) for sub-second turn latency.
+| | |
+| :--- | :--- |
+| **OS** | Linux (Ubuntu 22.04+ or similar), macOS 13+, Windows 11 |
+| **Rust** | Latest stable toolchain |
+| **Node.js** | `20+` with `pnpm` `9+` |
+| **Audio** | A working microphone and speaker |
 
-### 📊 Empirical Capability Discovery & Probing
-* Built-in model catalog parses thousands of models in milliseconds.
-* Automated capability probe measures real-world Time-to-First-Token (TTFT), Tokens-per-Second (TPS), and verifies production tool-calling support against actual endpoints.
+Vox is designed for modest hardware, including laptops with 8 GB of RAM.
+
+### First run
+
+On first launch, a short setup wizard checks your microphone, downloads the models Vox needs, and plays a sample voice so you can hear the result before you start.
 
 ---
 
-## Architecture
+## Build from source
 
-Vox separates latency-critical audio processing from state transitions, background inference, and UI rendering:
+### 1. Install system libraries
 
-```mermaid
-graph TD
-    subgraph Audio_Hot_Path["Sacred Audio Hot Path (Lock-Free SPSC)"]
-        Mic[Microphone Input 16kHz f32] --> Ingest[Ingestion Gate]
-        Ingest --> RingBuffer[Lock-Free SPSC Buffer]
-        RingBuffer --> VAD[VAD Actor: Earshot / TenVAD]
-    end
+**Linux**
 
-    subgraph Central_Core["Central Dispatch & Router OS Thread"]
-        VAD -->|SpeechStart / SpeechEnd| Router[vox-router Event FIFO]
-        Hotkeys[Global Shortcuts: Alt+Space] --> Router
-        IPCCommands[Tauri IPC Inbound] --> Router
-        Router --> FSM[InteractionState Machine]
-    end
-
-    subgraph Interaction_Domains["Discrete Interaction Domains"]
-        Router --> AP[Assistant Pipeline: STT → Harness → TTS]
-        Router --> DP[Dictation Pipeline: STT → OS Injection]
-        Router --> RP[Realtime Duplex: PCM ↔ WebSocket S2S]
-    end
-
-    subgraph Cognitive_Layer["Cognitive Memory & Persistence"]
-        AP --> Harness[Harness & Tool Runtime]
-        Harness --> Memory[Memory Engine: Working Compaction & Personal Profile]
-        Memory --> DB[(Turso SQLite MVCC)]
-    end
-
-    subgraph Acoustic_Output["Acoustic Playback & Barge-In"]
-        AP & RP --> Playback[CPAL Playback Buffer]
-        Playback --> Speaker[Hardware Speaker Output]
-        VAD -.->|Instant Barge-In Flush| Playback
-    end
+```bash
+sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev \
+  patchelf libasound2-dev libssl-dev pkg-config
 ```
 
-### Architectural Guarantees
-1. **Single-Writer Serialization:** All state transitions flow through `mpsc::Sender<VoxEvent>`. The `vox-router` thread is the sole writer for `InteractionState`, preventing race conditions.
-2. **Warm Pause vs. Teardown:** Pausing suspends microphone capture while keeping CPAL audio streams warm (<10ms resumption latency).
-3. **No Allocation on Audio Hot Path:** Zero locks (`Mutex`/`RwLock`), zero blocking I/O, and zero dynamic memory allocations in the audio ingestion callback.
-4. **Resilient Error Categorization:** Errors are partitioned by operational impact (`Degraded`, `TurnAborted`, `SessionHalted`) and user actionability, keeping the application responsive.
+**macOS:** install the Xcode Command Line Tools (`xcode-select --install`).
 
-> 📖 **Deep-Dive Specifications:** Comprehensive subsystem contracts live in [`docs/specs/`](docs/specs/) (storage, events, dictation, LLM harness, database, memory).
+**Windows:** install Visual Studio 2022 with the "Desktop development with C++" workload.
+
+### 2. Clone and install
+
+```bash
+git clone --recurse-submodules https://github.com/addy-47/vox.git
+cd vox/app
+pnpm install
+```
+
+### 3. Run
+
+```bash
+# Normal development run
+pnpm tauri dev
+
+# Or run with a separate profile, so your real data stays untouched
+pnpm dev:sandbox
+```
+
+### 4. Build a release
+
+```bash
+pnpm tauri build
+```
+
+The installer appears in `app/src-tauri/target/release/bundle/`.
 
 ---
 
-## Design Principles
+## Keyboard shortcuts
 
-| Principle | Description |
+| Key | Action |
 | :--- | :--- |
-| **Local-First** | Audio processing, personal memory, and data storage stay on the local device by default. Cloud backends are opt-in. |
-| **Provider Independence** | Inference backends sit behind stable provider interfaces. Swapping an LLM or STT engine never breaks interaction contracts. |
-| **Acoustic Tactility** | State transitions, barge-in cancellation, and pre-roll playback cushions are tuned to match human conversational rhythm. |
-| **Explicit State Separation** | Assistant and Dictation operate as isolated interaction tracks with defined ownership rules, avoiding modal confusion. |
-| **Progressive Disclosure** | Compact viewport controls handle quick interaction, while expandable drawers provide inspection when needed. |
+| `Ctrl+Space` | Wake Vox or put it to sleep |
+| `Space` (hold) | Push-to-talk, when Vox is awake and set to that mode |
+| `Ctrl+Alt+V` (hold) | Dictate into the app in focus |
+| `Esc` | Stop speaking, or close the top panel |
+| `M` / `Shift+M` | Mute the microphone / mute the speaker |
+| `P` | Pause or resume listening |
+| `T` | Type a message instead of speaking |
+| `Shift+←` / `Shift+→` | Move between pages |
+| `Ctrl+S` | Open the session list |
+| `Ctrl+N` | Open notifications |
+| `Ctrl+K` | Search memories |
+| `Ctrl+/` | Open help |
+| `?` | Show all shortcuts |
+| `Ctrl+W` | Hide the window to the tray |
+
+Dictation is on by default. You can change its shortcut, switch it to clipboard output, or turn it off in **Settings → Interaction**.
 
 ---
 
-## Technology Stack
+## How it works
 
-| Layer | Technologies | Role & Implementation |
-| :--- | :--- | :--- |
-| **Core Runtime** | Rust (2021 edition) | Central event router, lock-free audio pipelines, state machines, and hardware monitoring |
-| **Desktop Shell** | Tauri v2 | Native window management, multi-platform system tray, global shortcut hooks, and async IPC |
-| **Audio I/O** | CPAL, Rubato | 16kHz f32 capture, multi-channel ring buffer, sample-rate conversion, and acoustic playback |
-| **Frontend & UI** | React 19, TypeScript, Tailwind CSS | Spatial UI surfaces, responsive drawers, and design system tokens |
-| **Visuals & Motion** | Three.js, Framer Motion, Lenis | Living resonance orb canvas, 3D memory topology, and hardware-accelerated transitions |
-| **Persistence** | Turso SQLite (`libsql`) | Multi-version concurrency control (MVCC), schema migrations, and vector embeddings |
-| **Local Inference** | ONNX Runtime, GGUF | On-device voice activity detection, speech recognition, local reasoning, and embeddings |
+Vox splits the work into two loops. One handles sound in real time. The other handles reasoning, memory, and storage, and never delays the audio.
+
+```mermaid
+flowchart LR
+    Mic[Microphone] --> Detect[Detect speech]
+    Detect --> STT[Speech to text]
+    STT --> Model[Language model]
+    Model --> Tools[Memory and web tools]
+    Tools --> TTS[Text to speech]
+    TTS --> Speaker[Speaker]
+
+    Model -.-> DB[(Local database)]
+    Phone[Vox Phone] -.-> Mic
+    Detect -.->|"interrupt"| Speaker
+```
+
+Three rules shape the code:
+
+1. **Audio never waits.** Microphone and speaker callbacks use lock-free buffers with no allocation, no locks, and no blocking work.
+2. **One owner per state.** A single router thread receives every event and is the only writer of the interaction state. There are no races between the voice pipeline, the UI, and hotkeys.
+3. **Local by default.** Audio, transcripts, memory, and settings stay on your machine. Cloud providers are opt-in and clearly marked.
+
+If you want the full contracts, they live in [`docs/specs/`](docs/specs/): events, storage, dictation, providers, memory, tools, and the remote control protocol.
 
 ---
 
-## Getting Started
+## Project layout
 
-### Prerequisites
+| Path | What lives there |
+| :--- | :--- |
+| `app/` | Frontend: React, TypeScript, Tailwind, Three.js |
+| `app/src-tauri/` | Rust backend: audio, speech, models, database, IPC |
+| `app/src-tauri/tests/` | Integration tests that use the public API only |
+| `sidecars/` | Small helper services for LLM, TTS, and cloud TTS |
+| `docs/specs/` | Behavioral contracts. The source of truth. |
+| `manifests/` | Model and system file manifests with checksums |
 
-* **Operating System:** Linux (Ubuntu 22.04+, Fedora 38+, Arch), macOS 13+, or Windows 11
-* **Rust:** Stable toolchain (`1.80+`)
-* **Node.js:** Node `20+` and `pnpm` (`9+`)
-* **Linux Libraries:**
-  ```bash
-  sudo apt install libasound2-dev libssl-dev pkg-config
-  ```
+---
 
-### Developer Setup
+## Tech stack
 
-1. **Clone the repository with submodules:**
-   ```bash
-   git clone --recurse-submodules https://github.com/addy-47/vox.git
-   cd vox
-   ```
+| Layer | Technology |
+| :--- | :--- |
+| **Backend** | Rust 2021, Tauri v2 |
+| **Audio** | CPAL, Rubato, lock-free ring buffers |
+| **On-device models** | ONNX Runtime, GGUF |
+| **Database** | Turso (MVCC, embedded) |
+| **Frontend** | React 19, TypeScript, Tailwind CSS 4 |
+| **Motion and 3D** | Three.js, Framer Motion, Lenis |
+| **State** | XState, Zustand |
 
-2. **Install frontend dependencies:**
-   ```bash
-   cd app
-   pnpm install
-   ```
-
-3. **Run in sandboxed development mode:**
-   ```bash
-   # Launches Tauri dev server using an isolated local profile (.vox_sandbox)
-   pnpm dev:sandbox
-   ```
-
-4. **Build production bundle:**
-   ```bash
-   pnpm tauri build
-   ```
+Vox uses the [Turso](https://turso.tech/) database engine, not SQLite. Turso is written in Rust and allows concurrent writers without the locking limits of SQLite.
 
 ---
 
 ## Testing
 
-Vox maintains integration and production-path test suites verifying state-machine transitions, concurrency locks, and IPC contracts:
-
 ```bash
-# Run isolated Rust test suite
 cd app/src-tauri
-RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1
 
-# Run Rust linting and formatting
+# Backend tests (release mode, one thread)
+RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) \
+  cargo nextest run --release --test-threads=1
+
+# Lint and format
 cargo clippy --all-targets --release
 cargo +nightly fmt --all
 
-# Run frontend TypeScript type-check and bundle verification
-cd ..
-pnpm build
+# Frontend type-check and build
+cd .. && pnpm build
 ```
 
+Cross-platform changes must pass the compile gate for every target:
+
+```bash
+cd app/src-tauri && ./scripts/verify-targets.sh
+```
+
+Some tests call external services. They are marked `#[ignore]` and run only on request.
+
 ---
 
-## Privacy & Security
+## Privacy
 
-* **Zero Audio Telemetry by Default:** Captured audio buffers and generated transcripts remain on your local machine unless a remote cloud provider is explicitly configured.
-* **Incognito Private Mode:** Temporary private sessions blind event persistence, dropping session turns and memory facts from database writes.
-* **Local Database Storage:** Conversations, settings, and memory topologies reside in local SQLite storage (`~/.vox/vox.db`).
+- **No cloud tracking.** Vox sends no usage data or analytics anywhere.
+- **Local data.** Conversations, settings, and memory live in `~/.vox/vox.db`.
+- **Private mode.** Start a session in private mode and nothing is written to disk: no audio, no transcript, no memories.
+- **Opt-in cloud.** A cloud provider receives text only after you configure it. The app marks these providers in Settings.
 
 ---
+
+## Docs
+
+| Document | Contents |
+| :--- | :--- |
+| [`docs/vision.md`](docs/vision.md) | Where Vox is going and why |
+| [`docs/backend.md`](docs/backend.md) | Backend architecture |
+| [`docs/frontend.md`](docs/frontend.md) | Frontend architecture |
+| [`docs/specs/`](docs/specs/) | Behavior contracts for every subsystem |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Setup, conventions, and release process |
+
+---
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) first. It covers the workspace layout, coding rules, and how releases are tagged.
+
+Bug reports and feature requests are welcome in [Issues](https://github.com/addy-47/vox/issues).
+
+---
+
+## License
+
+[MIT](LICENSE) © 2026 Adhbhut Gupta
 
 <div align="center">
-
-<sub>Vox — A voice-first AI desktop application built for ambient intelligence on the native edge.</sub>
-
+<br>
+<sub>Vox is built with Rust, Tauri, and a lot of talking to a computer.</sub>
 </div>
