@@ -14,7 +14,7 @@ use crate::{
     },
     pipeline::{assistant::TurnAccumulator, target_window},
     services::{
-        harness::stages::streaming::{ClauseChunker, TextNormalizer},
+        harness::stages::streaming::TextNormalizer,
         llm::{actor::LlmResponse, CanonicalToolCall},
         tts::actor::TtsCommand,
     },
@@ -308,21 +308,6 @@ impl StreamRoutingStage {
                     queued
                 );
             }
-        }
-    }
-
-    /// Dispatches a complete text string through speech normalization and clause chunking to TTS.
-    pub fn dispatch_spoken_response(
-        &self,
-        text: &str,
-        intent: AudioIntent,
-        handles: &StreamRoutingHandles,
-    ) {
-        let mut chunker = ClauseChunker::default();
-        let clauses = chunker.push_str(text);
-        self.dispatch_clauses(clauses, intent, handles);
-        if let Some(tail) = chunker.flush() {
-            self.dispatch_clauses(vec![tail], intent, handles);
         }
     }
 

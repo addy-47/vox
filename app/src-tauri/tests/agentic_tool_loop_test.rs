@@ -468,16 +468,16 @@ async fn search_memory_retrieval_is_non_terminal_and_drops_the_scratchpad() {
 }
 
 // ============================================================================
-// Subtest 3: test_clause_buffering_and_prefix_drop_on_tool_call
+// Subtest 3: test_clause_buffering_and_preamble_preservation_on_tool_call
 // ============================================================================
-/// PURPOSE:  Text spoken before a tool call must not be spoken twice.
+/// PURPOSE:  Preamble text spoken before a tool call must be preserved and dispatched as InterimFiller.
 /// SCENARIO: The provider streams a clause and then asks for a tool.
-/// ASSERTS:  The buffered clause is dropped when the tool call starts.
+/// ASSERTS:  The preamble clause is dispatched to TTS and preserved in outcome.
 /// CLASS:    edge-case
 /// REQUIRES: none
-/// MUTANT:   Keep the buffered clause in the accumulator across the tool call.
+/// MUTANT:   Wipe the chunker on tool call.
 #[tokio::test]
-async fn tool_call_drops_the_buffered_clause_prefix() {
+async fn tool_call_preserves_the_buffered_preamble_clause() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
         let (_paths_guard, app, state) = common::harness::setup_isolated_app_state().await;
@@ -553,7 +553,7 @@ async fn tool_call_drops_the_buffered_clause_prefix() {
         );
     })
     .await
-    .expect("tool_call_drops_the_buffered_clause_prefix timed out");
+    .expect("tool_call_preserves_the_buffered_preamble_clause timed out");
 }
 
 // ============================================================================

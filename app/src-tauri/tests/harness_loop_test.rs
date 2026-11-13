@@ -28,7 +28,7 @@ use vox_lib::{
     },
     pipeline::RoutingContext,
     services::{
-        harness::{Harness, LlmExecutionParams, TurnExecutionRequest, TurnOutcome},
+        harness::{r#loop::MAX_TOOL_STEPS, Harness, LlmExecutionParams, TurnExecutionRequest, TurnOutcome},
         llm::{actor::LlmResponse, LlmCommand},
     },
 };
@@ -193,6 +193,7 @@ fn stub_llm_worker(llm_rx: mpsc::Receiver<LlmCommand>, recorded: Recorded) {
                             arguments: serde_json::json!({ "query": "anything" }),
                         },
                     ));
+                    let _ = response_tx.send(LlmResponse::Finished);
                 } else {
                     let _ = response_tx.send(LlmResponse::Token("done".to_string()));
                     let _ = response_tx.send(LlmResponse::Finished);
@@ -225,17 +226,21 @@ async fn the_tool_loop_stops_at_the_tool_budget() {
         outcome
     );
     let requests = rig.requests();
+    let expected_dispatches = MAX_TOOL_STEPS + 1;
     assert_eq!(
         requests.len(),
-        6,
-        "five tool rounds plus one tool-free pass, got {} dispatches",
+        expected_dispatches,
+        "20 tool rounds plus one tool-free pass, got {} dispatches",
         requests.len()
     );
     assert!(
-        requests[..5].iter().all(|(_, tools)| *tools),
-        "the first five passes must offer the tools"
+        requests[..MAX_TOOL_STEPS].iter().all(|(_, tools)| *tools),
+        "the first 20 passes must offer the tools"
     );
-    assert!(!requests[5].1, "the final pass must be tool-free");
+    assert!(
+        !requests[MAX_TOOL_STEPS].1,
+        "the final pass must be tool-free"
+    );
 }
 
 /// PURPOSE:  A cancelled turn must never reach the model.

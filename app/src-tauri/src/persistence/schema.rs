@@ -138,6 +138,10 @@ const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
         created_at INTEGER NOT NULL
     );",
     "CREATE INDEX IF NOT EXISTS idx_voices_created ON voices(created_at DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_voices_provider ON voices(provider_id);",
+    "CREATE INDEX IF NOT EXISTS idx_voices_source ON voices(source_kind);",
+    "CREATE INDEX IF NOT EXISTS idx_voices_favorite ON voices(is_favorite);",
+    "CREATE INDEX IF NOT EXISTS idx_voices_last_used ON voices(last_used_at DESC);",
     "CREATE TABLE IF NOT EXISTS session_tool_calls (
         id TEXT PRIMARY KEY,
         session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -215,6 +219,8 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute("PRAGMA foreign_keys = OFF;", ()).await?;
         conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
 
+        ensure_voice_metadata_columns(conn).await?;
+
         for stmt in SCHEMA_TABLE_STATEMENTS {
             conn.execute(stmt, ()).await?;
         }
@@ -285,6 +291,57 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             e
         );
     }
+
+    Ok(())
+}
+
+/// Adds voice metadata columns to pre-v11 `voices` tables and drops obsolete tables.
+async fn ensure_voice_metadata_columns(conn: &Connection) -> Result<()> {
+    let mut rows = conn.query("PRAGMA table_info(voices);", ()).await?;
+    let mut cols = std::collections::HashSet::new();
+    while let Some(row) = rows.next().await? {
+        let name: String = row.get(1)?;
+        cols.insert(name);
+    }
+    if cols.is_empty() {
+        return Ok(());
+    }
+
+    for (col, ddl) in [
+        ("provider_id", "ALTER TABLE voices ADD COLUMN provider_id TEXT NOT NULL DEFAULT '';"),
+        ("gender", "ALTER TABLE voices ADD COLUMN gender TEXT NOT NULL DEFAULT 'neutral';"),
+        ("locale", "ALTER TABLE voices ADD COLUMN locale TEXT NOT NULL DEFAULT 'en-US';"),
+        ("accent", "ALTER TABLE voices ADD COLUMN accent TEXT;"),
+        ("description", "ALTER TABLE voices ADD COLUMN description TEXT;"),
+        ("tags", "ALTER TABLE voices ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';"),
+        ("sample_text", "ALTER TABLE voices ADD COLUMN sample_text TEXT NOT NULL DEFAULT 'Hello, this is a preview of my voice.';"),
+        ("is_favorite", "ALTER TABLE voices ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0;"),
+        ("last_used_at", "ALTER TABLE voices ADD COLUMN last_used_at INTEGER;"),
+        ("slug", "ALTER TABLE voices ADD COLUMN slug TEXT;"),
+    ] {
+        if !cols.contains(col) {
+            conn.execute(ddl, ()).await?;
+        }
+    }
+
+    let _ = conn
+        .execute(
+            "UPDATE voices SET provider_id = 'chatterbox', source_kind = 'pre_baked'
+             WHERE id LIKE 'chatterbox_voice_%' OR id LIKE 'chatterbox_%';",
+            (),
+        )
+        .await;
+    let _ = conn
+        .execute(
+            "UPDATE voices SET provider_id = 'zipvoice'
+             WHERE source_kind = 'zipvoice_pack';",
+            (),
+        )
+        .await;
+
+    let _ = conn.execute("DROP TABLE IF EXISTS voice_favorites;", ()).await;
+    let _ = conn.execute("DROP TABLE IF EXISTS voice_recents;", ()).await;
+    let _ = conn.execute("DROP TABLE IF EXISTS remote_voice_cache;", ()).await;
 
     Ok(())
 }

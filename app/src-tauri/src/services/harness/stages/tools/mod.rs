@@ -96,8 +96,6 @@ impl ToolExecutionContext {
 #[derive(Debug, Clone)]
 pub struct ToolResult {
     pub content: String,
-    pub spoken_filler: Option<String>,
-    pub spoken_response: Option<String>,
 }
 
 impl ToolResult {
@@ -105,21 +103,7 @@ impl ToolResult {
     pub fn new(content: impl Into<String>) -> Self {
         Self {
             content: content.into(),
-            spoken_filler: None,
-            spoken_response: None,
         }
-    }
-
-    /// Attaches a terminal spoken response to be synthesized directly for the user.
-    pub fn with_spoken_response(mut self, spoken_response: impl Into<String>) -> Self {
-        self.spoken_response = Some(spoken_response.into());
-        self
-    }
-
-    /// Attaches an interim spoken filler to eliminate conversational dead air.
-    pub fn with_spoken_filler(mut self, spoken_filler: impl Into<String>) -> Self {
-        self.spoken_filler = Some(spoken_filler.into());
-        self
     }
 }
 

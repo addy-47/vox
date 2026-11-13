@@ -167,3 +167,20 @@ Symptom: Clippy fails on 3 lints in production `vox_lib`:
 3. `src/services/vad/turn_detector.rs:83:35`: `clippy::manual_range_contains` (`if !(0.0..=1.0).contains(&first_val)` instead of `< 0.0 || > 1.0`).
 Impact: Fails strict clippy gates. Integration tests themselves have zero clippy warnings.
 Status: open — pending backend engineer lint cleanup in `src/`.
+
+---
+
+## F-008 — Schema migration crash on pre-v14 databases (missing `ensure_voice_metadata_columns`)
+Seam: Persistence / Database Migration (`src/persistence/schema.rs`)
+Tests: `harness_loop_test`, `agentic_tool_loop_test`, all integration seams initializing via `TempPathsGuard` / `test_vox.db`
+Symptom: Tests panic with:
+  `Failed to run migrations on test database: Database(Error("Parse error: Error: invalid expression in CREATE INDEX: provider_id"))`
+Evidence:
+  - Commit `58735a6cf` (Batch 1) deleted `ensure_voice_metadata_columns(conn)` from `src/persistence/schema.rs` and moved `idx_voices_provider` into `SCHEMA_TABLE_STATEMENTS`.
+  - When migrating any pre-v14 database (such as `tests/assets/test_vox.db` at user_version 7), `CREATE TABLE IF NOT EXISTS voices` is a no-op because the table already exists.
+  - The table lacks `provider_id` (and other v11+ columns).
+  - Executing `CREATE INDEX IF NOT EXISTS idx_voices_provider ON voices(provider_id);` in `SCHEMA_TABLE_STATEMENTS` fails with parse error because `provider_id` does not exist on `voices`.
+Suspected cause: `src/persistence/schema.rs` — removal of `ensure_voice_metadata_columns` during commit `58735a6cf`. Pre-v14 migrations require either restoring column addition for legacy databases or migrating `voices` before creating indexes.
+Impact: Any user upgrading Vox from an earlier version (< v14), as well as any integration test seeded from `test_vox.db`, crashes on startup during migration.
+Status: resolved — restored `ensure_voice_metadata_columns` in `src/persistence/schema.rs` invoked before `SCHEMA_TABLE_STATEMENTS` execution during migration. Verified green across `harness_loop_test`, `agentic_tool_loop_test`, and `database_persistence_boundary_test`.
+

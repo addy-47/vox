@@ -1,5 +1,22 @@
 # Phase 14 Work Log
 
+## 2026-11-13 — Domain 1 Review Remediation: ZBC Cleanups, Voice Index Migration & Test Budget Alignment
+
+- **Tool Loop Test Budget Assertion (`tests/harness_loop_test.rs`)**:
+  - Updated `the_tool_loop_stops_at_the_tool_budget` to expect `MAX_TOOL_STEPS + 1` (21) generation requests reflecting the 20-step loop ceiling.
+- **Voice Index Restoration & Pre-v14 Migration Fix (`persistence/schema.rs`)**:
+  - Added the 4 missing voice indexes (`idx_voices_provider`, `idx_voices_source`, `idx_voices_favorite`, `idx_voices_last_used`) in `SCHEMA_TABLE_STATEMENTS`.
+  - Restored `ensure_voice_metadata_columns` to execute prior to `SCHEMA_TABLE_STATEMENTS` during migrations, ensuring pre-v14 databases (such as `test_vox.db` at v7) receive columns before indexes are applied (resolving F-008).
+- **ZBC Cleanups in Tool Contract & Streaming Router**:
+  - Stripped `spoken_filler` and `spoken_response` fields and builder methods from `struct ToolResult` in `services/harness/stages/tools/mod.rs`.
+  - Deleted unused `dispatch_spoken_response` from `services/harness/stages/streaming/router.rs`.
+  - Renamed subtest in `tests/agentic_tool_loop_test.rs` to `tool_call_preserves_the_buffered_preamble_clause` with updated documentation.
+- **Verification**:
+  - Compile Gate: `app/src-tauri/scripts/verify-targets.sh` passed cleanly with 0 warnings / 0 errors across desktop lib/bin, desktop tests/benches, desktop build, and `aarch64-linux-android`.
+  - Test Suites: `cargo test --release -p Vox --test harness_loop_test -- --test-threads=1` passed (6/6). Nextest `harness_loop_test` passed. `agentic_tool_loop_test` passed (9/9). `database_persistence_boundary_test` passed (18/18).
+
+---
+
 ## 2026-11-13 — Domain 1 Batch 4 & Batch 5: Router Demuxing, Preamble Preservation & Two-Key Latch
 
 - **Router Demuxing & Preamble Preservation (`services/harness/stages/streaming/router.rs`, `steps.rs`, `loop.rs`)**:
