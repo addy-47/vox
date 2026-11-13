@@ -83,7 +83,7 @@
 *Depends on: Batch 5*
 - [x] `app/src-tauri/scripts/verify-targets.sh`
   - Verify clean compilation with zero warnings on all supported targets.
-- [ ] `app/src-tauri/tests/harness_pipeline_test.rs`
+- [x] `app/src-tauri/tests/harness_pipeline_test.rs`
   - Verify 0-tool conversational turns transition through `Thinking` -> `Speaking` -> `Ready`.
   - Verify 1-tool turns preserve preamble speech and transition `Thinking` -> `Working` -> `Speaking` -> `Ready`.
   - Verify multi-tool batches accumulate and execute without truncation.
