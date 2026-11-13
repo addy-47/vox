@@ -23,7 +23,7 @@ pub use factory::{create_llm_provider, create_llm_provider_from_llm_settings};
 pub use provider::{
     CanonicalToolCall, CanonicalToolDefinition, ConversationInput, GenerationOptions,
     GenerationPurpose, GenerationRequest, LlmEngine, LlmError, LlmProvider, LlmStreamEvent,
-    OutputConstraint, ProviderCapabilities, ProviderKind, ReasoningMode, Support, ToolFlow,
+    OutputConstraint, ProviderCapabilities, ProviderKind, ReasoningMode, Support,
 };
 pub use sidecar::{SidecarLlmProvider, SidecarLlmProvider as EmbeddedProvider};
 

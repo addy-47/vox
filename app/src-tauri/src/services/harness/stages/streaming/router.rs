@@ -145,6 +145,13 @@ impl StreamRoutingStage {
             };
 
             match response {
+                LlmResponse::Thinking(text) => {
+                    log::debug!(
+                        "[Harness::Stream] Thinking token received (turn {}, len {})",
+                        handles.turn_id,
+                        text.len()
+                    );
+                }
                 LlmResponse::Token(token) => {
                     handles.turn_metrics.record_llm_first_token();
                     self.handle_token(token, handles);

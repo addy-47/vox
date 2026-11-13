@@ -6,7 +6,7 @@ use std::{
 
 use turso::{Builder, Connection, Database};
 
-use crate::{core::error::PersistenceError, services::llm::ToolFlow};
+use crate::core::error::PersistenceError;
 
 pub const PERSISTENCE_CHANNEL_CAPACITY: usize = 128;
 pub const WORKER_EVENT_POLL_TIMEOUT: Duration = Duration::from_millis(100);
@@ -89,7 +89,6 @@ pub enum PersistenceEvent {
         session_id: i64,
         turn_id: u32,
         tool_name: String,
-        tool_flow: ToolFlow,
         arguments: serde_json::Value,
         result: String,
         is_error: bool,

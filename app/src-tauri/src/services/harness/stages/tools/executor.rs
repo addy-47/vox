@@ -5,12 +5,8 @@ use std::{
 
 use super::{registry::ToolRegistry, ToolDefinition, ToolExecutionContext, ToolResult};
 use crate::{
-    core::events::PipelineMode,
-    persistence::PersistenceEvent,
-    services::{
-        harness::TOOL_EXECUTION_TIMEOUT,
-        llm::{CanonicalToolCall, ToolFlow},
-    },
+    core::events::PipelineMode, persistence::PersistenceEvent, services::harness::TOOL_EXECUTION_TIMEOUT,
+    services::llm::CanonicalToolCall,
 };
 
 /// Outcome record of a single executed tool invocation.
@@ -25,7 +21,6 @@ pub struct ToolExecutionOutcome {
 fn dispatch_persistence(
     ctx: &ToolExecutionContext,
     call: &CanonicalToolCall,
-    flow: ToolFlow,
     result_text: &str,
     is_error: bool,
     duration_ms: u64,
@@ -41,7 +36,6 @@ fn dispatch_persistence(
             session_id: ctx.session_id,
             turn_id: ctx.turn_id,
             tool_name: call.name.clone(),
-            tool_flow: flow,
             arguments: call.arguments.clone(),
             result: result_text.to_string(),
             is_error,
@@ -107,7 +101,7 @@ impl ToolExecutor {
                     .turn_metrics
                     .record_tool_finish(duration_ms, true);
                 let err_msg = format!("Tool '{}' not found in registry", call.name);
-                dispatch_persistence(&ctx, &call, ToolFlow::Terminal, &err_msg, true, duration_ms);
+                dispatch_persistence(&ctx, &call, &err_msg, true, duration_ms);
                 return ToolExecutionOutcome {
                     tool_name: call.name,
                     result: ToolResult::new(err_msg),
@@ -130,7 +124,7 @@ impl ToolExecutor {
                 "Tool '{}' does not support pipeline mode {:?}",
                 call.name, mode
             );
-            dispatch_persistence(&ctx, &call, tool.flow(), &err_msg, true, duration_ms);
+            dispatch_persistence(&ctx, &call, &err_msg, true, duration_ms);
             return ToolExecutionOutcome {
                 tool_name: call.name,
                 result: ToolResult::new(err_msg),
@@ -138,19 +132,17 @@ impl ToolExecutor {
             };
         }
 
-        let flow = tool.flow();
         let (result, is_error) = run_with_guards(&tool, mode, &call, &ctx).await;
         let duration_ms = start.elapsed().as_millis() as u64;
         ctx.app_state
             .turn_metrics
             .record_tool_finish(duration_ms, is_error);
 
-        dispatch_persistence(&ctx, &call, flow, &result.content, is_error, duration_ms);
+        dispatch_persistence(&ctx, &call, &result.content, is_error, duration_ms);
 
         log::info!(
-            "[ToolExecutor] Executed {} ({:?}, mode: {:?}) in {}ms (is_error: {})",
+            "[ToolExecutor] Executed {} (mode: {:?}) in {}ms (is_error: {})",
             call.name,
-            flow,
             mode,
             duration_ms,
             is_error

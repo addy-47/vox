@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::{
     core::{events::PipelineMode, state::AppState},
-    services::llm::{CanonicalToolDefinition, ToolFlow},
+    services::llm::CanonicalToolDefinition,
 };
 
 pub mod executor;
@@ -158,9 +158,6 @@ pub trait ToolDefinition: Send + Sync {
     /// JSON schema describing the required and optional arguments for this tool in the active mode.
     fn parameters_schema(&self, mode: PipelineMode) -> Value;
 
-    /// Behavioral flow category governing state transitions and speech delivery.
-    fn flow(&self) -> ToolFlow;
-
     /// Executes the tool asynchronously, returning a structured observation or error.
     fn execute<'a>(
         &'a self,
@@ -175,7 +172,6 @@ pub trait ToolDefinition: Send + Sync {
             name: self.name().to_string(),
             description: self.description(mode).to_string(),
             parameters: self.parameters_schema(mode),
-            flow: self.flow(),
         }
     }
 }

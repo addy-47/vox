@@ -51,7 +51,7 @@ use vox_lib::{
             actor::{spawn_llm_worker, LlmResponse},
             CanonicalToolCall, CanonicalToolDefinition,
             GenerationPurpose, GenerationRequest, OutputConstraint, ReasoningMode,
-            ToolFlow, ConversationInput, GenerationOptions, LlmProvider, LlmStreamEvent,
+            ConversationInput, GenerationOptions, LlmProvider, LlmStreamEvent,
         },
         tts::actor::TtsCommand,
     },
@@ -572,7 +572,6 @@ fn turn1_title_request() -> GenerationRequest {
                 },
                 "required": ["title", "spoken_response"]
             }),
-            flow: ToolFlow::Terminal,
         }]),
     }
 }
@@ -781,7 +780,6 @@ async fn web_search_runs_hermetically_and_stays_non_terminal() {
 
         assert_eq!(tool.name(), "web_search");
         assert_eq!(tool.domain(), ToolDomain::Modular);
-        assert_eq!(tool.flow(), ToolFlow::NonTerminal);
 
         // 2. Verify Parameter Schema conforms to Section 3.1
         let schema = tool.parameters_schema(PipelineMode::Modular);

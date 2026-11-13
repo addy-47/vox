@@ -27,6 +27,7 @@ pub type LlmWarmUpHandles<'a> = LlmWorkerHandles<'a>;
 /// Stream event emitted back across the duplex pipe from LLM actor to harness plugin chassis.
 #[derive(Debug, Clone)]
 pub enum LlmResponse {
+    Thinking(String),
     Token(String),
     ToolCall(super::CanonicalToolCall),
     Finished,
@@ -244,6 +245,15 @@ fn handle_generate(
 
     while let Ok(event) = stream_rx.recv() {
         match event {
+            super::LlmStreamEvent::Thinking(text) => {
+                if cancel.is_cancelled() {
+                    break;
+                }
+                if let Err(e) = response_tx.send(LlmResponse::Thinking(text)) {
+                    log::debug!("[Llm::Worker] response_tx disconnected: {}", e);
+                    break;
+                }
+            }
             super::LlmStreamEvent::Token(token) => {
                 if cancel.is_cancelled() {
                     break;

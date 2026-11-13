@@ -6,10 +6,7 @@ use serde_json::{json, Value};
 use super::{ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolResult};
 use crate::{
     core::events::PipelineMode,
-    services::{
-        llm::ToolFlow,
-        memory::ml::{embedder, estimate_tokens},
-    },
+    services::memory::ml::{embedder, estimate_tokens},
 };
 
 // ─── Level 3 Domain Constants ────────────────────────────────────────────────
@@ -144,10 +141,6 @@ impl ToolDefinition for WebSearchTool {
             },
             "required": ["query"]
         })
-    }
-
-    fn flow(&self) -> ToolFlow {
-        ToolFlow::NonTerminal
     }
 
     fn execute<'a>(

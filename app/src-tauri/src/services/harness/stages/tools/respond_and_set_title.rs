@@ -2,7 +2,7 @@ use futures_util::future::{BoxFuture, FutureExt};
 use serde_json::{json, Value};
 
 use super::{ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolResult};
-use crate::{core::events::PipelineMode, persistence::PersistenceEvent, services::llm::ToolFlow};
+use crate::{core::events::PipelineMode, persistence::PersistenceEvent};
 
 /// Shared helper executing session title persistence and notification dispatch.
 async fn apply_session_title(title: &str, ctx: &ToolExecutionContext) -> Result<(), ToolError> {
@@ -88,10 +88,6 @@ impl ToolDefinition for RespondAndSetTitleTool {
         })
     }
 
-    fn flow(&self) -> ToolFlow {
-        ToolFlow::Terminal
-    }
-
     fn execute<'a>(
         &'a self,
         _mode: PipelineMode,
@@ -155,10 +151,6 @@ impl ToolDefinition for SetSessionTitleTool {
             },
             "required": ["title"]
         })
-    }
-
-    fn flow(&self) -> ToolFlow {
-        ToolFlow::Terminal
     }
 
     fn execute<'a>(

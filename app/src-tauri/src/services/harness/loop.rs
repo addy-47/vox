@@ -23,7 +23,6 @@ use crate::{
             },
             ChatMessage, TurnExecutionRequest, TurnOutcome,
         },
-        llm::ToolFlow,
     },
 };
 
@@ -322,13 +321,9 @@ async fn handle_pass_outcome(
                 ));
             }
 
-            let tool_flow = ctx
-                .tool_registry
-                .get(&call.name)
-                .map(|t| t.flow())
-                .unwrap_or(ToolFlow::Terminal);
+            let is_terminal = call.name == "respond_and_set_title";
 
-            if tool_flow == ToolFlow::Terminal {
+            if is_terminal {
                 let outcome = step6_handle_terminal_tool(ctx, call).await;
                 LoopAction::Terminal(outcome)
             } else {

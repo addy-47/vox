@@ -259,8 +259,8 @@ async fn session_delete_cascades_to_its_child_rows() {
         assert!(session_compaction_id > 0);
 
         conn.execute(
-            "INSERT INTO session_tool_calls (id, session_id, turn_id, tool_name, tool_kind, arguments, result, is_error, duration_ms, created_at) \
-             VALUES ('call_cascade_test', ?, 1, 'respond_and_set_title', 'terminal', '{}', 'ok', 0, 5, 1000);",
+            "INSERT INTO session_tool_calls (id, session_id, turn_id, tool_name, arguments, result, is_error, duration_ms, created_at) \
+             VALUES ('call_cascade_test', ?, 1, 'respond_and_set_title', '{}', 'ok', 0, 5, 1000);",
             (session_id,),
         )
         .await
@@ -978,7 +978,6 @@ async fn tool_call_event_self_heals_a_missing_session() {
                 session_id: orphan_sid,
                 turn_id: 1,
                 tool_name: "respond_and_set_title".to_string(),
-                tool_flow: vox_lib::services::llm::ToolFlow::Terminal,
                 arguments: serde_json::json!({
                     "title": "Self Healing Session",
                     "spoken_response": "Hello world"
@@ -995,7 +994,7 @@ async fn tool_call_event_self_heals_a_missing_session() {
         while std::time::Instant::now() < deadline {
             let mut rows = conn
                 .query(
-                    "SELECT tool_name, tool_kind, duration_ms FROM session_tool_calls WHERE id = ?;",
+                    "SELECT tool_name, duration_ms FROM session_tool_calls WHERE id = ?;",
                     (call_id.clone(),),
                 )
                 .await
@@ -1003,10 +1002,8 @@ async fn tool_call_event_self_heals_a_missing_session() {
 
             if let Ok(Some(row)) = rows.next().await {
                 let name: String = row.get(0).unwrap();
-                let kind: String = row.get(1).unwrap();
-                let dur: i64 = row.get(2).unwrap();
+                let dur: i64 = row.get(1).unwrap();
                 assert_eq!(name, "respond_and_set_title");
-                assert_eq!(kind, "terminal");
                 assert_eq!(dur, 45);
                 tool_call_found = true;
                 break;
@@ -1064,7 +1061,6 @@ async fn tool_call_is_not_persisted_in_private_mode() {
                 session_id: orphan_sid,
                 turn_id: 1,
                 tool_name: "respond_and_set_title".to_string(),
-                tool_flow: vox_lib::services::llm::ToolFlow::Terminal,
                 arguments: serde_json::json!({ "title": "Public" }),
                 result: "ok".to_string(),
                 is_error: false,
@@ -1113,7 +1109,6 @@ async fn tool_call_is_not_persisted_in_private_mode() {
                 session_id: orphan_sid,
                 turn_id: 2,
                 tool_name: "search_memory".to_string(),
-                tool_flow: vox_lib::services::llm::ToolFlow::NonTerminal,
                 arguments: serde_json::json!({ "query": "secret" }),
                 result: "None".to_string(),
                 is_error: false,

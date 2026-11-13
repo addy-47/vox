@@ -63,21 +63,12 @@ pub enum OutputConstraint {
     },
 }
 
-/// Execution flow semantics for agentic tools.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ToolFlow {
-    Terminal,
-    NonTerminal,
-}
-
 /// Provider-neutral definition of a registered cognitive tool.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CanonicalToolDefinition {
     pub name: String,
     pub description: String,
     pub parameters: serde_json::Value,
-    pub flow: ToolFlow,
 }
 
 /// Normalized representation of an invoked tool call from the model stream.
@@ -207,6 +198,7 @@ pub enum LlmError {
 /// Provider streaming events emitted during generation.
 #[derive(Debug, Clone)]
 pub enum LlmStreamEvent {
+    Thinking(String),
     Token(String),
     ToolCall(CanonicalToolCall),
     Finished,

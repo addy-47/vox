@@ -10,10 +10,7 @@ use crate::{
         search_active_episodic_by_query_terms, search_active_episodic_by_vector,
         EpisodicObservationCandidate,
     },
-    services::{
-        llm::ToolFlow,
-        memory::ml::{ensure_embedder_loaded, generate_embedding},
-    },
+    services::memory::ml::{ensure_embedder_loaded, generate_embedding},
 };
 
 const RRF_K: f32 = 60.0;
@@ -61,10 +58,6 @@ impl ToolDefinition for MemorySearchTool {
                 "required": ["query"]
             }),
         }
-    }
-
-    fn flow(&self) -> ToolFlow {
-        ToolFlow::NonTerminal
     }
 
     fn execute<'a>(

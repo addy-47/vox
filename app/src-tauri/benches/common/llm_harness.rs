@@ -185,7 +185,7 @@ pub fn benchmark_llm_provider(
                     full_response.push_str(&tok);
                     token_count += 1;
                 }
-                LlmStreamEvent::ToolCall(_) => {}
+                LlmStreamEvent::Thinking(_) | LlmStreamEvent::ToolCall(_) => {}
                 LlmStreamEvent::Finished => break,
             }
         }
