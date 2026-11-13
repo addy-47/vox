@@ -4,63 +4,12 @@ use serde_json::{json, Value};
 use super::{ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolResult};
 use crate::{core::events::PipelineMode, persistence::PersistenceEvent};
 
-/// Shared helper executing session title persistence and notification dispatch.
-async fn apply_session_title(title: &str, ctx: &ToolExecutionContext) -> Result<(), ToolError> {
-    let is_private = ctx
-        .app_state
-        .telemetry
-        .is_private_mode
-        .load(std::sync::atomic::Ordering::Relaxed);
+/// Built-in tool that assigns a concise title to initialize a conversation session in Modular mode.
+pub struct SetTitleTool;
 
-    if !is_private {
-        let persist_tx = ctx.app_state.persist_tx.lock().clone();
-        match persist_tx {
-            Some(tx) => {
-                if let Err(e) = tx.try_send(PersistenceEvent::UpdateSessionMetadata {
-                    session_id: ctx.session_id,
-                    key: "title".to_string(),
-                    value: title.to_string(),
-                }) {
-                    log::warn!("[SetSessionTitle] Failed to queue title update: {}", e);
-                    return Err(ToolError::ExecutionFailed(format!(
-                        "Persistence queue error: {}",
-                        e
-                    )));
-                }
-            }
-            None => {
-                log::warn!(
-                    "[SetSessionTitle] No persistence worker; title not set for session {}",
-                    ctx.session_id
-                );
-            }
-        }
-
-        if let Some(ref notify_cb) = ctx.on_sessions_changed {
-            notify_cb();
-        }
-
-        log::info!(
-            "[SetSessionTitle] Queued title update for session {} to '{}'",
-            ctx.session_id,
-            title
-        );
-    } else {
-        log::info!(
-            "[SetSessionTitle] Private mode active; skipping session title DB write for session {}",
-            ctx.session_id
-        );
-    }
-
-    Ok(())
-}
-
-/// Built-in terminal tool that sets the conversational session title and delivers spoken audio in Modular mode.
-pub struct RespondAndSetTitleTool;
-
-impl ToolDefinition for RespondAndSetTitleTool {
+impl ToolDefinition for SetTitleTool {
     fn name(&self) -> &str {
-        "respond_and_set_title"
+        "set_title"
     }
 
     fn domain(&self) -> ToolDomain {
@@ -68,7 +17,7 @@ impl ToolDefinition for RespondAndSetTitleTool {
     }
 
     fn description(&self, _mode: PipelineMode) -> &str {
-        "Generates a concise 3-5 word title for the session based on the user's initial inquiry, and responds directly to the user in voice."
+        "Assigns a concise 3 to 5 word title summarizing the user's intent to initialize this new conversation session."
     }
 
     fn parameters_schema(&self, _mode: PipelineMode) -> Value {
@@ -78,13 +27,9 @@ impl ToolDefinition for RespondAndSetTitleTool {
                 "title": {
                     "type": "string",
                     "description": "A concise, descriptive 3-5 word title summarizing the user's initial query."
-                },
-                "spoken_response": {
-                    "type": "string",
-                    "description": "The complete conversational spoken reply delivered directly to the user."
                 }
             },
-            "required": ["title", "spoken_response"]
+            "required": ["title"]
         })
     }
 
@@ -102,13 +47,6 @@ impl ToolDefinition for RespondAndSetTitleTool {
                 .trim()
                 .to_string();
 
-            let spoken_response = args
-                .get("spoken_response")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .trim()
-                .to_string();
-
             if title.is_empty() {
                 return Err(ToolError::InvalidArguments(
                     "Parameter 'title' must be a non-empty string".to_string(),
@@ -117,14 +55,16 @@ impl ToolDefinition for RespondAndSetTitleTool {
 
             apply_session_title(&title, ctx).await?;
 
-            Ok(ToolResult::new(format!("Session title set to '{}'", title))
-                .with_spoken_response(spoken_response))
+            Ok(ToolResult::new(format!(
+                "Session title set to '{}'",
+                title
+            )))
         }
         .boxed()
     }
 }
 
-/// Built-in tool that sets the conversational session title in Realtime S2S mode.
+/// Built-in tool that assigns a concise title to initialize a conversation session in Realtime S2S mode.
 pub struct SetSessionTitleTool;
 
 impl ToolDefinition for SetSessionTitleTool {
@@ -187,8 +127,62 @@ impl ToolDefinition for SetSessionTitleTool {
 
             apply_session_title(&title, ctx).await?;
 
-            Ok(ToolResult::new(format!("{{\"status\": \"ok\", \"title\": \"{}\"}}", title)))
+            Ok(ToolResult::new(format!(
+                "{{\"status\": \"ok\", \"title\": \"{}\"}}",
+                title
+            )))
         }
         .boxed()
     }
+}
+
+/// Shared helper executing session title persistence and notification dispatch.
+async fn apply_session_title(title: &str, ctx: &ToolExecutionContext) -> Result<(), ToolError> {
+    let is_private = ctx
+        .app_state
+        .telemetry
+        .is_private_mode
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    if !is_private {
+        let persist_tx = ctx.app_state.persist_tx.lock().clone();
+        match persist_tx {
+            Some(tx) => {
+                if let Err(e) = tx.try_send(PersistenceEvent::UpdateSessionMetadata {
+                    session_id: ctx.session_id,
+                    key: "title".to_string(),
+                    value: title.to_string(),
+                }) {
+                    log::warn!("[SetTitle] Failed to queue title update: {}", e);
+                    return Err(ToolError::ExecutionFailed(format!(
+                        "Persistence queue error: {}",
+                        e
+                    )));
+                }
+            }
+            None => {
+                log::warn!(
+                    "[SetTitle] No persistence worker; title not set for session {}",
+                    ctx.session_id
+                );
+            }
+        }
+
+        if let Some(ref notify_cb) = ctx.on_sessions_changed {
+            notify_cb();
+        }
+
+        log::info!(
+            "[SetTitle] Queued title update for session {} to '{}'",
+            ctx.session_id,
+            title
+        );
+    } else {
+        log::info!(
+            "[SetTitle] Private mode active; skipping session title DB write for session {}",
+            ctx.session_id
+        );
+    }
+
+    Ok(())
 }

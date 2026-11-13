@@ -22,30 +22,30 @@
 
 ### Batch 2: Network Ingress Provider Stream Adapters
 *Depends on: Batch 1*
-- [ ] `app/src-tauri/src/services/llm/providers/chat_completions.rs`
+- [x] `app/src-tauri/src/services/llm/providers/chat_completions.rs`
   - Parse `reasoning_content` delta field in streaming chunks to yield `LlmStreamEvent::Thinking`.
   - Yield standard text deltas as `LlmStreamEvent::Token`.
-- [ ] `app/src-tauri/src/services/llm/providers/ollama.rs`
+- [x] `app/src-tauri/src/services/llm/providers/ollama.rs`
   - Parse `thought` / reasoning fields in Ollama streaming chunks to yield `LlmStreamEvent::Thinking`.
-- [ ] `app/src-tauri/src/services/sidecar/mod.rs`
+- [x] `app/src-tauri/src/services/sidecar/mod.rs` (and `think_tags.rs`)
   - Add state-machine stripper for `<think>...</think>` tags to route tokens to `Thinking` vs `Token`.
 
 ---
 
 ### Batch 3: Universal Tool Cleanup & SetTitle Migration
 *Depends on: Batch 1*
-- [ ] `app/src-tauri/src/services/harness/stages/tools/search_memory.rs`
+- [x] `app/src-tauri/src/services/harness/stages/tools/search_memory.rs`
   - Remove `spoken_filler` from parameters JSON schema.
   - Remove `spoken_filler` extraction logic and `ToolFlow` trait implementation.
-- [ ] `app/src-tauri/src/services/harness/stages/tools/web_search.rs`
+- [x] `app/src-tauri/src/services/harness/stages/tools/web_search.rs`
   - Remove `spoken_filler` from parameters JSON schema.
   - Remove `spoken_filler` extraction logic and `ToolFlow` trait implementation.
-- [ ] `app/src-tauri/src/services/harness/stages/tools/set_title.rs`
+- [x] `app/src-tauri/src/services/harness/stages/tools/set_title.rs`
   - Create new `SetTitleTool` struct implementing `ToolDefinition`.
   - Accept parameter schema `{"title": "..."}` and execute title update.
-- [ ] `app/src-tauri/src/services/harness/stages/tools/respond_and_set_title.rs`
+- [x] `app/src-tauri/src/services/harness/stages/tools/respond_and_set_title.rs`
   - Delete file (ZBC removal).
-- [ ] `app/src-tauri/src/services/harness/stages/tools/mod.rs`
+- [x] `app/src-tauri/src/services/harness/stages/tools/mod.rs`
   - Remove `flow(&self)` method from `pub trait ToolDefinition`.
   - Register `SetTitleTool` and unregister `RespondAndSetTitleTool`.
 

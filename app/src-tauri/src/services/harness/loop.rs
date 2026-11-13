@@ -17,7 +17,7 @@ use crate::{
             },
             steps::{
                 step1_intake, step3_execute_compaction, step4_assemble_request, step5_dispatch_llm,
-                step6_handle_non_terminal_tool, step6_handle_terminal_tool, step6_run_stream_pass,
+                step6_handle_non_terminal_tool, step6_run_stream_pass,
                 step7_commit_completed, step7_handle_cancelled, step7_handle_error,
                 CancelledTurnContext, IntakeResult,
             },
@@ -321,19 +321,12 @@ async fn handle_pass_outcome(
                 ));
             }
 
-            let is_terminal = call.name == "respond_and_set_title";
-
-            if is_terminal {
-                let outcome = step6_handle_terminal_tool(ctx, call).await;
-                LoopAction::Terminal(outcome)
+            let cancelled =
+                step6_handle_non_terminal_tool(ctx, call, &partial_text, scratchpad).await;
+            if cancelled {
+                LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, String::new())))
             } else {
-                let cancelled =
-                    step6_handle_non_terminal_tool(ctx, call, &partial_text, scratchpad).await;
-                if cancelled {
-                    LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, String::new())))
-                } else {
-                    LoopAction::Continue
-                }
+                LoopAction::Continue
             }
         }
     }

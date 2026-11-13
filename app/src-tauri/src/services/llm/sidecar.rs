@@ -9,8 +9,8 @@ use serde_json::Value;
 
 use crate::services::{
     llm::{
-        GenerationRequest, LlmError, LlmModelInfo, LlmProvider, LlmStreamEvent,
-        ProviderCapabilities, ProviderKind, Support,
+        transport::think_tags::ThinkTagDemuxer, GenerationRequest, LlmError, LlmModelInfo,
+        LlmProvider, LlmStreamEvent, ProviderCapabilities, ProviderKind, Support,
     },
     sidecar::{global_sidecar_supervisor, SidecarKind},
 };
@@ -145,6 +145,7 @@ impl LlmProvider for SidecarLlmProvider {
 
             let mut stream = resp.bytes_stream();
             let mut line_buf = String::new();
+            let mut demuxer = ThinkTagDemuxer::new();
 
             while let Some(chunk_res) = stream.next().await {
                 if cancel.is_cancelled() {
@@ -163,17 +164,28 @@ impl LlmProvider for SidecarLlmProvider {
                     if let Some(data) = line.strip_prefix("data:") {
                         let trimmed = data.trim();
                         if trimmed == "[DONE]" {
+                            demuxer.flush(tx);
                             let _ = tx.send(LlmStreamEvent::Finished);
                             return Ok(());
                         }
 
                         if let Ok(val) = serde_json::from_str::<Value>(trimmed) {
+                            if let Some(reasoning) = val
+                                .pointer("/choices/0/delta/reasoning_content")
+                                .and_then(|v| v.as_str())
+                            {
+                                if !reasoning.is_empty() {
+                                    let _ = tx
+                                        .send(LlmStreamEvent::Thinking(reasoning.to_string()));
+                                }
+                            }
+
                             if let Some(content) = val
                                 .pointer("/choices/0/delta/content")
                                 .and_then(|v| v.as_str())
                             {
                                 if !content.is_empty() {
-                                    let _ = tx.send(LlmStreamEvent::Token(content.to_string()));
+                                    demuxer.feed(content, tx);
                                 }
                             }
                         }
@@ -181,6 +193,7 @@ impl LlmProvider for SidecarLlmProvider {
                 }
             }
 
+            demuxer.flush(tx);
             let _ = tx.send(LlmStreamEvent::Finished);
 
             Ok(())

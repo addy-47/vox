@@ -6,7 +6,7 @@ use std::{
 use futures_util::StreamExt;
 use serde::Deserialize;
 
-use super::{config::ConnectionConfig, sse::SseDecoder};
+use super::{config::ConnectionConfig, sse::SseDecoder, think_tags::ThinkTagDemuxer};
 use crate::services::{
     harness::ChatMessage,
     llm::{
@@ -32,6 +32,12 @@ struct ChunkChoice {
 struct ChunkDelta {
     #[serde(default)]
     content: Option<String>,
+    #[serde(default)]
+    reasoning_content: Option<String>,
+    #[serde(default)]
+    reasoning: Option<String>,
+    #[serde(default)]
+    thought: Option<String>,
     #[serde(default)]
     tool_calls: Option<Vec<ChunkDeltaToolCall>>,
 }
@@ -358,9 +364,11 @@ fn flush_pending_tool_calls(
 fn process_sse_line(
     line: &str,
     accumulator: &mut ToolCallAccumulator,
+    demuxer: &mut ThinkTagDemuxer,
     tx: &mpsc::Sender<super::super::LlmStreamEvent>,
 ) -> bool {
     if line == "[DONE]" {
+        demuxer.flush(tx);
         flush_pending_tool_calls(accumulator, tx);
         if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
             log::warn!("[ChatCompletions] Send finished event error: {}", e);
@@ -370,11 +378,24 @@ fn process_sse_line(
 
     if let Ok(chunk) = serde_json::from_str::<ChatCompletionChunk>(line) {
         if let Some(choice) = chunk.choices.first() {
+            let reasoning = choice
+                .delta
+                .reasoning_content
+                .as_deref()
+                .or(choice.delta.reasoning.as_deref())
+                .or(choice.delta.thought.as_deref());
+            if let Some(thought) = reasoning {
+                if !thought.is_empty() {
+                    if let Err(e) =
+                        tx.send(super::super::LlmStreamEvent::Thinking(thought.to_string()))
+                    {
+                        log::warn!("[ChatCompletions] Send thinking error: {}", e);
+                    }
+                }
+            }
             if let Some(ref token) = choice.delta.content {
                 if !token.is_empty() {
-                    if let Err(e) = tx.send(super::super::LlmStreamEvent::Token(token.clone())) {
-                        log::warn!("[ChatCompletions] Send token error: {}", e);
-                    }
+                    demuxer.feed(token, tx);
                 }
             }
             if let Some(ref tc_list) = choice.delta.tool_calls {
@@ -439,9 +460,11 @@ pub async fn stream_chat_completions(
     let mut decoder = SseDecoder::new();
     let mut byte_stream = response.bytes_stream();
     let mut accumulator = ToolCallAccumulator::default();
+    let mut demuxer = ThinkTagDemuxer::new();
 
     loop {
         if cancel.is_cancelled() {
+            demuxer.flush(tx);
             if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
                 log::warn!(
                     "[ChatCompletions] Failed to send Finished on cancel during stream: {}",
@@ -454,6 +477,7 @@ pub async fn stream_chat_completions(
         let chunk_opt = tokio::select! {
             chunk = byte_stream.next() => chunk,
             _ = cancel.cancelled() => {
+                demuxer.flush(tx);
                 if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
                     log::warn!(
                         "[ChatCompletions] Failed to send Finished on select cancel: {}",
@@ -468,7 +492,7 @@ pub async fn stream_chat_completions(
             Some(Ok(bytes)) => {
                 let lines = decoder.decode_chunk(&bytes);
                 for line in lines {
-                    if process_sse_line(&line, &mut accumulator, tx) {
+                    if process_sse_line(&line, &mut accumulator, &mut demuxer, tx) {
                         return Ok(());
                     }
                 }
@@ -479,9 +503,10 @@ pub async fn stream_chat_completions(
     }
 
     if let Some(line) = decoder.flush() {
-        process_sse_line(&line, &mut accumulator, tx);
+        process_sse_line(&line, &mut accumulator, &mut demuxer, tx);
     }
 
+    demuxer.flush(tx);
     flush_pending_tool_calls(&mut accumulator, tx);
 
     if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {

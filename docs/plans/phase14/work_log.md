@@ -1,5 +1,31 @@
 # Phase 14 Work Log
 
+## 2026-11-13 — Domain 1 Batch 2 & Batch 3: Stream Adapters & Universal Tool Cleanup (ZBC)
+
+- **Network Ingress Provider Stream Adapters (`services/llm/`)**:
+  - Implemented streaming state machine `ThinkTagDemuxer` in `transport/think_tags.rs` to strip `<think>...</think>` tags and cleanly demux arbitrary byte/token streams into `LlmStreamEvent::Thinking` vs `LlmStreamEvent::Token`.
+  - Added unit test suite in `think_tags.rs` covering untagged tokens, single-chunk think tags, split tags across chunk boundaries, and false-alarm HTML/XML tags.
+  - Enhanced `transport/chat_completions.rs` to parse `reasoning_content`, `reasoning`, and `thought` delta fields into `LlmStreamEvent::Thinking`, and route inline tokens through `ThinkTagDemuxer`.
+  - Enhanced `transport/ollama.rs` to parse `thinking` and `thought` message fields into `LlmStreamEvent::Thinking`, and route inline content through `ThinkTagDemuxer`.
+  - Enhanced `sidecar.rs` to parse `reasoning_content` deltas and demux inline tokens through `ThinkTagDemuxer`.
+  - Derived `PartialEq` on `LlmStreamEvent` in `provider.rs`.
+- **Universal Tool Cleanup & SetTitle Migration (`services/harness/`)**:
+  - Implemented clean `SetTitleTool` and `SetSessionTitleTool` in `stages/tools/set_title.rs` conforming to the universal parameter schema `{"title": "..."}` with zero speech parameters.
+  - Deleted legacy `respond_and_set_title.rs` completely (ZBC).
+  - Stripped `spoken_filler` property from parameter schemas and execution logic in `search_memory.rs` and `web_search.rs`.
+  - Updated `ToolRegistry` in `stages/tools/registry.rs` to register `SetTitleTool` and enforce title-unset filtering on `"set_title"`.
+  - Aligned prompt rules in `stages/prompt.rs` and execution loop in `loop.rs` and `steps.rs` to handle `set_title` as a standard non-terminal tool and update `harness.title_set = true`.
+- **Verification**:
+  - Compile Gate: `app/src-tauri/scripts/verify-targets.sh` passed with 0 warnings / 0 errors across:
+    - Backend architectural invariant lint (`lint-arch.sh`)
+    - Desktop lib and bin (`cargo clippy --bin Vox --lib --release -D warnings`)
+    - Desktop tests and benches (`cargo clippy --tests --benches --release -D warnings`)
+    - Desktop build (Vox binary + sidecars)
+    - Android cross-compile (`cargo clippy --target aarch64-linux-android --lib --release`)
+  - Unit Tests: `cargo test --release -p Vox --lib services::llm::transport::think_tags::tests` passed 4/4 tests.
+
+---
+
 ## 2026-11-13 — Domain 1 Batch 1: Core Types, Enums & Database Schema (ZBC)
 
 - **LLM Core Types & Stream Event Updates (`services/llm/`)**:

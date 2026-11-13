@@ -3,7 +3,7 @@ use std::sync::mpsc;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 
-use super::{config::ConnectionConfig, sse::SseDecoder};
+use super::{config::ConnectionConfig, sse::SseDecoder, think_tags::ThinkTagDemuxer};
 use crate::services::llm::{
     catalog::{ResponseEnvelope, WireValue},
     CanonicalToolCall, GenerationRequest, LlmError, OutputConstraint, ReasoningMode,
@@ -39,6 +39,10 @@ struct OllamaChatChunk {
 #[derive(Deserialize)]
 struct OllamaChunkMessage {
     content: Option<String>,
+    #[serde(default)]
+    thinking: Option<String>,
+    #[serde(default)]
+    thought: Option<String>,
     #[serde(default)]
     tool_calls: Option<Vec<OllamaToolCall>>,
 }
@@ -241,9 +245,11 @@ pub async fn stream_ollama(
 
     let mut decoder = SseDecoder::new();
     let mut byte_stream = response.bytes_stream();
+    let mut demuxer = ThinkTagDemuxer::new();
 
     loop {
         if cancel.is_cancelled() {
+            demuxer.flush(tx);
             if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
                 log::warn!(
                     "[OllamaTransport] Failed to send Finished on cancel during stream: {}",
@@ -256,6 +262,7 @@ pub async fn stream_ollama(
         let chunk_opt = tokio::select! {
             chunk = byte_stream.next() => chunk,
             _ = cancel.cancelled() => {
+                demuxer.flush(tx);
                 if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
                     log::warn!(
                         "[OllamaTransport] Failed to send Finished on select cancel: {}",
@@ -282,17 +289,24 @@ pub async fn stream_ollama(
                     }
                     if let Ok(chunk) = serde_json::from_str::<OllamaChatChunk>(&line) {
                         if let Some(msg) = chunk.message {
+                            let reasoning = msg.thinking.as_deref().or(msg.thought.as_deref());
+                            if let Some(thought) = reasoning {
+                                if !thought.is_empty() {
+                                    if let Err(e) = tx.send(super::super::LlmStreamEvent::Thinking(
+                                        thought.to_string(),
+                                    )) {
+                                        log::warn!("[OllamaTransport] Send thinking error: {}", e);
+                                    }
+                                }
+                            }
                             if let Some(content) = msg.content {
                                 if !content.is_empty() {
-                                    if let Err(e) =
-                                        tx.send(super::super::LlmStreamEvent::Token(content))
-                                    {
-                                        log::warn!("[OllamaTransport] Send token error: {}", e);
-                                    }
+                                    demuxer.feed(&content, tx);
                                 }
                             }
                         }
                         if chunk.done.unwrap_or(false) {
+                            demuxer.flush(tx);
                             if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
                                 log::warn!("[OllamaTransport] Send finished error: {}", e);
                             }
@@ -312,16 +326,23 @@ pub async fn stream_ollama(
         }
         if let Ok(chunk) = serde_json::from_str::<OllamaChatChunk>(&line) {
             if let Some(msg) = chunk.message {
+                let reasoning = msg.thinking.as_deref().or(msg.thought.as_deref());
+                if let Some(thought) = reasoning {
+                    if !thought.is_empty() {
+                        let _ = tx
+                            .send(super::super::LlmStreamEvent::Thinking(thought.to_string()));
+                    }
+                }
                 if let Some(content) = msg.content {
                     if !content.is_empty() {
-                        if let Err(e) = tx.send(super::super::LlmStreamEvent::Token(content)) {
-                            log::warn!("[OllamaTransport] Send flush token error: {}", e);
-                        }
+                        demuxer.feed(&content, tx);
                     }
                 }
             }
         }
     }
+
+    demuxer.flush(tx);
 
     if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
         log::warn!("[OllamaTransport] Send final finished event error: {}", e);

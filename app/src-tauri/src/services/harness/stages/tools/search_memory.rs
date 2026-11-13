@@ -31,33 +31,17 @@ impl ToolDefinition for MemorySearchTool {
         "Searches personal cognitive memory for user facts, preferences, background context, or past conversational details."
     }
 
-    fn parameters_schema(&self, mode: PipelineMode) -> Value {
-        match mode {
-            PipelineMode::Modular => json!({
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Semantic search query to locate relevant user facts or context in memory."
-                    },
-                    "spoken_filler": {
-                        "type": "string",
-                        "description": "A brief, natural 3-5 word spoken phrase delivered while memory search is evaluated."
-                    }
-                },
-                "required": ["query"]
-            }),
-            PipelineMode::Realtime => json!({
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Semantic search query to locate relevant user facts or context in memory."
-                    }
-                },
-                "required": ["query"]
-            }),
-        }
+    fn parameters_schema(&self, _mode: PipelineMode) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Semantic search query to locate relevant user facts or context in memory."
+                }
+            },
+            "required": ["query"]
+        })
     }
 
     fn execute<'a>(
@@ -92,24 +76,13 @@ impl ToolDefinition for MemorySearchTool {
             let retrieval_dur = retrieval_start.elapsed().as_millis() as u64;
             ctx.app_state.turn_metrics.record_retrieval(retrieval_dur);
 
-            let mut result = ToolResult::new(observation);
+            let result = ToolResult::new(observation);
             log::info!(
                 "[MemorySearchTool] Turn {} ({:?}): final observation for LLM: '{}'",
                 ctx.turn_id,
                 mode,
                 result.content
             );
-            if mode == PipelineMode::Modular {
-                let spoken_filler = args
-                    .get("spoken_filler")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .trim()
-                    .to_string();
-                if !spoken_filler.is_empty() {
-                    result = result.with_spoken_filler(spoken_filler);
-                }
-            }
 
             Ok(result)
         }

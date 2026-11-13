@@ -101,15 +101,15 @@ impl PromptBuilderStage {
         if let Some(tools) = active_tools {
             for tool in tools {
                 match tool.name.as_str() {
-                    "respond_and_set_title" => {
-                        rules.push("- Call respond_and_set_title with a concise session title (under 5 words) while answering the user's query.");
+                    "set_title" => {
+                        rules.push("- Call set_title with a concise session title (under 5 words).");
                     }
                     "search_memory" => {
-                        rules.push("- When asked about past projects, notes, or earlier factual details, call search_memory with a brief spoken filler.");
+                        rules.push("- When asked about past projects, notes, or earlier factual details, call search_memory.");
                     }
                     "web_search" => {
                         has_web_search = true;
-                        rules.push("- When asked about current events, breaking news, real-time facts, or external documentation, call web_search with an optimized query and brief spoken filler.");
+                        rules.push("- When asked about current events, breaking news, real-time facts, or external documentation, call web_search with an optimized query.");
                     }
                     _ => {}
                 }

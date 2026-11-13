@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use super::{
-    respond_and_set_title::{RespondAndSetTitleTool, SetSessionTitleTool},
     search_memory::MemorySearchTool,
+    set_title::{SetSessionTitleTool, SetTitleTool},
     web_search::WebSearchTool,
     ToolDefinition,
 };
@@ -34,7 +34,7 @@ impl ToolRegistry {
     /// Initializes a tool registry populated with the canonical built-in tools.
     pub fn with_default_tools() -> Self {
         let mut reg = Self::new();
-        reg.register(Arc::new(RespondAndSetTitleTool));
+        reg.register(Arc::new(SetTitleTool));
         reg.register(Arc::new(SetSessionTitleTool));
         reg.register(Arc::new(MemorySearchTool));
         reg.register(Arc::new(WebSearchTool));
@@ -58,7 +58,7 @@ impl ToolRegistry {
             if !tool.domain().matches(filter.mode) {
                 continue;
             }
-            if name == "respond_and_set_title" && !filter.title_is_unset {
+            if name == "set_title" && !filter.title_is_unset {
                 log::info!("[Harness::Tools] '{}' excluded: title already set", name);
                 continue;
             }

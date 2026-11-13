@@ -3,6 +3,7 @@ pub mod config;
 pub mod ollama;
 pub mod responses;
 pub mod sse;
+pub mod think_tags;
 
 use std::{
     sync::{mpsc, Arc},

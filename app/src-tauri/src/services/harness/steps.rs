@@ -616,6 +616,12 @@ pub async fn step6_handle_non_terminal_tool(
         tool_ctx,
     )
     .await;
+    if outcome.tool_name == "set_title" && !outcome.is_error {
+        let mut guard = ctx.harness_arc.lock();
+        if let Some(ref mut harness) = *guard {
+            harness.title_set = true;
+        }
+    }
     if ctx.req.cancel.is_cancelled() {
         log::info!(
             "[Harness::Tools] Non-terminal tool cancelled (turn {})",

@@ -196,7 +196,7 @@ pub enum LlmError {
 }
 
 /// Provider streaming events emitted during generation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LlmStreamEvent {
     Thinking(String),
     Token(String),

@@ -114,10 +114,6 @@ impl ToolDefinition for WebSearchTool {
                     "type": "string",
                     "description": "The search query optimized for search engines (e.g., 'Federal Reserve interest rate decision September 2026')."
                 },
-                "spoken_filler": {
-                    "type": "string",
-                    "description": "A natural, brief 3 to 5 word spoken filler phrase to say aloud right now while searching (e.g., 'Searching the web now...')."
-                },
                 "time_filter": {
                     "type": "string",
                     "enum": ["any", "day", "week", "month", "year"],
@@ -162,13 +158,6 @@ impl ToolDefinition for WebSearchTool {
                     "Parameter 'query' must be a non-empty string".to_string(),
                 ));
             }
-
-            let spoken_filler = args
-                .get("spoken_filler")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Searching the web now...")
-                .trim()
-                .to_string();
 
             let time_filter = match args.get("time_filter").and_then(|v| v.as_str()) {
                 Some("day") => nexus::TimeFilter::Day,
@@ -490,7 +479,7 @@ impl ToolDefinition for WebSearchTool {
                 }
             };
 
-            Ok(ToolResult::new(observation).with_spoken_filler(spoken_filler))
+            Ok(ToolResult::new(observation))
         }
         .boxed()
     }
