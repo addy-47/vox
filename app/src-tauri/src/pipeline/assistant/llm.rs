@@ -103,15 +103,36 @@ fn evaluate_synthesis_latch<R: tauri::Runtime>(
     state: &AppState,
     ctx: &RoutingContext,
 ) {
-    let drained = state.pipeline.is_drained_while_open();
     let pending_jobs = state
         .pipeline
         .pending_synthesis_jobs
         .load(Ordering::Relaxed);
-    let should_transition =
-        pending_jobs == 0 && (drained || current_state != InteractionState::Speaking);
+    let sink_active = if let Ok(guard) = state.engine.try_lock() {
+        guard
+            .as_ref()
+            .map(|e| e.playback_engine.occupied_len() > 0 || e.playback_engine.buffer_len() > 0)
+            .unwrap_or(false)
+    } else {
+        false
+    };
 
-    if should_transition {
+    let audio_active = pending_jobs > 0 || sink_active;
+
+    if audio_active {
+        if current_state != InteractionState::Speaking {
+            if let Some(app_handle) = app {
+                transition(InteractionState::Speaking, None, ctx, app_handle, state);
+            } else {
+                state.pipeline.set_state(InteractionState::Speaking);
+            }
+            log::info!(
+                "[Pipeline::Llm] LlmFinished evaluated latch (pending_jobs={}, sink_active={}) -> Speaking (turn {})",
+                pending_jobs,
+                sink_active,
+                turn_id
+            );
+        }
+    } else {
         state.pipeline.clear_drained_while_open();
         if state.turn_metrics.playback_start_ms.load(Ordering::Relaxed) == 0 {
             let payload = state.turn_metrics.build_payload(turn_id);
@@ -125,9 +146,7 @@ fn evaluate_synthesis_latch<R: tauri::Runtime>(
             state.pipeline.set_state(InteractionState::Ready);
         }
         log::info!(
-            "[Pipeline::Llm] LlmFinished evaluated latch (drained={}, state={:?}) -> Ready (turn {})",
-            drained,
-            current_state,
+            "[Pipeline::Llm] LlmFinished evaluated latch (audio already drained) -> Ready (turn {})",
             turn_id
         );
     }

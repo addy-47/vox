@@ -1,5 +1,34 @@
 # Phase 14 Work Log
 
+## 2026-11-13 — Domain 1 Batch 4 & Batch 5: Router Demuxing, Preamble Preservation & Two-Key Latch
+
+- **Router Demuxing & Preamble Preservation (`services/harness/stages/streaming/router.rs`, `steps.rs`, `loop.rs`)**:
+  - Implemented 3-stream demuxing in `router.rs`:
+    - `Thinking(text)`: Quarantined into `thinking_buffer`; strictly excluded from chunker, TTS dispatch, and unthrottled IPC.
+    - `Token(text)`: Pushed to `ClauseChunker` and emitted via `IpcEvent::LlmToken`. Tagged with `AudioIntent::InterimFiller` (when `allow_tools == true`) or `AudioIntent::TurnResponse` (when `allow_tools == false`).
+    - `ToolCall(call)`: Appended to `tool_calls_batch` accumulator without terminating or breaking the stream loop prematurely. Continues reading stream events until `Finished`, `Cancelled`, or `Error`.
+  - Eliminated `acc.chunker.clear()` preamble wipe logic to preserve introductory spoken words.
+  - Flush remaining unpunctuated clause tail on `Finished`: as `AudioIntent::InterimFiller` if `!tool_calls.is_empty()`, or `AudioIntent::TurnResponse` if `tool_calls.is_empty()`.
+  - Updated `StreamPassOutcome` enum: `Completed { assistant_text, thinking_text }` and `ToolCallsReceived { preamble_text, thinking_text, calls: Vec<CanonicalToolCall> }`.
+  - Handled `StreamPassOutcome::ToolCallsReceived` in `steps.rs` (`step6_handle_tool_batch`): commits `preamble_text` to dialogue history / scratchpad as assistant message initiating the tools, transitions state to `InteractionState::Working` with active envelope, and executes batch via `ToolExecutor::execute_tool`.
+  - Enforced `MAX_TOOL_STEPS = 20` ceiling in `loop.rs` (raised from legacy 5-step limit).
+- **Two-Key Quiescence Latch & State Machine Authority (`pipeline/assistant/`, `loop.rs`)**:
+  - In `loop.rs`: Cognitive loop marks `turn_open = false` when generation pass completes with 0 tool calls (`StreamPassOutcome::Completed`) and emits `VoxEvent::LlmFinished`.
+  - In `llm.rs` (`on_llm_finished`): Evaluates **Key 1** (`turn_open == false`). If audio synthesis or sound card playback is active (`pending_synthesis_jobs > 0 || sink_active`), transitions to `InteractionState::Speaking`. If audio is already drained, transitions to `InteractionState::Ready`.
+  - In `playback.rs`:
+    - `on_playback_started`: If `turn_open == true` and intent is `InterimFiller`, returns early remaining stably in `Thinking`/`Working`. If `turn_open == false` (or intent is `TurnResponse`), transitions to `Speaking`.
+    - `on_playback_finished`: If `turn_open == true`, returns early (`if state.pipeline.is_turn_open() { return; }`). If `turn_open == false` and `pending_synthesis_jobs == 0` (**Key 2**), transitions to `InteractionState::Ready` regardless of the chunk's `AudioIntent` tag.
+- **Verification**:
+  - Compile Gate: `app/src-tauri/scripts/verify-targets.sh` passed cleanly with 0 warnings / 0 errors across:
+    - Backend architectural invariant lint (`./scripts/lint-arch.sh`)
+    - Desktop lib and bin (`cargo clippy --bin Vox --lib --release --no-default-features -D warnings`)
+    - Desktop tests and benchmarks (`cargo clippy --tests --benches --release -D warnings`)
+    - Desktop build (`Vox` binary + sidecars)
+    - Android cross-compilation (`cargo clippy --target aarch64-linux-android --lib --release -D warnings -D clippy::disallowed_methods`)
+  - Integration Test Suite: `cargo test --release -p Vox --test agentic_tool_loop_test -- --test-threads=1` passed 9/9 tests.
+
+---
+
 ## 2026-11-13 — Domain 1 Batch 2 & Batch 3: Stream Adapters & Universal Tool Cleanup (ZBC)
 
 - **Network Ingress Provider Stream Adapters (`services/llm/`)**:

@@ -18,9 +18,9 @@ pub fn on_playback_started<R: tauri::Runtime>(
     state: &AppState,
     ctx: &RoutingContext,
 ) {
-    if intent == AudioIntent::InterimFiller {
+    if state.pipeline.is_turn_open() && intent == AudioIntent::InterimFiller {
         log::debug!(
-            "[Pipeline::Playback] Interim filler playback started (turn {}) - remaining in Working state",
+            "[Pipeline::Playback] Interim filler playback started while turn_open=true (turn {}) - remaining in current state",
             turn_id
         );
         return;
@@ -57,19 +57,11 @@ pub fn on_playback_started<R: tauri::Runtime>(
 /// Handles completion of audio playback, guarding against premature completion if synthesis jobs remain.
 pub fn on_playback_finished<R: tauri::Runtime>(
     turn_id: u32,
-    intent: AudioIntent,
+    _intent: AudioIntent,
     app: &AppHandle<R>,
     state: &AppState,
     ctx: &RoutingContext,
 ) {
-    if intent == AudioIntent::InterimFiller {
-        log::debug!(
-            "[Pipeline::Playback] Interim filler playback finished (turn {}) - remaining in Working state",
-            turn_id
-        );
-        return;
-    }
-
     let current_state = state.pipeline.state();
     if current_state != InteractionState::Speaking
         && current_state != InteractionState::Thinking

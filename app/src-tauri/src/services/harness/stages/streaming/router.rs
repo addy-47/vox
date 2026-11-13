@@ -25,10 +25,12 @@ use crate::{
 pub enum StreamPassOutcome {
     Completed {
         assistant_text: String,
+        thinking_text: String,
     },
-    ToolCallReceived {
-        partial_text: String,
-        call: CanonicalToolCall,
+    ToolCallsReceived {
+        preamble_text: String,
+        thinking_text: String,
+        calls: Vec<CanonicalToolCall>,
     },
     Cancelled {
         partial_text: String,
@@ -87,11 +89,11 @@ impl StreamRoutingStage {
         &self,
         handles: StreamRoutingHandles,
         response_rx: Receiver<LlmResponse>,
+        allow_tools: bool,
     ) -> Result<StreamPassOutcome, String> {
-        let outcome = self.consume_stream_events(&handles, response_rx)?;
+        let outcome = self.consume_stream_events(&handles, response_rx, allow_tools)?;
 
         if let StreamPassOutcome::Completed { .. } = &outcome {
-            self.flush_remainder(&handles);
             self.emit_finished(&handles);
         }
 
@@ -103,8 +105,11 @@ impl StreamRoutingStage {
         &self,
         handles: &StreamRoutingHandles,
         response_rx: Receiver<LlmResponse>,
+        allow_tools: bool,
     ) -> Result<StreamPassOutcome, String> {
         let mut saw_finished = false;
+        let mut thinking_buffer = String::new();
+        let mut tool_calls_batch: Vec<CanonicalToolCall> = Vec::new();
         let timeout_interval = std::time::Duration::from_millis(100);
         let max_idle = std::time::Duration::from_secs(30);
         let mut last_activity = std::time::Instant::now();
@@ -151,26 +156,22 @@ impl StreamRoutingStage {
                         handles.turn_id,
                         text.len()
                     );
+                    thinking_buffer.push_str(&text);
                 }
                 LlmResponse::Token(token) => {
                     handles.turn_metrics.record_llm_first_token();
-                    self.handle_token(token, handles);
+                    self.handle_token(token, allow_tools, handles);
                 }
                 LlmResponse::ToolCall(call) => {
                     handles.turn_metrics.record_llm_first_token();
-                    let partial_text = {
-                        let mut acc = handles.accumulator.lock();
-                        acc.chunker.clear();
-                        acc.assistant_response.clone()
-                    };
                     log::info!(
-                        "[Harness::Stream] ToolCall '{}' ({}) received (turn {}, dropped prefix_chars {})",
+                        "[Harness::Stream] ToolCall '{}' ({}) batched (turn {}, total_in_batch {})",
                         call.name,
                         call.id,
                         handles.turn_id,
-                        partial_text.len()
+                        tool_calls_batch.len() + 1
                     );
-                    return Ok(StreamPassOutcome::ToolCallReceived { partial_text, call });
+                    tool_calls_batch.push(call);
                 }
                 LlmResponse::Finished => {
                     saw_finished = true;
@@ -211,18 +212,41 @@ impl StreamRoutingStage {
             return Err("LLM stream disconnected prematurely".to_string());
         }
 
-        let full_text = handles.accumulator.lock().assistant_response.clone();
-        Ok(StreamPassOutcome::Completed {
-            assistant_text: full_text,
-        })
+        if !tool_calls_batch.is_empty() {
+            self.flush_remainder(handles, AudioIntent::InterimFiller);
+            let preamble_text = handles.accumulator.lock().assistant_response.clone();
+            log::info!(
+                "[Harness::Stream] Tool calls batch finalized (turn {}, preamble_chars {}, calls {})",
+                handles.turn_id,
+                preamble_text.len(),
+                tool_calls_batch.len()
+            );
+            Ok(StreamPassOutcome::ToolCallsReceived {
+                preamble_text,
+                thinking_text: thinking_buffer,
+                calls: tool_calls_batch,
+            })
+        } else {
+            self.flush_remainder(handles, AudioIntent::TurnResponse);
+            let full_text = handles.accumulator.lock().assistant_response.clone();
+            Ok(StreamPassOutcome::Completed {
+                assistant_text: full_text,
+                thinking_text: thinking_buffer,
+            })
+        }
     }
 
     /// Emits IPC token event, pushes token to clause chunker, and dispatches clauses to TTS.
-    fn handle_token(&self, token: String, handles: &StreamRoutingHandles) {
+    fn handle_token(&self, token: String, allow_tools: bool, handles: &StreamRoutingHandles) {
         self.emit_token_ipc(&token, handles);
         let clauses = handles.accumulator.lock().push_token(&token);
         if !clauses.is_empty() {
-            self.dispatch_clauses(clauses, AudioIntent::TurnResponse, handles);
+            let intent = if allow_tools {
+                AudioIntent::InterimFiller
+            } else {
+                AudioIntent::TurnResponse
+            };
+            self.dispatch_clauses(clauses, intent, handles);
         }
     }
 
@@ -302,8 +326,8 @@ impl StreamRoutingStage {
         }
     }
 
-    /// Flushes unpunctuated tail remainder to the TTS worker.
-    fn flush_remainder(&self, handles: &StreamRoutingHandles) {
+    /// Flushes unpunctuated tail remainder to the TTS worker with the specified intent.
+    fn flush_remainder(&self, handles: &StreamRoutingHandles, intent: AudioIntent) {
         let remainder = handles.accumulator.lock().flush_chunker();
         let Some(remainder_text) = remainder else {
             return;
@@ -326,7 +350,7 @@ impl StreamRoutingStage {
         let cmd = TtsCommand::Generate {
             turn_id: handles.turn_id,
             text: normalized,
-            intent: AudioIntent::TurnResponse,
+            intent,
         };
         if let Err(e) = tx.send(cmd) {
             handles
@@ -343,7 +367,7 @@ impl StreamRoutingStage {
                 clause_id,
                 remainder_chars,
                 remainder_words,
-                AudioIntent::TurnResponse,
+                intent,
                 queued
             );
         }

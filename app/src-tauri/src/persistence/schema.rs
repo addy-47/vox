@@ -250,7 +250,7 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
                 .await;
         }
 
-        if current_version < 16 {
+        if current_version > 0 && current_version < 16 {
             let _ = conn
                 .execute("ALTER TABLE session_tool_calls DROP COLUMN tool_kind;", ())
                 .await;

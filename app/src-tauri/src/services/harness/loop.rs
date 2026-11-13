@@ -17,7 +17,7 @@ use crate::{
             },
             steps::{
                 step1_intake, step3_execute_compaction, step4_assemble_request, step5_dispatch_llm,
-                step6_handle_non_terminal_tool, step6_run_stream_pass,
+                step6_handle_tool_batch, step6_run_stream_pass,
                 step7_commit_completed, step7_handle_cancelled, step7_handle_error,
                 CancelledTurnContext, IntakeResult,
             },
@@ -26,7 +26,7 @@ use crate::{
     },
 };
 
-const MAX_TOOL_ITERATIONS: usize = 5;
+pub const MAX_TOOL_STEPS: usize = 20;
 
 pub struct TurnLoopContext<'a> {
     pub harness_arc: &'a Arc<Mutex<Option<Harness>>>,
@@ -153,8 +153,8 @@ async fn execute_loop_iterations(
     let mut allow_tools = supports_tools;
     let mut iteration: usize = 0;
 
-    // === REENTRANT COGNITIVE LOOP (Up to MAX_TOOL_ITERATIONS passes) ===
-    while iteration <= MAX_TOOL_ITERATIONS {
+    // === REENTRANT COGNITIVE LOOP (Up to MAX_TOOL_STEPS passes) ===
+    while iteration <= MAX_TOOL_STEPS {
         if ctx.req.cancel.is_cancelled() || cancel_atomic.load(Relaxed) {
             let partial = ctx
                 .stream_handles
@@ -188,7 +188,8 @@ async fn execute_loop_iterations(
 
         // === STEP 6: Stream Tokens & Intercept Tool Calls ===
         let stream_res =
-            step6_run_stream_pass(ctx.stream_stage, ctx.stream_handles, response_rx).await;
+            step6_run_stream_pass(ctx.stream_stage, ctx.stream_handles, response_rx, allow_tools)
+                .await;
         match stream_res {
             Ok(pass_outcome) => {
                 let action = handle_pass_outcome(
@@ -210,9 +211,9 @@ async fn execute_loop_iterations(
                             iteration,
                             scratchpad.len()
                         );
-                        if iteration >= MAX_TOOL_ITERATIONS {
+                        if iteration >= MAX_TOOL_STEPS {
                             log::warn!(
-                                "[Harness::Loop] Turn {} reached MAX_TOOL_ITERATIONS; running final tool-free pass.",
+                                "[Harness::Loop] Turn {} reached MAX_TOOL_STEPS; running final tool-free pass.",
                                 turn_id
                             );
                             allow_tools = false;
@@ -284,12 +285,16 @@ async fn handle_pass_outcome(
 ) -> LoopAction {
     let turn_id = ctx.req.turn_id;
     match pass_outcome {
-        StreamPassOutcome::Completed { assistant_text } => {
+        StreamPassOutcome::Completed {
+            assistant_text,
+            thinking_text: _,
+        } => {
             log::info!(
                 "[Harness::Loop] Turn {} pass completed with no tool call ({} chars); finalizing",
                 turn_id,
                 assistant_text.len()
             );
+            ctx.req.app_state.pipeline.clear_turn_open();
             if cancel_atomic.load(Relaxed) {
                 LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, assistant_text)))
             } else {
@@ -302,28 +307,36 @@ async fn handle_pass_outcome(
             }
         }
         StreamPassOutcome::Cancelled { partial_text } => {
+            ctx.req.app_state.pipeline.clear_turn_open();
             LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, partial_text)))
         }
         StreamPassOutcome::Error(err) => {
+            ctx.req.app_state.pipeline.clear_turn_open();
             LoopAction::Terminal(step7_handle_error(ctx.harness_arc, turn_id, err))
         }
-        StreamPassOutcome::ToolCallReceived { partial_text, call } => {
+        StreamPassOutcome::ToolCallsReceived {
+            preamble_text,
+            thinking_text: _,
+            calls,
+        } => {
             if !allow_tools {
                 log::warn!(
-                    "[Harness::Loop] Discarding tool call '{}' during final tool-free pass; committing text.",
-                    call.name
+                    "[Harness::Loop] Discarding {} tool calls during final tool-free pass; committing text.",
+                    calls.len()
                 );
+                ctx.req.app_state.pipeline.clear_turn_open();
                 return LoopAction::Terminal(step7_commit_completed(
                     ctx.harness_arc,
                     turn_id,
-                    partial_text,
+                    preamble_text,
                     scratchpad,
                 ));
             }
 
             let cancelled =
-                step6_handle_non_terminal_tool(ctx, call, &partial_text, scratchpad).await;
+                step6_handle_tool_batch(ctx, calls, &preamble_text, scratchpad).await;
             if cancelled {
+                ctx.req.app_state.pipeline.clear_turn_open();
                 LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, String::new())))
             } else {
                 LoopAction::Continue

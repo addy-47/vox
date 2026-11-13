@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     core::{
         events::{
-            ActivityEnvelope, ActivityKind, AudioIntent, IpcEmitter, IpcEvent, LlmTokenPayload,
+            ActivityEnvelope, ActivityKind, AudioIntent, IpcEmitter, IpcEvent,
             PipelineMode, ACTIVITY_COMPACTION,
         },
         state::{AppState, AppWindow, InteractionState},
@@ -419,121 +419,22 @@ pub async fn step6_run_stream_pass(
     stream_stage: &StreamRoutingStage,
     stream_handles: &StreamRoutingHandles,
     response_rx: mpsc::Receiver<LlmResponse>,
+    allow_tools: bool,
 ) -> Result<StreamPassOutcome, String> {
     let handles_clone = stream_handles.clone();
     let stage_clone = stream_stage.clone();
-    tokio::task::spawn_blocking(move || stage_clone.route_stream(handles_clone, response_rx))
-        .await
-        .unwrap_or_else(|join_err| Err(format!("Stream task panic: {:?}", join_err)))
+    tokio::task::spawn_blocking(move || {
+        stage_clone.route_stream(handles_clone, response_rx, allow_tools)
+    })
+    .await
+    .unwrap_or_else(|join_err| Err(format!("Stream task panic: {:?}", join_err)))
 }
 
-/// Handles Phase 6 Case B: Terminal tool execution (single pass, voice + action, commit).
-pub async fn step6_handle_terminal_tool(
+/// Handles Phase 6 Case B: Multi-tool batch execution with preamble preservation (Working state, barriers, scratchpad).
+pub async fn step6_handle_tool_batch(
     ctx: &TurnLoopContext<'_>,
-    call: CanonicalToolCall,
-) -> TurnOutcome {
-    let turn_id = ctx.req.turn_id;
-    let spoken_response = call
-        .arguments
-        .get("spoken_response")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-
-    ctx.stream_handles.accumulator.lock().assistant_response = spoken_response.clone();
-
-    if !spoken_response.is_empty() {
-        ctx.stream_stage.dispatch_spoken_response(
-            &spoken_response,
-            AudioIntent::TurnResponse,
-            ctx.stream_handles,
-        );
-    }
-    ctx.stream_stage.emit_finished(ctx.stream_handles);
-
-    let tool_ctx = ToolExecutionContext::new(
-        Arc::clone(&ctx.req.app_state),
-        ctx.session_id,
-        turn_id,
-        ctx.req.cancel.clone(),
-        make_sessions_changed_callback(&ctx.req.emitter),
-    );
-
-    let outcome =
-        ToolExecutor::execute_tool(ctx.tool_registry, PipelineMode::Modular, call, tool_ctx).await;
-    if ctx.req.cancel.is_cancelled() {
-        log::info!(
-            "[Harness::Tools] Terminal tool cancelled (turn {})",
-            turn_id
-        );
-        return step7_handle_cancelled(CancelledTurnContext {
-            harness_arc: ctx.harness_arc,
-            turn_id,
-            session_id: ctx.session_id,
-            user_text: ctx.req.query.clone(),
-            partial_text: spoken_response,
-            app_state: &ctx.req.app_state,
-        });
-    }
-
-    let final_response = if !spoken_response.is_empty() {
-        spoken_response
-    } else {
-        let fallback = outcome.result.spoken_response.unwrap_or_default();
-        if !fallback.is_empty() {
-            ctx.stream_handles.accumulator.lock().assistant_response = fallback.clone();
-        }
-        fallback
-    };
-
-    let mut guard = ctx.harness_arc.lock();
-    if let Some(ref mut harness) = *guard {
-        if outcome.tool_name == "respond_and_set_title" && !outcome.is_error {
-            harness.title_set = true;
-        }
-        harness.history.push_assistant_turn(final_response.clone());
-    }
-
-    log::info!(
-        "[Harness::Tools] Turn {} finalized by terminal tool '{}' (is_error={})",
-        turn_id,
-        outcome.tool_name,
-        outcome.is_error
-    );
-
-    if !final_response.is_empty() {
-        if let Err(e) = ctx.req.emitter.emit_ipc(
-            AppWindow::Main,
-            IpcEvent::LlmToken(LlmTokenPayload {
-                turn_id,
-                token: final_response.clone(),
-            }),
-        ) {
-            log::warn!(
-                "[Harness::Tools] Failed to emit LlmToken for terminal tool response: {}",
-                e
-            );
-        } else {
-            log::info!(
-                "[Harness::Tools] Emitted LlmToken ({} chars) for terminal tool response (turn {})",
-                final_response.len(),
-                turn_id
-            );
-        }
-    }
-
-    TurnOutcome::Completed {
-        turn_id,
-        assistant_response: final_response,
-    }
-}
-
-/// Handles Phase 6 Case B: Non-terminal tool execution (interim filler, Working state, scratchpad).
-pub async fn step6_handle_non_terminal_tool(
-    ctx: &TurnLoopContext<'_>,
-    call: CanonicalToolCall,
-    partial_text: &str,
+    calls: Vec<CanonicalToolCall>,
+    preamble_text: &str,
     scratchpad: &mut Vec<ChatMessage>,
 ) -> bool {
     let turn_id = ctx.req.turn_id;
@@ -543,27 +444,17 @@ pub async fn step6_handle_non_terminal_tool(
         .assistant_response
         .clear();
 
-    let spoken_filler = call
-        .arguments
-        .get("spoken_filler")
-        .and_then(|v| v.as_str())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+    // Commit preamble text and tool calls to scratchpad as the assistant turn initiating tools
+    scratchpad.push(ChatMessage {
+        role: Role::Assistant,
+        content: preamble_text.to_string(),
+        timestamp_ms: current_timestamp_ms(),
+        tool_call_id: None,
+        tool_calls: Some(calls.clone()),
+    });
 
-    let should_play_filler = {
-        let mut guard = ctx.harness_arc.lock();
-        if let Some(ref mut harness) = *guard {
-            let play = !harness.has_played_filler;
-            if play {
-                harness.has_played_filler = true;
-            }
-            play
-        } else {
-            true
-        }
-    };
-
-    let non_terminal = NonTerminalPhase::tool(&call.name, &call.id, spoken_filler);
+    let first_tool = calls.first().map(|c| c.name.as_str()).unwrap_or("tool");
+    let non_terminal = NonTerminalPhase::tool(first_tool, "", None);
     let non_term_ctx = NonTerminalContext {
         query: &ctx.req.query,
         turn_id,
@@ -572,7 +463,7 @@ pub async fn step6_handle_non_terminal_tool(
         app_state: &ctx.req.app_state,
         tts_tx: ctx.req.tts_tx.as_ref(),
         pending_synthesis_jobs: &ctx.req.pending_synthesis_jobs,
-        play_filler: should_play_filler,
+        play_filler: false,
     };
     enter_non_terminal_phase(&non_terminal, &non_term_ctx);
 
@@ -600,51 +491,49 @@ pub async fn step6_handle_non_terminal_tool(
         }
     };
 
-    let tool_ctx = ToolExecutionContext::new(
-        Arc::clone(&ctx.req.app_state),
-        ctx.session_id,
-        turn_id,
-        ctx.req.cancel.clone(),
-        make_sessions_changed_callback(&ctx.req.emitter),
-    )
-    .with_observation_budget(max_observation_tokens);
-
-    let outcome = ToolExecutor::execute_tool(
-        ctx.tool_registry,
-        PipelineMode::Modular,
-        call.clone(),
-        tool_ctx,
-    )
-    .await;
-    if outcome.tool_name == "set_title" && !outcome.is_error {
-        let mut guard = ctx.harness_arc.lock();
-        if let Some(ref mut harness) = *guard {
-            harness.title_set = true;
+    for call in calls {
+        if ctx.req.cancel.is_cancelled() {
+            log::info!(
+                "[Harness::Tools] Tool batch cancelled before executing {} (turn {})",
+                call.name,
+                turn_id
+            );
+            return true;
         }
-    }
-    if ctx.req.cancel.is_cancelled() {
-        log::info!(
-            "[Harness::Tools] Non-terminal tool cancelled (turn {})",
-            turn_id
-        );
-        return true;
+
+        let tool_ctx = ToolExecutionContext::new(
+            Arc::clone(&ctx.req.app_state),
+            ctx.session_id,
+            turn_id,
+            ctx.req.cancel.clone(),
+            make_sessions_changed_callback(&ctx.req.emitter),
+        )
+        .with_observation_budget(max_observation_tokens);
+
+        let outcome = ToolExecutor::execute_tool(
+            ctx.tool_registry,
+            PipelineMode::Modular,
+            call.clone(),
+            tool_ctx,
+        )
+        .await;
+
+        if outcome.tool_name == "set_title" && !outcome.is_error {
+            let mut guard = ctx.harness_arc.lock();
+            if let Some(ref mut harness) = *guard {
+                harness.title_set = true;
+            }
+        }
+
+        scratchpad.push(ChatMessage {
+            role: Role::Tool,
+            content: outcome.result.content,
+            timestamp_ms: current_timestamp_ms(),
+            tool_call_id: Some(call.id),
+            tool_calls: None,
+        });
     }
 
-    scratchpad.push(ChatMessage {
-        role: Role::Assistant,
-        content: partial_text.to_string(),
-        timestamp_ms: current_timestamp_ms(),
-        tool_call_id: None,
-        tool_calls: Some(vec![call.clone()]),
-    });
-
-    scratchpad.push(ChatMessage {
-        role: Role::Tool,
-        content: outcome.result.content,
-        timestamp_ms: current_timestamp_ms(),
-        tool_call_id: Some(call.id),
-        tool_calls: None,
-    });
     false
 }
 

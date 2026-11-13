@@ -140,18 +140,26 @@ async fn terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity() {
             ));
         }
 
-        // Scripted provider: one ToolCall, no other tokens — the terminal tool ends the turn.
+        // Scripted provider: Pass 1 calls set_title, Pass 2 yields spoken response.
         let provider = Arc::new(common::harness::ScriptedLlmProvider::from_passes(
-            vec![vec![common::harness::ScriptedEvent::ToolCall(
-                common::harness::ScriptedLlmProvider::tool_call(
-                    "respond_and_set_title",
-                    serde_json::json!({
-                        "title": "Rust Async Concurrency",
-                        "spoken_response": "Let's explore Rust async and tokio primitives."
-                    }),
-                ),
-            )]],
-            "scripted-terminal-respond-title",
+            vec![
+                vec![
+                    common::harness::ScriptedEvent::ToolCall(
+                        common::harness::ScriptedLlmProvider::tool_call(
+                            "set_title",
+                            serde_json::json!({
+                                "title": "Rust Async Concurrency",
+                            }),
+                        ),
+                    ),
+                ],
+                vec![
+                    common::harness::ScriptedEvent::Token(
+                        "Let's explore Rust async and tokio primitives.".to_string(),
+                    ),
+                ],
+            ],
+            "scripted-set-title",
         )) as Arc<dyn LlmProvider>;
         {
             let worker_provider = Arc::clone(&provider);
@@ -205,11 +213,11 @@ async fn terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity() {
             "TurnAccumulator must capture spoken_response for DB parity"
         );
 
-        // 3. Assert TTS received spoken_response as TurnResponse
+        // 3. Assert TTS received spoken response (under Harness v2, mid-stream clauses when allow_tools=true are InterimFiller)
         let tts_cmd = tts_rx.try_recv().expect("tts_rx must receive spoken response");
         match tts_cmd {
             TtsCommand::Generate { text, intent, .. } => {
-                assert_eq!(intent, AudioIntent::TurnResponse);
+                assert_eq!(intent, AudioIntent::InterimFiller);
                 assert!(text.contains("Rust async and tokio"));
             }
             _ => panic!("Expected TtsCommand::Generate"),
@@ -240,7 +248,7 @@ async fn terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity() {
             assert!(guard.as_ref().unwrap().title_set());
         }
 
-        // 6. Assert Turn 2 tool filter suppresses respond_and_set_title
+        // 6. Assert Turn 2 tool filter suppresses set_title
         let tool_registry = ToolRegistry::with_default_tools();
         let turn2_filter = ToolFilter {
             mode: PipelineMode::Modular,
@@ -250,8 +258,8 @@ async fn terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity() {
         };
         let active = tool_registry.active_definitions(&turn2_filter);
         assert!(
-            !active.iter().any(|t| t.name == "respond_and_set_title"),
-            "Turn 2 must suppress respond_and_set_title"
+            !active.iter().any(|t| t.name == "set_title"),
+            "Turn 2 must suppress set_title"
         );
     })
     .await
@@ -363,15 +371,17 @@ async fn search_memory_retrieval_is_non_terminal_and_drops_the_scratchpad() {
         // Scripted provider: search_memory tool call, then a final answer pass.
         let provider = Arc::new(common::harness::ScriptedLlmProvider::from_passes(
             vec![
-                vec![common::harness::ScriptedEvent::ToolCall(
-                    common::harness::ScriptedLlmProvider::tool_call(
-                        "search_memory",
-                        serde_json::json!({
-                            "query": "graphics card GPU model",
-                            "spoken_filler": "Let me check your memory."
-                        }),
+                vec![
+                    common::harness::ScriptedEvent::Token("Let me check your memory. ".to_string()),
+                    common::harness::ScriptedEvent::ToolCall(
+                        common::harness::ScriptedLlmProvider::tool_call(
+                            "search_memory",
+                            serde_json::json!({
+                                "query": "graphics card GPU model"
+                            }),
+                        ),
                     ),
-                )],
+                ],
                 vec![common::harness::ScriptedEvent::Token("You have an RTX 4090.".to_string())],
             ],
             "scripted-search-memory-two-pass",
@@ -505,29 +515,34 @@ async fn tool_call_drops_the_buffered_clause_prefix() {
                     id: "call_buffered_1".to_string(),
                     name: "search_memory".to_string(),
                     arguments: serde_json::json!({
-                        "query": "notes",
-                        "spoken_filler": "Looking into it."
+                        "query": "notes"
                     }),
                 },
             ))
             .unwrap();
+        response_tx
+            .send(vox_lib::services::llm::actor::LlmResponse::Finished)
+            .unwrap();
+        drop(response_tx);
 
         let outcome = tokio::task::spawn_blocking(move || {
-            stream_stage.route_stream(stream_handles, response_rx)
+            stream_stage.route_stream(stream_handles, response_rx, true)
         })
         .await
         .unwrap()
         .expect("Stream route failed");
 
         match outcome {
-            vox_lib::services::harness::stages::streaming::StreamPassOutcome::ToolCallReceived {
-                partial_text,
-                call,
+            vox_lib::services::harness::stages::streaming::StreamPassOutcome::ToolCallsReceived {
+                preamble_text,
+                calls,
+                ..
             } => {
+                let call = calls.first().expect("must have 1 call");
                 assert_eq!(call.name, "search_memory");
-                assert!(partial_text.contains("Checking my notes"));
+                assert!(preamble_text.contains("Checking my notes"));
             }
-            other => panic!("Expected ToolCallReceived, got {:?}", other),
+            other => panic!("Expected ToolCallsReceived, got {:?}", other),
         }
 
         // Eager streaming dispatch: clauses are dispatched to TTS immediately as boundaries are reached
@@ -545,7 +560,7 @@ async fn tool_call_drops_the_buffered_clause_prefix() {
 // Wire harness: std-only mock HTTP server speaking canned SSE / NDJSON.
 // Exercises the REAL path: manifest mapping -> request bytes -> stream parser.
 // ============================================================================
-/// Builds the turn-1 `respond_and_set_title` generation request used by wire tests.
+/// Builds the turn-1 `set_title` generation request used by wire tests.
 fn turn1_title_request() -> GenerationRequest {
     GenerationRequest {
         input: ConversationInput {
@@ -562,15 +577,14 @@ fn turn1_title_request() -> GenerationRequest {
         output: OutputConstraint::Text,
         purpose: GenerationPurpose::Conversation,
         tools: Some(vec![CanonicalToolDefinition {
-            name: "respond_and_set_title".to_string(),
-            description: "Sets the session title and speaks a response.".to_string(),
+            name: "set_title".to_string(),
+            description: "Sets the session title.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "title": {"type": "string"},
-                    "spoken_response": {"type": "string"}
+                    "title": {"type": "string"}
                 },
-                "required": ["title", "spoken_response"]
+                "required": ["title"]
             }),
         }]),
     }
@@ -614,8 +628,8 @@ async fn nvidia_preset_maps_the_request_and_parses_the_tool_stream() {
     tokio::time::timeout(test_timeout, async {
         let captured: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
         let sse = concat!(
-            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"respond_and_set_title\",\"arguments\":\"{\\\"title\\\":\\\"\"}}]},\"finish_reason\":null}]}\n\n",
-            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"Debugging\\\",\\\"spoken_response\\\":\\\"hi\\\"}\"}}]},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"set_title\",\"arguments\":\"{\\\"title\\\":\\\"\"}}]},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"Debugging\\\"}\"}}]},\"finish_reason\":null}]}\n\n",
             "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
             "data: [DONE]\n\n",
         );
@@ -642,14 +656,10 @@ async fn nvidia_preset_maps_the_request_and_parses_the_tool_stream() {
             _ => None,
         });
         let call = tool_call.expect("chunked SSE deltas must assemble into one ToolCall");
-        assert_eq!(call.name, "respond_and_set_title");
+        assert_eq!(call.name, "set_title");
         assert_eq!(
             call.arguments.get("title").and_then(|v| v.as_str()),
             Some("Debugging")
-        );
-        assert_eq!(
-            call.arguments.get("spoken_response").and_then(|v| v.as_str()),
-            Some("hi")
         );
         assert!(
             events.iter().any(|ev| matches!(ev, LlmStreamEvent::Finished)),
@@ -675,7 +685,7 @@ async fn nvidia_preset_maps_the_request_and_parses_the_tool_stream() {
                 .and_then(|t| t.get("function"))
                 .and_then(|f| f.get("name"))
                 .and_then(|n| n.as_str()),
-            Some("respond_and_set_title")
+            Some("set_title")
         );
 
         server.join().expect("mock wire server must exit cleanly");
@@ -701,7 +711,7 @@ async fn ollama_native_maps_the_request_and_parses_the_tool_stream() {
     tokio::time::timeout(test_timeout, async {
         let captured: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
         let ndjson = concat!(
-            "{\"message\":{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"function\":{\"name\":\"respond_and_set_title\",\"arguments\":{\"title\":\"T\",\"spoken_response\":\"hi\"}}}]},\"done\":false}\n",
+            "{\"message\":{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"function\":{\"name\":\"set_title\",\"arguments\":{\"title\":\"T\"}}}]},\"done\":false}\n",
             "{\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true}\n",
         );
         let (base_url, server) = common::wire::spawn_mock_wire_server(
@@ -726,7 +736,7 @@ async fn ollama_native_maps_the_request_and_parses_the_tool_stream() {
             _ => None,
         });
         let call = tool_call.expect("NDJSON tool_calls must surface as ToolCall");
-        assert_eq!(call.name, "respond_and_set_title");
+        assert_eq!(call.name, "set_title");
         assert_eq!(
             call.arguments.get("title").and_then(|v| v.as_str()),
             Some("T")
@@ -747,7 +757,7 @@ async fn ollama_native_maps_the_request_and_parses_the_tool_stream() {
                 .and_then(|t| t.get("function"))
                 .and_then(|f| f.get("name"))
                 .and_then(|n| n.as_str()),
-            Some("respond_and_set_title")
+            Some("set_title")
         );
 
         server.join().expect("mock wire server must exit cleanly");
@@ -785,7 +795,6 @@ async fn web_search_runs_hermetically_and_stays_non_terminal() {
         let schema = tool.parameters_schema(PipelineMode::Modular);
         let props = schema.get("properties").expect("schema must have properties");
         assert!(props.get("query").is_some(), "schema must define query");
-        assert!(props.get("spoken_filler").is_some(), "schema must define spoken_filler");
         assert!(props.get("time_filter").is_some(), "schema must define time_filter");
         assert!(props.get("ranking_mode").is_some(), "schema must define ranking_mode");
         assert!(props.get("max_passages").is_some(), "schema must define max_passages");
@@ -858,8 +867,7 @@ async fn web_search_runs_hermetically_and_stays_non_terminal() {
             .execute(
                 PipelineMode::Modular,
                 serde_json::json!({
-                    "query": "",
-                    "spoken_filler": "Checking..."
+                    "query": ""
                 }),
                 &ctx,
             )
@@ -876,7 +884,6 @@ async fn web_search_runs_hermetically_and_stays_non_terminal() {
                 PipelineMode::Modular,
                 serde_json::json!({
                     "query": "__test_hermetic_rust_2026_release_notes",
-                    "spoken_filler": "Searching the web now...",
                     "ranking_mode": "hybrid",
                     "max_passages": 3
                 }),
@@ -885,12 +892,6 @@ async fn web_search_runs_hermetically_and_stays_non_terminal() {
             .await
             .expect("Tool execution must succeed with valid arguments");
         std::env::remove_var("NEXUS_TEST_HOOKS");
-
-        assert_eq!(
-            execution_result.spoken_filler,
-            Some("Searching the web now...".to_string()),
-            "Spoken filler must be attached to ToolResult"
-        );
 
         // Zero live hits -> the graceful degradation branch, never evidence XML fabricated from nothing.
         let content = execution_result.content;
@@ -976,16 +977,18 @@ async fn web_search_flows_through_the_harness_turn_without_network() {
         // Scripted provider: web_search tool call, then an answer pass.
         let provider = Arc::new(common::harness::ScriptedLlmProvider::from_passes(
             vec![
-                vec![common::harness::ScriptedEvent::ToolCall(
-                    common::harness::ScriptedLlmProvider::tool_call(
-                        "web_search",
-                        serde_json::json!({
-                            "query": "__test_hermetic_rust_2026_release_notes",
-                            "spoken_filler": "Let me search the web.",
-                            "max_passages": 3
-                        }),
+                vec![
+                    common::harness::ScriptedEvent::Token("Let me search the web. ".to_string()),
+                    common::harness::ScriptedEvent::ToolCall(
+                        common::harness::ScriptedLlmProvider::tool_call(
+                            "web_search",
+                            serde_json::json!({
+                                "query": "__test_hermetic_rust_2026_release_notes",
+                                "max_passages": 3
+                            }),
+                        ),
                     ),
-                )],
+                ],
                 vec![common::harness::ScriptedEvent::Token("Rust 2026 ships major runtime shifts.".to_string())],
             ],
             "scripted-websearch-two-pass",
@@ -1056,7 +1059,7 @@ async fn web_search_flows_through_the_harness_turn_without_network() {
 }
 
 /// PURPOSE:  The title tool must only be offered while the session has no title.
-/// ASSERTS:  `respond_and_set_title` is active while the title is unset and hidden once
+/// ASSERTS:  `set_title` is active while the title is unset and hidden once
 ///           it is set.
 /// CLASS:    suppression
 /// REQUIRES: none
@@ -1072,7 +1075,7 @@ fn tool_filter_hides_the_title_tool_once_the_title_is_set() {
         web_search_enabled: true,
     });
     assert!(
-        !with_title.iter().any(|t| t.name == "respond_and_set_title"),
+        !with_title.iter().any(|t| t.name == "set_title"),
         "a titled session must not offer the title tool"
     );
 
@@ -1085,7 +1088,7 @@ fn tool_filter_hides_the_title_tool_once_the_title_is_set() {
     assert!(
         without_title
             .iter()
-            .any(|t| t.name == "respond_and_set_title"),
+            .any(|t| t.name == "set_title"),
         "an untitled session must offer the title tool"
     );
 }

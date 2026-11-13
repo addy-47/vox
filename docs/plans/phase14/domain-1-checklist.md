@@ -53,14 +53,14 @@
 
 ### Batch 4: Router Demuxing & Preamble Preservation
 *Depends on: Batch 1, Batch 2, Batch 3*
-- [ ] `app/src-tauri/src/services/harness/stages/streaming/router.rs`
+- [x] `app/src-tauri/src/services/harness/stages/streaming/router.rs`
   - Add `thinking_buffer: String` to stream accumulator.
   - Handle `LlmStreamEvent::Thinking`: append to `thinking_buffer` without emitting token IPC or pushing to chunker.
   - Handle `LlmStreamEvent::Token`: push to `ClauseChunker` with `AudioIntent::InterimFiller` (if `allow_tools == true`) or `AudioIntent::TurnResponse` (if `allow_tools == false`).
   - Handle `LlmStreamEvent::ToolCall`: append to `tool_calls` batch accumulator; continue reading stream until `Finished`.
   - Delete `acc.chunker.clear()` preamble wipe logic.
   - Update `StreamPassOutcome` enum: include `thinking_text` and `preamble_text`.
-- [ ] `app/src-tauri/src/services/harness/stages/orchestration/steps.rs`
+- [x] `app/src-tauri/src/services/harness/stages/orchestration/steps.rs`
   - Handle `StreamPassOutcome::ToolCallsReceived`: commit preamble text to dialogue history as assistant turn.
   - Transition interaction state to `InteractionState::Working` with active envelope.
   - Raise loop ceiling from 5 to `MAX_TOOL_STEPS = 20`.
@@ -69,11 +69,11 @@
 
 ### Batch 5: Two-Key Quiescence Latch & State Authority
 *Depends on: Batch 4*
-- [ ] `app/src-tauri/src/services/harness/loop.rs`
+- [x] `app/src-tauri/src/services/harness/loop.rs`
   - Mark `turn_open = false` upon cognitive turn completion and emit `VoxEvent::LlmFinished`.
-- [ ] `app/src-tauri/src/pipeline/assistant/llm.rs`
+- [x] `app/src-tauri/src/pipeline/assistant/llm.rs`
   - In `on_llm_finished`: clear `turn_open`; transition to `Speaking` if synthesis or playback is active; transition to `Ready` if audio already drained.
-- [ ] `app/src-tauri/src/pipeline/assistant/playback.rs`
+- [x] `app/src-tauri/src/pipeline/assistant/playback.rs`
   - In `on_playback_started`: keep `Thinking`/`Working` state if `turn_open == true` and intent is `InterimFiller`; transition to `Speaking` if `turn_open == false` or intent is `TurnResponse`.
   - In `on_playback_finished`: return early if `turn_open == true`; transition to `Ready` if `turn_open == false && pending_synthesis_jobs == 0` regardless of chunk intent tag.
 
@@ -81,7 +81,7 @@
 
 ### Batch 6: Verification & Compile Gate
 *Depends on: Batch 5*
-- [ ] `app/src-tauri/scripts/verify-targets.sh`
+- [x] `app/src-tauri/scripts/verify-targets.sh`
   - Verify clean compilation with zero warnings on all supported targets.
 - [ ] `app/src-tauri/tests/harness_pipeline_test.rs`
   - Verify 0-tool conversational turns transition through `Thinking` -> `Speaking` -> `Ready`.
