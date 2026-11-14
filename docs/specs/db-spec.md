@@ -102,7 +102,7 @@ flowchart TD
 ### 4.3 Deletion & Cascade Semantics
 - **RULE-DB-09 (Session Soft-Delete)**: User-facing session deletion MUST mark the session record with a deletion timestamp (`deleted_at = now()`). Default queries MUST filter out soft-deleted sessions (`WHERE deleted_at IS NULL`).
 - **RULE-DB-10 (Hard Cascade Boundaries)**: Hard deletion of a session:
-  - MUST cascade delete its `turns`, `session_compactions`, and `session_tool_calls`.
+  - MUST cascade delete its `turns`, `session_compactions`, `session_steps`, and `session_tool_calls`.
   - MUST detach provenance on `memory_facts`, `memory_ingestion_queue`, and `notifications` by setting `session_id = NULL`.
   - MUST NOT delete extracted observations, vector embeddings, or personal memory entries.
 
@@ -254,23 +254,37 @@ Durable notification feed and task receipts (governed by `notifications-spec.md`
 - `updated_at` (INTEGER, NOT NULL): Update epoch millisecond.
 *Indexes*: `(status, created_at DESC)`, `(group_key, status)`, `(session_id)`.
 
-### 5.11 `session_tool_calls` (Cognitive Scratchpad Ledger)
-Cognitive scratchpad ledger recording agentic tool invocation payloads, results, and timing.
+### 5.11 `session_steps` (Cognitive Trajectory Step Ledger)
+Relational record of iterative ReAct steps within multi-step conversational turns.
+- `id` (TEXT, PK): Unique step UUID.
+- `session_id` (INTEGER, NOT NULL, FK -> `sessions.id` ON DELETE CASCADE): Associated session.
+- `turn_id` (INTEGER, NOT NULL): Associated turn counter within session.
+- `step_index` (INTEGER, NOT NULL): 0-indexed step counter within the turn.
+- `preamble_text` (TEXT, NULLABLE): Introductory spoken preamble preceding tool execution.
+- `tool_count` (INTEGER, NOT NULL DEFAULT 0): Count of tool calls executed in this step.
+- `duration_ms` (INTEGER, NULLABLE): Aggregate step duration in milliseconds.
+- `created_at` (INTEGER, NOT NULL): Millisecond epoch timestamp.
+*Indexes*: `(session_id, turn_id, step_index)`, `(created_at DESC)`.
+
+### 5.12 `session_tool_calls` (Cognitive Tool Invocation Ledger)
+Audit ledger recording individual tool execution parameters, outcomes, and step linkage.
 - `id` (TEXT, PK): Unique execution UUID/ULID.
 - `session_id` (INTEGER, NOT NULL, FK -> `sessions.id` ON DELETE CASCADE): Associated session.
 - `turn_id` (INTEGER, NOT NULL): Monotonic turn counter within session.
-- `tool_name` (TEXT, NOT NULL): Tool identifier.
-- `tool_kind` (TEXT, NOT NULL): Closed enum (`terminal`, `non_terminal`).
+- `step_id` (TEXT, NOT NULL, FK -> `session_steps.id` ON DELETE CASCADE): Containing cognitive step.
+- `step_index` (INTEGER, NOT NULL DEFAULT 0): Step index within turn.
+- `tool_name` (TEXT, NOT NULL): Canonical tool identifier.
 - `arguments` (TEXT, NOT NULL): Serialized JSON parameters provided by model.
-- `result` (TEXT, NULLABLE): Serialized JSON output returned by tool.
+- `result` (TEXT, NULLABLE): Serialized JSON/text output returned by tool.
 - `is_error` (BOOLEAN, NOT NULL DEFAULT FALSE): Failure indicator flag.
-- `duration_ms` (INTEGER, NULLABLE): Execution latency in milliseconds.
+- `duration_ms` (INTEGER, NULLABLE): Tool execution latency in milliseconds.
 - `created_at` (INTEGER, NOT NULL): Millisecond epoch timestamp of invocation.
+*Indexes*: `(session_id, turn_id)`, `(step_id, step_index)`, `(created_at DESC)`.
 *Invariants*:
-- Self-healing parent row: Writes to `session_tool_calls` idempotently ensure the parent `sessions` row exists (`INSERT OR IGNORE`) before inserting.
-- Separation of concerns: Decoupled from spoken `turns` to allow speech-only replay while supporting full agent audit trails.
+- Self-healing parent row: Writes to `session_steps` and `session_tool_calls` ensure parent rows exist before insertion.
+- FIFO Execution Order: `PersistenceEvent::StepCompleted` MUST be dispatched before `PersistenceEvent::ToolCallExecuted` so foreign key referential integrity is preserved.
 
-### 5.12 `voices` (Voice Catalog)
+### 5.13 `voices` (Voice Catalog)
 Consolidated registry for all voice profiles across bundled, custom cloned, and remote providers.
 - `id` (TEXT, PK): Canonical voice identifier (e.g., `bella`, `en-US-AriaNeural`, or clone UUID).
 - `provider_id` (TEXT, NOT NULL DEFAULT 'kokoro'): TTS provider identifier (`kokoro`, `supertonic`, `chatterbox`, `zipvoice`, `edge_tts`, `azure_tts`, `google_tts`). Cloud rows (`azure_tts`, `google_tts`) are populated exclusively by live provider sync — no bundled manifest rows exist for them (no migration; row keying only).

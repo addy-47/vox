@@ -95,16 +95,39 @@ If the failure is caused by an upstream or faulty test input, STOP immediately a
 ### 4.4 Subagent Orchestration & Execution Invariants (Non-Negotiable)
 
 1. **Strictly Sequential Lifecycle (Zero Parallel Spawning):**
-   Subagents MUST execute in a strict sequential dependency order. Never launch implementation, testing, or review subagents concurrently or in parallel:
-   $$\text{Architecture / Spec} \longrightarrow \text{Atomic Implementation} \longrightarrow \text{Test Engineering} \longrightarrow \text{Adversarial Review}$$
-   Every phase must pass its completion gate and compile cleanly before the next agent is spawned.
+   Subagents MUST execute in a strict sequential dependency order. Never launch implementation, testing, or review subagents concurrently or in parallel. Every phase must pass its completion gate and compile cleanly before the next agent is spawned.
 
-2. **Adversarial Reviewer as Final Blocking Gate:**
+   System architects select one of two governing orchestration workflows based on the domain's blast radius and initial state:
+
+   - **Workflow Option A: Sequential Implementation First**
+     $$\text{Architecture / Spec} \longrightarrow \text{Atomic Implementation} \longrightarrow \text{Test Engineering} \longrightarrow \text{Adversarial Review}$$
+     *Best for:* Major foundational refactors, widespread interface replacements, or zero-backward-compatibility cleanups where the existing test suite cannot compile against legacy signatures until new production types land.
+     *Lifecycle:*
+     1. Architecture / Spec: System Architect locks specs, data schemas, and contracts.
+     2. Backend Engineer: Implements atomic production batches until clean compile.
+     3. Test Engineer: Authors black-box seam tests proving behavior against the new seam.
+     4. Review / QA: Adversarial audit, mutation testing, and final sign-off.
+
+   - **Workflow Option B: Red-Seam First / Test-Driven Development (TDD)**
+     $$\text{Architecture / Spec} \longrightarrow \text{Test Stubs (Red)} \longrightarrow \text{Atomic Implementation (Green)} \longrightarrow \text{Adversarial Review / Mutate}$$
+     *Best for:* Well-defined behavioral additions, state-machine transitions, concurrency barriers, or persistence contracts where public contracts can be stubbed upfront.
+     *Rationale:* Eliminates white-box implementation anchoring (`create-test` Phase 0) by writing assertions before production logic exists, preventing tests from being calibrated to developer shortcuts.
+     *Lifecycle:*
+     1. Architecture / Spec: System Architect locks specs and specifies exact black-box seam intent blocks.
+     2. Minimal Signatures: Backend Engineer writes *only* public struct, enum, and method stubs to make types compile.
+     3. Test Engineer (RED): Writes black-box seam subtests against the stubs. Runs `cargo nextest` to empirically prove tests fail (Red).
+     4. Backend Engineer (GREEN): Implements production code until all seam tests pass (Green). **Forbidden from touching `tests/**`**.
+     5. Review / QA: Adversarial audit, circuit breaker verification, and mutation proof.
+
+2. **Mandatory Persona & Skill Gating for Every Subagent:**
+   Every spawned subagent MUST autonomously read its assigned persona from `.agents/rules/` and load its respective skills before inspecting or editing files. Orchestrators must supply subagents with explicit boundaries, verbatim reviews, and clear batch criteria.
+
+3. **Adversarial Reviewer as Final Blocking Gate:**
    The Review subagent MUST run strictly at the end, after all implementation and tests are complete. It must review BOTH production code AND test code against style guides and skills (per §4.2):
    - Review production code for concurrency leaks, single-writer invariants, and memory bugs.
    - Review tests for production wiring parity (no bypassing `spawn_router` with direct handler calls), zero bare sleeps, single seam binary discipline, and valid `ASSERTS:` claims.
 
-3. **Context Handoff & Failure Escalation:**
+4. **Context Handoff & Failure Escalation:**
    Parent orchestrators must supply subagents with explicit boundaries, verbatim reviews, and clear batch criteria. If a subagent encounters an upstream architectural defect or regression, it must stop and escalate rather than writing downstream mocks or bypassing gates.
 
 ---

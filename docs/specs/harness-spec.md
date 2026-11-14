@@ -155,25 +155,35 @@ flowchart TD
   6. Transition to `InteractionState::Ready` is governed strictly by the **Two-Key Quiescence Latch** (`turn_open == false` AND `pending_synthesis_jobs == 0` with sound card buffer drained), evaluated in both `on_llm_finished` and `on_playback_finished` **regardless of whether the draining audio chunks were originally dispatched with `InterimFiller` or `TurnResponse`**.
 
 ### 4.5 Agentic Tool Execution Chassis
-- **RULE-HARN-11 (ZBC Universal Tool Interface & Zero Filler Schemas)**:
+- **RULE-HARN-11 (ZBC Universal Tool Interface & Concurrency Mode)**:
   - Cognitive tool definitions MUST NOT declare execution flow categories (`Terminal` vs `NonTerminal`).
   - Cognitive tool JSON schemas MUST NOT include synthetic speech parameters (`spoken_filler` or `spoken_response`).
   - All tools adhere to a single canonical contract: name, description, JSON schema, and asynchronous execution returning `ToolResult`.
   - The legacy `respond_and_set_title` tool is replaced by the universal `set_title` tool taking only `{"title": "..."}`.
-- **RULE-HARN-11A (Multi-Tool Batch Collection & Barrier Execution)**:
-  - The router collects all tool invocations emitted during a generation pass into a single batch.
-  - The tool execution engine schedules batch execution using Harness-owned barriers: consecutive read-only tools execute concurrently via `join_all`, while mutating tools execute exclusively.
-- **RULE-HARN-11B (Coordinator State Machine Authority)**:
+  - Tools self-declare their Harness-owned concurrency mode via `execution_mode(&self, args: &Value) -> ToolExecutionMode { Parallel, Exclusive }`.
+  - Read-only tools (`search_memory`, `web_search`, `read_file`) and metadata update tools (`set_title`) declare `ToolExecutionMode::Parallel`.
+  - Mutating tools (`write_file`, `bash`) declare `ToolExecutionMode::Exclusive`.
+- **RULE-HARN-11A (Multi-Tool Batch Collection & Barrier Wave Scheduling)**:
+  - The streaming demuxer collects all tool call requests emitted during a generation pass into a single batch.
+  - The tool execution engine (`ToolExecutor::execute_batch`) schedules batch execution using Harness-owned barriers: contiguous `Parallel` tools run concurrently via `futures_util::future::join_all`, while `Exclusive` tools form strict sequential barriers that drain preceding waves before executing alone.
+  - Outcomes MUST be committed to history in the exact sequence declared by the model, preserving deterministic declaration order across concurrent completions.
+- **RULE-HARN-11B (Coordinator State Machine Authority & Immediate Step Commits)**:
   - The Harness coordinator (`loop.rs`) exclusively owns state machine transitions (`Thinking` $\to$ `Working` $\to$ `Speaking` $\to$ `Ready`).
   - When a tool batch is received, the coordinator transitions the pipeline to `InteractionState::Working` with the active `ActivityEnvelope`. Downstream tools and audio callbacks MUST NOT initiate pipeline state transitions.
-- **RULE-HARN-11C (Reentrant Step Loop Ceiling)**:
+  - Intermediate cognitive ReAct iterations MUST NOT be accumulated in volatile turn-scoped scratchpads. At each step boundary, the assistant preamble message and all associated tool observations MUST be committed immediately to `ConversationHistoryStage` via `commit_tool_step`.
+  - If batch execution is cancelled or suspended mid-batch (`cancel.is_cancelled()` or `SuspendForUser`), `commit_tool_step` MUST synthesize `"Tool execution cancelled"` fallback observations for all unexecuted calls in the batch, guaranteeing a strict 1:1 `tool_calls` $\leftrightarrow$ `Role::Tool` bijection and preventing provider HTTP 400 errors on subsequent turns.
+- **RULE-HARN-11C (Reentrant Step Loop Ceiling & Mandatory Summary Pass)**:
   - The coordinator supports iterative ReAct execution up to `MAX_TOOL_STEPS = 20`.
-  - If step 20 is reached without a terminal answer, the Harness forces a final generation pass with tools disabled (`allow_tools = false`) to produce a complete spoken summary.
-- **RULE-HARN-12 (Interruption & Cancellation Persistence)**:
+  - If step 20 is reached without a terminal answer, the coordinator disables tools (`allow_tools = false`) and executes a mandatory final summary generation pass, producing a complete spoken summary (`AudioIntent::TurnResponse`). The coordinator MUST NOT abort with an unhandled error unless the summary pass itself fails.
+- **RULE-HARN-11D (Relational Trajectory SSOT in Turso DB)**:
+  - Cognitive trajectories MUST be persisted relationally in the local Turso database engine under a 1:N hierarchy:
+    `sessions (1)` $\to$ `turns (N)` $\to$ `session_steps (M)` $\to$ `session_tool_calls (K)`.
+  - `PersistenceWorker` processes events in FIFO order. `PersistenceEvent::StepCompleted` MUST be dispatched before the batch's `PersistenceEvent::ToolCallExecuted` events to guarantee the foreign key parent row exists before child rows are inserted.
+- **RULE-HARN-12 (Interruption, Cancellation & Non-Rollback Invariant)**:
   - When a turn is interrupted (barge-in):
-    - If partial assistant text was already spoken, it MUST be saved to history as an interrupted turn.
-    - If no assistant text was spoken, the turn MUST be rolled back from history.
-    - Active background tool execution tasks MUST be aborted via `CancellationToken`.
+    - Active tool execution tasks and child futures MUST be aborted via `CancellationToken`.
+    - User turn rollback (`rollback_last_user_turn`) is strictly restricted to Step 0 interruptions where zero assistant speech and zero tool executions have occurred (`last.role == Role::User`).
+    - Once Step 1 tools have commenced execution or spoken a preamble, `commit_tool_step` has run (`last.role == Role::Tool`), and rollback is strictly forbidden. Preceding tool observations remain permanently preserved in history.
 
 ---
 
@@ -190,7 +200,7 @@ To avoid formatting errors, prompt assembly uses strict XML tags:
   - `{"role": "assistant", "content": "Let me look that up...", "tool_calls": [...]}`
   - `{"role": "tool", "tool_call_id": "call_123", "content": "..."}`
   - `{"role": "assistant", "content": "The result is..."}`
-- Tool call requests and tool observations are committed to history immediately at each step boundary (`RULE-HARN-07`), ensuring subsequent reentrant steps and follow-up turns retain full conversational and evidence context.
+- Tool call requests and tool observations are committed to history immediately at each step boundary (`RULE-HARN-11B`), ensuring subsequent reentrant steps and follow-up turns retain full conversational and evidence context.
 
 ---
 
