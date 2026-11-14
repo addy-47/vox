@@ -156,58 +156,85 @@ The implementation is structured into 5 sequential atomic batches based on share
 
 ### Batch 6: Production Bug Remediation & Test Suite Overhaul (Lead Audit Alignment)
 
-This batch resolves the P0 production defects and 5 testing violations flagged in the Lead Audit.
+This batch resolves the P0 production defects and the 5 testing violations flagged in the Lead Architect's audit.
 
-#### Part A: P0 Production Bug Fixes
+#### Part A: P0 Production Bug Fixes (STATUS: COMPLETED & VERIFIED in commit `c111a988d`)
 
-1. **Restore Migration Logic & Table Rebuild (`persistence/schema.rs`):**
-   - Restore `retire_positional_personal_memory_model()` (v9 migration).
-   - Restore error propagation `?` and index creation in `ensure_voice_metadata_columns()`.
-   - Rebuild `session_tool_calls` cleanly under `PRAGMA foreign_keys = OFF;`:
-     `CREATE TABLE session_tool_calls_v2 ...; INSERT INTO session_tool_calls_v2 SELECT ...; DROP TABLE session_tool_calls; ALTER TABLE session_tool_calls_v2 RENAME TO session_tool_calls;`
-     Re-enable `PRAGMA foreign_keys = ON;`. Propagate errors with `?`.
+1. **Restore Migration Logic & Table Rebuild (`app/src-tauri/src/persistence/schema.rs`):**
+   - Restored `retire_positional_personal_memory_model()` (70 lines of v9 migration code) and `const PERSONAL_MEMORY_SEMANTIC_SCHEMA_VERSION: u32 = 9`.
+   - Restored error propagation `?` in `ensure_voice_metadata_columns()`.
+   - Rebuilt `session_tool_calls` cleanly under `PRAGMA foreign_keys = OFF;`:
+     ```sql
+     CREATE TABLE IF NOT EXISTS session_tool_calls_v2 (
+         id TEXT PRIMARY KEY,
+         session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+         turn_id INTEGER NOT NULL,
+         tool_name TEXT NOT NULL,
+         arguments TEXT NOT NULL,
+         result TEXT,
+         is_error INTEGER NOT NULL DEFAULT 0,
+         duration_ms INTEGER,
+         created_at INTEGER NOT NULL
+     );
+     INSERT INTO session_tool_calls_v2 (id, session_id, turn_id, tool_name, arguments, result, is_error, duration_ms, created_at)
+     SELECT id, session_id, turn_id, tool_name, arguments, result, is_error, duration_ms, created_at FROM session_tool_calls;
+     DROP TABLE session_tool_calls;
+     ALTER TABLE session_tool_calls_v2 RENAME TO session_tool_calls;
+     CREATE INDEX IF NOT EXISTS idx_tool_calls_session_turn ON session_tool_calls(session_id, turn_id);
+     CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON session_tool_calls(created_at DESC);
+     ```
+     Re-enabled `PRAGMA foreign_keys = ON;` and propagated all errors with `?`.
+   - Replaced residual `"respond_and_set_title"` strings in `database_persistence_boundary_test.rs` with `"set_title"`.
 
 2. **Single-Writer Router Authority for `turn_open` (`loop.rs` & `llm.rs`):**
-   - Remove off-router `ctx.req.app_state.pipeline.clear_turn_open()` calls from Tokio task in `loop.rs:297, 310, 314, 327, 339`.
-   - Maintain `RULE-EVT-01`: `vox-router` is the sole writer of pipeline states and turn lifecycles.
-   - Replace `state.engine.try_lock().unwrap_or(false)` in `llm.rs` with `state.engine.lock()`.
+   - Removed all off-router `ctx.req.app_state.pipeline.clear_turn_open()` calls from the Tokio task in `loop.rs:294, 307, 311, 324, 336`.
+   - Maintained `events-spec.md RULE-EVT-01`: `vox-router` is the sole writer of pipeline states and turn lifecycles.
+   - Replaced `state.engine.try_lock().unwrap_or(false)` in `llm.rs:110` with `state.engine.blocking_lock()`.
 
 3. **Fix 6-Second `Thinking` Delay on 0-Tool Turns (`playback.rs`):**
-   - Update `on_playback_started`:
+   - Updated `on_playback_started`:
      - If `current_state == InteractionState::Working && intent == AudioIntent::InterimFiller`: return early (remain in `Working`).
-     - If `current_state == InteractionState::Thinking`: transition `Thinking -> Speaking` immediately when audio starts playing on speakers.
-     - When tool calls arrive, `steps.rs` transitions `Speaking -> Working`.
+     - If `current_state == InteractionState::Thinking`: transition `Thinking -> InteractionState::Speaking` immediately when audio starts playing on speakers.
+     - When tool calls arrive later, `steps.rs` transitions `Speaking -> Working`.
 
 4. **Multi-byte UTF-8 & Case-Insensitive Safety (`think_tags.rs`):**
-   - Prevent byte-slice panics on multi-byte UTF-8 boundaries.
-   - Handle case-insensitive `<think>` / `<THINK>` tags safely.
+   - Replaced raw byte slicing with `find_case_insensitive` and `match_partial_suffix`.
+   - Guarded all slice offsets with `is_char_boundary` to prevent panics on multi-byte CJK or emojis.
+   - Handled `<think>`, `<THINK>`, and mixed-case `<Think>` tags safely. Added 4 unit tests covering ASCII, uppercase, and multi-byte UTF-8 split tags.
 
-#### Part B: Test Suite Overhaul per `testing-style-guide.md`
+#### Part B: Test Suite Overhaul per `testing-style-guide.md` & `create-test`
 
-1. **Fold Seam Proliferation (§1 & §6):**
-   - Fold `tests/harness_pipeline_test.rs` and `tests/harness_loop_test.rs` into a single canonical seam binary: `tests/harness_loop_test.rs` (15 subtests total).
-   - Move shared `Rig` and `ScriptedLlmWorker` into `tests/common/harness.rs`.
+1. **Shared Test Rig (`app/src-tauri/tests/common/harness.rs`):**
+   - Move shared `struct Rig`, `ScriptedLlmWorker`, and test fixtures into `tests/common/harness.rs`.
+   - **Production Wiring Parity (§6.1):** In `Rig`, spawn the real `spawn_router` OS thread loop with an authentic channel receiver.
+   - Expose `rig.send_event(VoxEvent)` to route events (`PlaybackStarted`, `PlaybackFinished`) through `pipeline_tx` into the router thread.
+   - Eliminate all direct calls to internal handlers (`on_llm_finished`, `on_playback_started`, `on_playback_finished`) in tests.
+
+2. **Fold Seam Proliferation (§1 & §6):**
+   - Fold `tests/harness_pipeline_test.rs` and `tests/harness_loop_test.rs` into a single canonical seam binary: `tests/harness_loop_test.rs`.
+   - Structure `tests/harness_loop_test.rs` into 15 subtests:
+     - Subtests 01-05: Existing turn loop lifecycle (`cancelled_turn_never_dispatches`, `duplicate_query_refused`, `finished_turn_commits_both_messages`, `unmounted_harness_reports_error`, `critical_threshold_plays_compaction_filler`).
+     - Subtest 06: `the_tool_loop_stops_at_the_tool_budget` (asserts `requests.len() == 21` for `MAX_TOOL_STEPS = 20`).
+     - Subtests 07-15: The 9 unique scene tests from `harness_pipeline_test.rs` (Scene 1: 0-tool demuxing and two-key latch; Scene 2: preamble preservation and concurrent tool execution; Scene 3: multi-tool batch accumulation and `set_title`; Scene 4: cancellation before speech, during tools, and with partial text).
    - Delete duplicate `tool_loop_reaches_max_steps_and_forces_tool_free_final_pass`.
    - Delete redundant binary `tests/harness_pipeline_test.rs`.
+   - Update `app/src-tauri/tests/tier-default.txt`: ensure `harness_loop_test` is listed, remove `harness_pipeline_test`.
 
-2. **Production Wiring Parity (§6.1):**
-   - In `Rig`, spawn the real `spawn_router` loop.
-   - Eliminate direct calls to internal handlers (`on_llm_finished`, `on_playback_started`, `on_playback_finished`) in tests. Route all events through `pipeline_tx`.
+3. **Verify Unasserted Claims & Eliminate Bare Sleeps (§3 Rule 2, §5.4):**
+   - In `stream_error_clears_turn_open_and_dispatches_error_event`, assert `VoxEvent::Error` is received on the event stream.
+   - Replace any bare `std::thread::sleep` or `tokio::time::sleep` loops with channel-driven synchronization or bounded latch waits.
 
-3. **Verify Unasserted Claims (§3 Rule 2):**
-   - In `stream_error_clears_turn_open_and_dispatches_error_event`, assert `VoxEvent::Error` is received on `pipeline_rx`.
-
-4. **Fix Test Naming (§4):**
-   - Rename banned `test_*` prefixes in `think_tags.rs` to `<subject>_<scenario>_<outcome>`.
+4. **Fix Test Function Naming (§4):**
+   - In `services/llm/transport/think_tags.rs`, rename all unit tests starting with `test_*` to `<subject>_<scenario>_<outcome>` (e.g. `plain_tokens_without_tags_emit_as_token_events`).
 
 5. **End-to-End Wire Tests for Reasoning Demuxing:**
-   - In `agentic_tool_loop_test.rs`, add mock SSE/NDJSON payloads with `<think>` tags and `reasoning_content` to verify `chat_completions.rs` and `ollama.rs` demuxing end-to-end.
+   - In `tests/agentic_tool_loop_test.rs`, add mock SSE/NDJSON payloads containing `<think>` tags and `reasoning_content` deltas to verify `chat_completions.rs` and `ollama.rs` transport demuxing end-to-end.
 
 #### Part C: Verification & Review Gates
 
 - **Compile Gate:** `./scripts/verify-targets.sh` (desktop clippy `-D warnings`, android cross-check).
-- **Test Gate:** `cargo nextest run --release --test-threads=1 --no-fail-fast`.
-- **Review Gate:** Dedicated Adversarial Review subagent using `/review` and `testing-style-guide.md`.
+- **Test Gate:** `cargo nextest run --test harness_loop_test --test agentic_tool_loop_test --release --test-threads=1 --no-fail-fast`.
+- **Review Gate:** Dedicated Adversarial Review subagent using `/review` and `testing-style-guide.md` auditing the full Batch 6 diff.
 
 ---
 

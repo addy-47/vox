@@ -155,7 +155,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_normal_tokens_without_thinking() {
+    fn normal_tokens_without_thinking_emits_tokens_directly() {
         let (tx, rx) = mpsc::channel();
         let mut demuxer = ThinkTagDemuxer::new();
 
@@ -174,7 +174,7 @@ mod tests {
     }
 
     #[test]
-    fn test_inline_thinking_single_chunk() {
+    fn inline_thinking_single_chunk_demuxes_into_thinking_and_token() {
         let (tx, rx) = mpsc::channel();
         let mut demuxer = ThinkTagDemuxer::new();
 
@@ -192,7 +192,7 @@ mod tests {
     }
 
     #[test]
-    fn test_split_tag_across_chunks() {
+    fn split_tag_across_chunks_buffers_and_demuxes_correctly() {
         let (tx, rx) = mpsc::channel();
         let mut demuxer = ThinkTagDemuxer::new();
 
@@ -214,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn test_false_alarm_tag() {
+    fn non_matching_xml_tags_emit_as_content_tokens() {
         let (tx, rx) = mpsc::channel();
         let mut demuxer = ThinkTagDemuxer::new();
 
@@ -233,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn test_case_insensitive_uppercase_think_tags() {
+    fn uppercase_think_tags_match_case_insensitively() {
         let (tx, rx) = mpsc::channel();
         let mut demuxer = ThinkTagDemuxer::new();
 
@@ -251,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    fn test_case_insensitive_mixed_case_think_tags() {
+    fn mixed_case_think_tags_match_case_insensitively() {
         let (tx, rx) = mpsc::channel();
         let mut demuxer = ThinkTagDemuxer::new();
 
@@ -269,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn test_multibyte_utf8_cjk_and_emojis() {
+    fn multibyte_utf8_cjk_and_emojis_demux_without_byte_corruption() {
         let (tx, rx) = mpsc::channel();
         let mut demuxer = ThinkTagDemuxer::new();
 
@@ -288,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn test_multibyte_utf8_split_at_boundary() {
+    fn multibyte_utf8_split_at_boundary_preserves_char_alignment() {
         let (tx, rx) = mpsc::channel();
         let mut demuxer = ThinkTagDemuxer::new();
 
