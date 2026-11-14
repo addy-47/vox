@@ -1394,4 +1394,406 @@ pub fn spawn_state_watcher(
     (seen, handle)
 }
 
+// ============================================================================
+// Shared Harness Test Infrastructure & Production Router Rig
+// ============================================================================
+
+pub type ScriptStep = Box<dyn FnOnce(mpsc::Sender<vox_lib::services::llm::actor::LlmResponse>) + Send + 'static>;
+
+pub struct ScriptedLlmWorker {
+    pub queue: parking_lot::Mutex<Vec<ScriptStep>>,
+    pub requests: parking_lot::Mutex<Vec<(u32, bool)>>,
+}
+
+impl ScriptedLlmWorker {
+    pub fn new() -> Self {
+        Self {
+            queue: parking_lot::Mutex::new(Vec::new()),
+            requests: parking_lot::Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn push_step<F>(&self, step: F)
+    where
+        F: FnOnce(mpsc::Sender<vox_lib::services::llm::actor::LlmResponse>) + Send + 'static,
+    {
+        self.queue.lock().push(Box::new(step));
+    }
+
+    pub fn requests(&self) -> Vec<(u32, bool)> {
+        self.requests.lock().clone()
+    }
+
+    pub fn dispatch_count(&self) -> usize {
+        self.requests.lock().len()
+    }
+}
+
+pub fn run_scripted_worker(
+    llm_rx: mpsc::Receiver<LlmCommand>,
+    scripted: Arc<ScriptedLlmWorker>,
+) {
+    while let Ok(cmd) = llm_rx.recv() {
+        match cmd {
+            LlmCommand::Generate {
+                request,
+                turn_id,
+                cancel,
+                response_tx,
+            } => {
+                let offers_tools = request.tools.as_ref().map(|t| !t.is_empty()).unwrap_or(false);
+                scripted.requests.lock().push((turn_id, offers_tools));
+
+                if cancel.is_cancelled() {
+                    let _ = response_tx.send(vox_lib::services::llm::actor::LlmResponse::Cancelled);
+                    continue;
+                }
+
+                let next_step = {
+                    let mut q = scripted.queue.lock();
+                    if !q.is_empty() {
+                        Some(q.remove(0))
+                    } else {
+                        None
+                    }
+                };
+
+                if let Some(step) = next_step {
+                    step(response_tx);
+                } else if offers_tools {
+                    let _ = response_tx.send(vox_lib::services::llm::actor::LlmResponse::ToolCall(
+                        vox_lib::services::llm::CanonicalToolCall {
+                            id: format!("call-{}", turn_id),
+                            name: "search_memory".to_string(),
+                            arguments: serde_json::json!({ "query": "default query" }),
+                        },
+                    ));
+                    let _ = response_tx.send(vox_lib::services::llm::actor::LlmResponse::Finished);
+                } else {
+                    let _ = response_tx.send(vox_lib::services::llm::actor::LlmResponse::Token("done".to_string()));
+                    let _ = response_tx.send(vox_lib::services::llm::actor::LlmResponse::Finished);
+                }
+            }
+            LlmCommand::Shutdown => break,
+            LlmCommand::Warmup { .. } => {}
+        }
+    }
+}
+
+pub struct HarnessRig {
+    pub app: AppHandle<tauri::test::MockRuntime>,
+    pub state: Arc<vox_lib::core::state::AppState>,
+    pub scripted_llm: Arc<ScriptedLlmWorker>,
+    pub llm_tx: mpsc::Sender<LlmCommand>,
+    pub tts_tx: mpsc::Sender<TtsCommand>,
+    pub tts_rx: Arc<parking_lot::Mutex<mpsc::Receiver<TtsCommand>>>,
+    pub pipeline_tx: mpsc::Sender<VoxEvent>,
+    pub recorded_events: Arc<parking_lot::Mutex<Vec<VoxEvent>>>,
+    pub event_notify: Arc<tokio::sync::Notify>,
+    pub persist_notify: Arc<tokio::sync::Notify>,
+    pub session_id: i64,
+    router_join: Option<std::thread::JoinHandle<()>>,
+    event_tap_join: Option<std::thread::JoinHandle<()>>,
+    llm_join: Option<std::thread::JoinHandle<()>>,
+    persist_forwarder_join: Option<std::thread::JoinHandle<()>>,
+    _paths: super::paths::TempPathsGuard,
+}
+
+#[allow(unused_imports)]
+pub use HarnessRig as Rig;
+
+impl HarnessRig {
+    pub async fn new() -> Self {
+        let paths = super::paths::TempPathsGuard::new();
+        vox_lib::utils::paths::init();
+        let (app, state) = get_test_app_and_state().await;
+
+        let real_persist_tx = vox_lib::persistence::worker::spawn_persistence_worker(
+            Arc::clone(&state.db),
+            state.telemetry.is_db_healthy.clone(),
+            state.telemetry.latest_persistence_rate.clone(),
+            state.telemetry.is_private_mode.clone(),
+        );
+
+        let (proxy_persist_tx, proxy_persist_rx) = crossbeam_channel::unbounded::<vox_lib::persistence::PersistenceEvent>();
+        *state.persist_tx.lock() = Some(proxy_persist_tx);
+
+        let persist_notify = Arc::new(tokio::sync::Notify::new());
+        let persist_notify_clone = Arc::clone(&persist_notify);
+        let real_persist_tx_clone = real_persist_tx.clone();
+
+        let persist_forwarder_join = std::thread::Builder::new()
+            .name("test-persist-forwarder".to_string())
+            .spawn(move || {
+                while let Ok(event) = proxy_persist_rx.recv() {
+                    let is_shutdown = matches!(event, vox_lib::persistence::PersistenceEvent::Shutdown);
+                    let _ = real_persist_tx_clone.send(event);
+                    persist_notify_clone.notify_waiters();
+                    if is_shutdown {
+                        break;
+                    }
+                }
+            })
+            .expect("spawn persist forwarder");
+
+        let session_id = 10001i64;
+        let now = 1700000000000i64;
+        {
+            let conn = state.db.connect().expect("db connect");
+            conn.execute(
+                "INSERT OR IGNORE INTO sessions (id, created_at, updated_at, project_id) VALUES (?, ?, ?, 'default');",
+                (session_id, now, now),
+            )
+            .await
+            .expect("seed session");
+        }
+        state.conversation_id.store(session_id as u64, std::sync::atomic::Ordering::Relaxed);
+
+        {
+            let mut settings = state.settings.write().unwrap();
+            settings.interaction.mode = vox_lib::core::events::InteractionMode::Passive;
+            settings.interaction.pipeline_mode = vox_lib::core::events::PipelineMode::Modular;
+            settings.memory.auto_compaction = false;
+            settings.memory.context_retrieval_enabled = true;
+        }
+        state.owner.store(vox_lib::core::state::InteractionOwner::Assistant as u32, std::sync::atomic::Ordering::Relaxed);
+        state.pipeline.set_state(vox_lib::core::state::InteractionState::Ready);
+        state.pipeline.pending_synthesis_jobs.store(0, std::sync::atomic::Ordering::Relaxed);
+
+        let PipelineTestChannels {
+            stt_tx,
+            vad_tx,
+            tts_tx,
+            tts_rx,
+            llm_tx,
+            llm_rx,
+            pipeline_tx: _unused_pipeline_tx,
+            pipeline_rx: _unused_pipeline_rx,
+        } = setup_pipeline_channels();
+
+        let (pipeline_tx, tap_rx) = mpsc::channel::<VoxEvent>();
+        let (router_tx, router_rx) = mpsc::channel::<VoxEvent>();
+
+        let recorded_events = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let event_notify = Arc::new(tokio::sync::Notify::new());
+
+        let rec_clone = Arc::clone(&recorded_events);
+        let notify_clone = Arc::clone(&event_notify);
+        let router_tx_clone = router_tx.clone();
+
+        let event_tap_join = std::thread::Builder::new()
+            .name("test-event-tap".to_string())
+            .spawn(move || {
+                while let Ok(event) = tap_rx.recv() {
+                    let is_shutdown = matches!(event, VoxEvent::Shutdown);
+                    rec_clone.lock().push(event.clone());
+                    notify_clone.notify_waiters();
+                    let _ = router_tx_clone.send(event);
+                    if is_shutdown {
+                        break;
+                    }
+                }
+            })
+            .expect("spawn test-event-tap");
+
+        let router_join = vox_lib::pipeline::spawn_router(app.clone(), router_rx)
+            .expect("spawn production router");
+
+        attach_mock_engine_with_pipeline_tx_to_state(
+            &app,
+            &state,
+            stt_tx,
+            vad_tx,
+            Some(llm_tx.clone()),
+            Some(tts_tx.clone()),
+            pipeline_tx.clone(),
+        );
+
+        {
+            let settings = state.settings.read().unwrap().clone();
+            let prompt = state.resolve_base_prompt();
+            *state.harness.lock() = Some(vox_lib::services::harness::Harness::new_modular(
+                Some(session_id),
+                prompt,
+                None,
+                &settings,
+                vox_lib::services::harness::LlmExecutionParams {
+                    context_window: 8192,
+                    max_output_tokens: 512,
+                    temperature: 0.7,
+                    reasoning_enabled: true,
+                },
+                llm_tx.clone(),
+                true,
+            ));
+        }
+
+        let scripted_llm = Arc::new(ScriptedLlmWorker::new());
+        let worker_scripted = Arc::clone(&scripted_llm);
+        let llm_join = std::thread::Builder::new()
+            .name("scripted-llm-worker".into())
+            .spawn(move || {
+                run_scripted_worker(llm_rx, worker_scripted);
+            })
+            .expect("spawn scripted llm worker");
+
+        Self {
+            app,
+            state,
+            scripted_llm,
+            llm_tx,
+            tts_tx,
+            tts_rx: Arc::new(parking_lot::Mutex::new(tts_rx)),
+            pipeline_tx,
+            recorded_events,
+            event_notify,
+            persist_notify,
+            session_id,
+            router_join: Some(router_join),
+            event_tap_join: Some(event_tap_join),
+            llm_join: Some(llm_join),
+            persist_forwarder_join: Some(persist_forwarder_join),
+            _paths: paths,
+        }
+    }
+
+    pub fn turn_request(&self, query: &str, turn_id: u32) -> vox_lib::services::harness::TurnExecutionRequest {
+        vox_lib::services::harness::TurnExecutionRequest {
+            query: query.to_string(),
+            turn_id,
+            cancel: self.state.pipeline.turn_token(),
+            owner: vox_lib::core::state::InteractionOwner::Assistant,
+            llm_tx: Some(self.llm_tx.clone()),
+            tts_tx: Some(self.tts_tx.clone()),
+            provider: None,
+            db: Arc::clone(&self.state.db),
+            pipeline_tx: Some(self.pipeline_tx.clone()),
+            accumulator: Arc::clone(&self.state.pipeline_accumulator),
+            pending_synthesis_jobs: Arc::clone(&self.state.pipeline.pending_synthesis_jobs),
+            emitter: Arc::new(self.app.clone()),
+            routing_ctx: vox_lib::pipeline::RoutingContext::from_app_state(&self.state),
+            app_state: Arc::clone(&self.state),
+        }
+    }
+
+    pub fn requests(&self) -> Vec<(u32, bool)> {
+        self.scripted_llm.requests()
+    }
+
+    pub fn dispatch_count(&self) -> usize {
+        self.scripted_llm.dispatch_count()
+    }
+
+    pub fn drain_tts_commands(&self) -> Vec<TtsCommand> {
+        let rx = self.tts_rx.lock();
+        let mut cmds = Vec::new();
+        while let Ok(cmd) = rx.try_recv() {
+            cmds.push(cmd);
+        }
+        cmds
+    }
+
+    pub fn send_event(&self, event: VoxEvent) {
+        let _ = self.pipeline_tx.send(event);
+    }
+
+    pub async fn wait_for_event<F>(&self, predicate: F, timeout: Duration) -> Option<VoxEvent>
+    where
+        F: Fn(&VoxEvent) -> bool,
+    {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            {
+                let events = self.recorded_events.lock();
+                if let Some(ev) = events.iter().find(|e| predicate(e)) {
+                    return Some((*ev).clone());
+                }
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return None;
+            }
+            let remaining = deadline - tokio::time::Instant::now();
+            let _ = tokio::time::timeout(remaining.min(Duration::from_millis(50)), self.event_notify.notified()).await;
+        }
+    }
+
+    pub async fn wait_for_state(&self, expected: vox_lib::core::state::InteractionState, timeout: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + timeout;
+        while tokio::time::Instant::now() < deadline {
+            if self.state.pipeline.state() == expected {
+                return true;
+            }
+            let remaining = deadline - tokio::time::Instant::now();
+            let _ = tokio::time::timeout(remaining.min(Duration::from_millis(20)), self.event_notify.notified()).await;
+        }
+        self.state.pipeline.state() == expected
+    }
+
+    pub async fn wait_for_session_title(&self, expected: &str, timeout: Duration) -> Option<String> {
+        let conn = self.state.db.connect().expect("db connect");
+        let deadline = tokio::time::Instant::now() + timeout;
+        while tokio::time::Instant::now() < deadline {
+            if let Ok(mut rows) = conn.query("SELECT title FROM sessions WHERE id = ?;", (self.session_id,)).await {
+                if let Ok(Some(row)) = rows.next().await {
+                    if let Ok(Some(t)) = row.get::<Option<String>>(0) {
+                        if t == expected {
+                            return Some(t);
+                        }
+                    }
+                }
+            }
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            let _ = tokio::time::timeout(remaining.min(Duration::from_millis(50)), self.persist_notify.notified()).await;
+        }
+        None
+    }
+
+    pub async fn wait_for_turn_assistant_text(&self, timeout: Duration) -> Option<String> {
+        let conn = self.state.db.connect().expect("db connect");
+        let deadline = tokio::time::Instant::now() + timeout;
+        while tokio::time::Instant::now() < deadline {
+            if let Ok(mut rows) = conn.query("SELECT assistant_text FROM turns WHERE session_id = ? ORDER BY id DESC LIMIT 1;", (self.session_id,)).await {
+                if let Ok(Some(row)) = rows.next().await {
+                    if let Ok(Some(text)) = row.get::<Option<String>>(0) {
+                        if !text.is_empty() {
+                            return Some(text);
+                        }
+                    }
+                }
+            }
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            let _ = tokio::time::timeout(remaining.min(Duration::from_millis(50)), self.persist_notify.notified()).await;
+        }
+        None
+    }
+}
+
+impl Drop for HarnessRig {
+    fn drop(&mut self) {
+        let _ = self.pipeline_tx.send(VoxEvent::Shutdown);
+        let _ = self.llm_tx.send(LlmCommand::Shutdown);
+        if let Some(join) = self.event_tap_join.take() {
+            let _ = join.join();
+        }
+        if let Some(join) = self.router_join.take() {
+            let _ = join.join();
+        }
+        if let Some(join) = self.llm_join.take() {
+            let _ = join.join();
+        }
+        if let Some(tx) = self.state.persist_tx.lock().take() {
+            let _ = tx.send(vox_lib::persistence::PersistenceEvent::Shutdown);
+        }
+        if let Some(join) = self.persist_forwarder_join.take() {
+            let _ = join.join();
+        }
+    }
+}
+
 

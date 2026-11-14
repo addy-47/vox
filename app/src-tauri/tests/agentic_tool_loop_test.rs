@@ -1126,3 +1126,196 @@ fn tool_filter_hides_retrieval_tools_when_they_are_disabled() {
     assert!(enabled.iter().any(|t| t.name == "search_memory"));
     assert!(enabled.iter().any(|t| t.name == "web_search"));
 }
+
+// ============================================================================
+// End-to-End Wire Tests for Reasoning Demuxing (chat_completions & ollama)
+// ============================================================================
+
+/// PURPOSE:  Verify ChatCompletions SSE wire parser demuxes reasoning_content and <think> tags into Thinking events.
+/// SCENARIO: Mock SSE stream delivers reasoning_content in delta, followed by <think> tags in content, then spoken tokens.
+/// ASSERTS:  LlmStreamEvent::Thinking carries the reasoning deltas without leaking into Token events;
+///           LlmStreamEvent::Token carries only clean conversational tokens;
+///           Stream terminates with LlmStreamEvent::Finished.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   chat_completions.rs: Ignore delta.reasoning_content or route directly to content tokens.
+#[tokio::test]
+async fn chat_completions_wire_demuxes_reasoning_content_and_think_tags() {
+    let test_timeout = Duration::from_secs(25);
+    tokio::time::timeout(test_timeout, async {
+        let captured: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+        let sse = concat!(
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"Analyzing system parameters.\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"<think>Evaluating memory bounds.</think>All systems nominal.\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let (base_url, server) = common::wire::spawn_mock_wire_server(
+            sse.as_bytes().to_vec(),
+            "text/event-stream",
+            Arc::clone(&captured),
+        );
+
+        let config = ConnectionConfig::new(&base_url, "test-model", Some("k"), Some("openai"));
+        let transport = RemoteTransport::new(config);
+        let cancel = CancellationToken::new();
+        let (tx, rx) = mpsc::channel::<LlmStreamEvent>();
+
+        let mut request = turn1_title_request();
+        request.options.reasoning = ReasoningMode::Enabled;
+
+        transport
+            .generate(request, 1, &cancel, &tx)
+            .await
+            .expect("openai reasoning wire stream must succeed");
+
+        let events = drain_wire_events(&rx);
+
+        let thinking_parts: Vec<String> = events
+            .iter()
+            .filter_map(|ev| match ev {
+                LlmStreamEvent::Thinking(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect();
+
+        let token_parts: Vec<String> = events
+            .iter()
+            .filter_map(|ev| match ev {
+                LlmStreamEvent::Token(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect();
+
+        assert!(!thinking_parts.is_empty(), "Must emit Thinking stream events");
+        let full_thinking = thinking_parts.join("");
+        assert!(
+            full_thinking.contains("Analyzing system parameters"),
+            "Thinking must contain reasoning_content: {}",
+            full_thinking
+        );
+        assert!(
+            full_thinking.contains("Evaluating memory bounds"),
+            "Thinking must contain <think> tag content: {}",
+            full_thinking
+        );
+
+        let full_tokens = token_parts.join("");
+        assert!(
+            full_tokens.contains("All systems nominal"),
+            "Tokens must contain spoken content: {}",
+            full_tokens
+        );
+        assert!(
+            !full_tokens.contains("Analyzing system parameters"),
+            "reasoning_content must NOT leak into Token events"
+        );
+        assert!(
+            !full_tokens.contains("Evaluating memory bounds"),
+            "<think> tags must NOT leak into Token events"
+        );
+
+        assert!(
+            events.iter().any(|ev| matches!(ev, LlmStreamEvent::Finished)),
+            "Stream must terminate with Finished"
+        );
+
+        server.join().expect("mock wire server must exit cleanly");
+    })
+    .await
+    .expect("chat_completions_wire_demuxes_reasoning_content_and_think_tags timed out");
+}
+
+/// PURPOSE:  Verify Ollama native NDJSON wire parser demuxes message.thinking and <think> tags into Thinking events.
+/// SCENARIO: Mock NDJSON stream delivers message.thinking in chunk 1, <think> tags in message.content in chunk 2, then tokens.
+/// ASSERTS:  LlmStreamEvent::Thinking carries the reasoning content;
+///           LlmStreamEvent::Token carries only clean conversational tokens without reasoning contamination;
+///           Stream terminates with LlmStreamEvent::Finished.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   ollama.rs: Ignore message.thinking or omit ThinkTagDemuxer on content.
+#[tokio::test]
+async fn ollama_native_wire_demuxes_thinking_field_and_think_tags() {
+    let test_timeout = Duration::from_secs(25);
+    tokio::time::timeout(test_timeout, async {
+        let captured: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+        let ndjson = concat!(
+            "{\"message\":{\"role\":\"assistant\",\"thinking\":\"Formulating strategy.\",\"content\":\"\"},\"done\":false}\n",
+            "{\"message\":{\"role\":\"assistant\",\"content\":\"<think>Validating cache lines.</think>Execution ready.\"},\"done\":false}\n",
+            "{\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true}\n",
+        );
+        let (base_url, server) = common::wire::spawn_mock_wire_server(
+            ndjson.as_bytes().to_vec(),
+            "application/x-ndjson",
+            Arc::clone(&captured),
+        );
+
+        let config = ConnectionConfig::new(&base_url, "deepseek-r1:8b", None, Some("ollama"));
+        let transport = RemoteTransport::new(config);
+        let cancel = CancellationToken::new();
+        let (tx, rx) = mpsc::channel::<LlmStreamEvent>();
+
+        let mut request = turn1_title_request();
+        request.options.reasoning = ReasoningMode::Enabled;
+
+        transport
+            .generate(request, 1, &cancel, &tx)
+            .await
+            .expect("ollama reasoning wire stream must succeed");
+
+        let events = drain_wire_events(&rx);
+
+        let thinking_parts: Vec<String> = events
+            .iter()
+            .filter_map(|ev| match ev {
+                LlmStreamEvent::Thinking(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect();
+
+        let token_parts: Vec<String> = events
+            .iter()
+            .filter_map(|ev| match ev {
+                LlmStreamEvent::Token(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect();
+
+        assert!(!thinking_parts.is_empty(), "Must emit Thinking stream events");
+        let full_thinking = thinking_parts.join("");
+        assert!(
+            full_thinking.contains("Formulating strategy"),
+            "Thinking must contain message.thinking: {}",
+            full_thinking
+        );
+        assert!(
+            full_thinking.contains("Validating cache lines"),
+            "Thinking must contain <think> tag content: {}",
+            full_thinking
+        );
+
+        let full_tokens = token_parts.join("");
+        assert!(
+            full_tokens.contains("Execution ready"),
+            "Tokens must contain spoken content: {}",
+            full_tokens
+        );
+        assert!(
+            !full_tokens.contains("Formulating strategy"),
+            "message.thinking must NOT leak into Token events"
+        );
+        assert!(
+            !full_tokens.contains("Validating cache lines"),
+            "<think> tags must NOT leak into Token events"
+        );
+
+        assert!(
+            events.iter().any(|ev| matches!(ev, LlmStreamEvent::Finished)),
+            "Stream must terminate with Finished"
+        );
+
+        server.join().expect("mock wire server must exit cleanly");
+    })
+    .await
+    .expect("ollama_native_wire_demuxes_thinking_field_and_think_tags timed out");
+}

@@ -14,6 +14,5 @@ dictation_output_test
 transcript_ingestion_test
 agentic_tool_loop_test
 harness_loop_test
-harness_pipeline_test
 remote_link_test
 remote_security_test

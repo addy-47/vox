@@ -1,6 +1,31 @@
 # Phase 14 Work Log
 
-## 2026-11-13 — Domain 1 Batch 6 Part A: Production Bug Fixes (Schema Safety, Single-Writer Latch, 0-Tool Delay & Think Tags)
+## 2026-11-14 — Domain 1 Batch 6 Part B: Test Suite Overhaul (Shared Rig, Production Wiring Parity & Seam Consolidation)
+
+- **Shared Test Infrastructure (`tests/common/harness.rs`)**:
+  - Extracted shared `HarnessRig` (aliased as `Rig`), `ScriptedLlmWorker`, and `run_scripted_worker` into `tests/common/harness.rs`.
+  - Enforced production wiring parity: `Rig::new()` spawns the authentic `vox-router` OS thread via `vox_lib::pipeline::spawn_router`.
+  - Added an authentic event-tap interceptor on `pipeline_tx` forwarding to the router thread while notifying asynchronous event observers (`event_notify`).
+  - Added synchronizing helpers `wait_for_event`, `wait_for_state`, `wait_for_session_title`, and `wait_for_turn_assistant_text` replacing all bare sleeps.
+  - Eliminated all direct calls to `on_llm_finished`, `on_playback_started`, and `on_playback_finished` across test suites; all events now route through `rig.send_event(VoxEvent::...)` and the production router.
+- **Seam Consolidation & Proliferation Elimination (`tests/harness_loop_test.rs`, `tests/tier-default.txt`)**:
+  - Folded all 13 subtests from `harness_pipeline_test.rs` into `tests/harness_loop_test.rs` (19 canonical subtests total).
+  - Deleted duplicate step ceiling test `tool_loop_reaches_max_steps_and_forces_tool_free_final_pass` in favor of canonical `the_tool_loop_stops_at_the_tool_budget`.
+  - Deleted redundant binary `tests/harness_pipeline_test.rs` and removed it from `tests/tier-default.txt`.
+- **Falsifiability & Invariant Verification (§3 Rule 2, §5.4)**:
+  - In `stream_error_clears_turn_open_and_dispatches_error_event`, verified `VoxEvent::Error` is received on the event stream with matching `turn_id`, `impact`, and error message.
+  - In `turn_cancellation_with_partial_spoken_text_commits_interrupted_turn`, eliminated thread sleeps by synchronizing cancellation with Tokio task event monitoring.
+- **End-to-End Reasoning Wire Tests (`tests/agentic_tool_loop_test.rs`)**:
+  - Added `chat_completions_wire_demuxes_reasoning_content_and_think_tags`: Mock SSE stream verifying `reasoning_content` and inline `<think>` tags demux into `LlmStreamEvent::Thinking` without leaking into `LlmStreamEvent::Token`.
+  - Added `ollama_native_wire_demuxes_thinking_field_and_think_tags`: Mock NDJSON stream verifying `message.thinking` and inline `<think>` tags demux into `LlmStreamEvent::Thinking`.
+- **Verification**:
+  - Compile Gate: `app/src-tauri/scripts/verify-targets.sh` passed cleanly with 0 warnings / 0 errors across desktop lib/bin, desktop tests/benches, desktop build, and Android clippy.
+  - Integration Test Suites:
+    - `harness_loop_test`: 19/19 passed in 5.05s.
+    - `agentic_tool_loop_test`: 11/11 passed in 1.57s.
+    - Total: 30/30 integration tests green in release mode.
+
+---
 
 - **Database Schema & Migration Safety (`persistence/schema.rs`, `database_persistence_boundary_test.rs`)**:
   - Restored `retire_positional_personal_memory_model()` and `PERSONAL_MEMORY_SEMANTIC_SCHEMA_VERSION = 9` for safe v9 legacy personal memory retirement.
