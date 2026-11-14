@@ -7,12 +7,14 @@ use parking_lot::Mutex;
 use tokio::spawn as spawn_task;
 
 use crate::{
-    core::events::PipelineMode,
+    core::events::{AudioIntent, PipelineMode, VoxEvent},
     services::{
         harness::{
             chassis::Harness,
             stages::{
-                streaming::{StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage},
+                streaming::{
+                    StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage, TextNormalizer,
+                },
                 tools::{ToolFilter, ToolRegistry},
             },
             steps::{
@@ -23,6 +25,7 @@ use crate::{
             },
             TurnExecutionRequest, TurnOutcome,
         },
+        tts::TtsCommand,
     },
 };
 
@@ -359,6 +362,33 @@ async fn handle_pass_outcome(
             if cancelled {
                 LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, String::new())))
             } else if let Some(question) = suspended_question {
+                if let Some(ref tts_tx) = ctx.req.tts_tx {
+                    let normalized = TextNormalizer::normalize_for_speech(&question);
+                    if !normalized.is_empty() {
+                        ctx.req.pending_synthesis_jobs.fetch_add(1, Relaxed);
+                        if let Err(e) = tts_tx.send(TtsCommand::Generate {
+                            turn_id,
+                            text: normalized,
+                            intent: AudioIntent::TurnResponse,
+                        }) {
+                            log::warn!(
+                                "[Harness::Loop] Failed to dispatch suspended question TTS: {}",
+                                e
+                            );
+                            ctx.req.pending_synthesis_jobs.fetch_sub(1, Relaxed);
+                        }
+                    }
+                }
+                if let Err(e) = ctx
+                    .stream_handles
+                    .event_tx
+                    .send(VoxEvent::LlmFinished { turn_id })
+                {
+                    log::warn!(
+                        "[Harness::Loop] Failed to emit LlmFinished on turn suspension: {}",
+                        e
+                    );
+                }
                 LoopAction::Terminal(step7_commit_completed(ctx.harness_arc, turn_id, question))
             } else {
                 LoopAction::Continue

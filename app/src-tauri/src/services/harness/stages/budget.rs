@@ -45,7 +45,18 @@ impl ContextBudgetStage {
     pub fn calculate_tracked_tokens(&self, messages: &[ChatMessage]) -> usize {
         messages
             .iter()
-            .map(|msg| estimate_tokens(&msg.content))
+            .map(|msg| {
+                let tool_call_tokens: usize = msg
+                    .tool_calls
+                    .as_deref()
+                    .unwrap_or(&[])
+                    .iter()
+                    .map(|tc| {
+                        estimate_tokens(&tc.name) + estimate_tokens(&tc.arguments.to_string())
+                    })
+                    .sum();
+                estimate_tokens(&msg.content) + tool_call_tokens
+            })
             .sum()
     }
 
@@ -55,10 +66,7 @@ impl ContextBudgetStage {
         messages: &[ChatMessage],
         tools: Option<&[crate::services::llm::CanonicalToolDefinition]>,
     ) -> usize {
-        let history_tokens: usize = messages
-            .iter()
-            .map(|msg| estimate_tokens(&msg.content))
-            .sum();
+        let history_tokens: usize = self.calculate_tracked_tokens(messages);
         let tool_tokens: usize = match tools {
             Some(tool_list) => tool_list
                 .iter()
