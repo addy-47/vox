@@ -797,3 +797,27 @@
 - Architectural Invariants: **PASSED (`./scripts/lint-arch.sh` holds)**
 - Zero files in `tests/**` were modified during Phase 3.
 
+## 2026-11-14 — Domain 2: Adversarial Review & Lead Sign-Off Cleanups
+
+**Task:** Complete Phase 4 Adversarial Review and apply tech lead sign-off cleanups for Domain 2 (ReAct Step Loop, Concurrency Barriers & Immediate Step Commits).
+
+### Adversarial Review & Mutation Campaign
+- Adversarial Reviewer audited production and test changes under `/review` and `testing-style-guide.md`.
+- Executed mutation testing across 7 core invariant mutants (`MUTANT-1` through `MUTANT-7`).
+- Result: **7/7 mutants killed (100% kill rate, 0 surviving mutants)**.
+- Reviewer Verdict: **APPROVED**.
+
+### Lead Sign-Off Surgical Cleanups Applied
+1. **Tool Argument Token Accounting (`services/harness/stages/budget.rs`)**:
+   - Updated `calculate_tracked_tokens` to calculate tokens for `msg.tool_calls` (`name` and `arguments`) for `Role::Assistant` messages.
+   - Refactored `calculate_tracked_tokens_with_extras` to reuse `self.calculate_tracked_tokens(messages)` to prevent token undercounting.
+2. **Turn Suspension Audio & Event Dispatch (`services/harness/loop.rs`)**:
+   - In `handle_pass_outcome` when `suspended_question` is present (`ToolControlAction::SuspendForUser`), dispatched `TtsCommand::Generate` with `AudioIntent::TurnResponse` (incrementing `pending_synthesis_jobs`) and emitted `VoxEvent::LlmFinished { turn_id }` through `stream_handles.event_tx`.
+   - Guaranteed Two-Key Quiescence Latch closes cleanly upon turn suspension.
+
+### Commits
+- `69b30ff99`: `docs(harness): specify Domain 2 architecture, implementation plan, and test-driven subagent workflows`
+- `f7b90a3d6`: `feat(harness): implement Domain 2 ReAct step loop, wave barriers, and immediate step commits`
+- `4e089cf4d`: `fix(harness): account for tool arguments in token budget and dispatch audio on SuspendForUser`
+
+
