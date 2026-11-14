@@ -226,9 +226,18 @@ async fn critical_threshold_plays_the_compaction_filler() {
 
     rig.state.pipeline.set_state(InteractionState::Thinking);
 
-    let mut req = rig.turn_request("Final query exceeding threshold", 46);
-    req.llm_tx = None;
-    let _outcome = Harness::execute_turn(&rig.state.harness, req).await;
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    rig.scripted_llm.push_step(move |tx| {
+        let _ = release_rx.recv();
+        let _ = tx.send(LlmResponse::Token("Compaction response".to_string()));
+        let _ = tx.send(LlmResponse::Finished);
+    });
+
+    let req = rig.turn_request("Final query exceeding threshold", 46);
+    let harness_arc = Arc::clone(&rig.state.harness);
+    let execute_handle = tokio::spawn(async move {
+        Harness::execute_turn(&harness_arc, req).await
+    });
 
     let tts_rx = Arc::clone(&rig.tts_rx);
     let filler_cmd = tokio::task::spawn_blocking(move || {
@@ -269,7 +278,8 @@ async fn critical_threshold_plays_the_compaction_filler() {
         "pending_synthesis_jobs must be incremented when filler is dispatched"
     );
 
-    rig.state.pipeline.turn_token().cancel();
+    let _ = release_tx.send(());
+    let _ = execute_handle.await.expect("join ok");
 }
 
 // ============================================================================
@@ -619,46 +629,20 @@ async fn multi_tool_stream_accumulates_full_batch_without_early_stream_abort() {
 
         let dispatches = rig.requests();
         assert_eq!(dispatches.len(), 2, "Must be exactly 2 passes (batch pass + final synthesis)");
-    })
-    .await
-    .expect("test timed out");
-}
 
-/// PURPOSE:  Ensure tool batches execute concurrently via join_all and collect observations before next pass.
-/// SCENARIO: Stream emits 2 search_memory calls in a single pass.
-/// ASSERTS:  Both tool observations are populated in scratchpad before the second pass is dispatched.
-/// CLASS:    happy-path
-/// REQUIRES: none
-/// MUTANT:   steps.rs: Execute tools sequentially with early return on error.
-#[tokio::test]
-async fn multi_tool_stream_executes_tools_in_parallel_barrier() {
-    tokio::time::timeout(Duration::from_secs(15), async {
-        let rig = Rig::new().await;
-        let turn_id = 302;
-
-        rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
-                id: "call-parallel-1".to_string(),
-                name: "search_memory".to_string(),
-                arguments: serde_json::json!({ "query": "parallel query 1" }),
-            }));
-            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
-                id: "call-parallel-2".to_string(),
-                name: "search_memory".to_string(),
-                arguments: serde_json::json!({ "query": "parallel query 2" }),
-            }));
-            let _ = tx.send(LlmResponse::Finished);
-        });
-
-        rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Token("Parallel execution complete.".to_string()));
-            let _ = tx.send(LlmResponse::Finished);
-        });
-
-        let req = rig.turn_request("Run parallel tools", turn_id);
-        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
-
-        assert!(matches!(outcome, TurnOutcome::Completed { .. }));
+        // Assert all 3 Role::Tool messages are recorded in history
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let tool_messages: Vec<_> = harness
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::Tool)
+            .collect();
+        assert_eq!(
+            tool_messages.len(),
+            3,
+            "All 3 tool observations must be recorded in history"
+        );
     })
     .await
     .expect("test timed out");
@@ -740,6 +724,9 @@ async fn turn_cancellation_during_tool_execution_aborts_cleanly_and_clears_turn_
         let rig = Rig::new().await;
         let turn_id = 401;
 
+        // Initialize turn_open to true to verify that cancellation resets it on the router thread
+        rig.state.pipeline.set_turn_open(true);
+
         let cancel_token = rig.state.pipeline.turn_token();
         let cancel_clone = cancel_token.clone();
 
@@ -759,6 +746,20 @@ async fn turn_cancellation_during_tool_execution_aborts_cleanly_and_clears_turn_
         match outcome {
             TurnOutcome::Cancelled { .. } => {}
             other => panic!("Expected Cancelled outcome, got {:?}", other),
+        }
+
+        // Wait for router thread to process VoxEvent::Cancelled and reset turn_open
+        let _ = rig
+            .wait_for_event(
+                |ev| matches!(ev, VoxEvent::Cancelled { turn_id: tid, .. } if *tid == turn_id),
+                Duration::from_secs(5),
+            )
+            .await
+            .expect("VoxEvent::Cancelled must be emitted on event channel");
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while tokio::time::Instant::now() < deadline && rig.state.pipeline.is_turn_open() {
+            tokio::task::yield_now().await;
         }
 
         assert!(!rig.state.pipeline.is_turn_open(), "turn_open must be reset to false on cancellation");
@@ -878,6 +879,9 @@ async fn stream_error_clears_turn_open_and_dispatches_error_event() {
         let rig = Rig::new().await;
         let turn_id = 404;
 
+        // Initialize turn_open to true to verify that error handling resets it on the router thread
+        rig.state.pipeline.set_turn_open(true);
+
         rig.scripted_llm.push_step(move |tx| {
             let _ = tx.send(LlmResponse::Error(PipelineError {
                 turn_id,
@@ -911,6 +915,11 @@ async fn stream_error_clears_turn_open_and_dispatches_error_event() {
             assert_eq!(err.turn_id, turn_id);
             assert_eq!(err.impact, PipelineImpact::TurnAborted);
             assert!(err.message.contains("Upstream model service timeout"));
+        }
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while tokio::time::Instant::now() < deadline && rig.state.pipeline.is_turn_open() {
+            tokio::task::yield_now().await;
         }
 
         assert!(!rig.state.pipeline.is_turn_open(), "turn_open must be false after error");

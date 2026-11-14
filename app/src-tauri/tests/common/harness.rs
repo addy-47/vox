@@ -1658,6 +1658,10 @@ impl HarnessRig {
     }
 
     pub fn turn_request(&self, query: &str, turn_id: u32) -> vox_lib::services::harness::TurnExecutionRequest {
+        self.state
+            .pipeline
+            .turn_id
+            .store(turn_id, std::sync::atomic::Ordering::Relaxed);
         vox_lib::services::harness::TurnExecutionRequest {
             query: query.to_string(),
             turn_id,
@@ -1779,19 +1783,19 @@ impl Drop for HarnessRig {
         let _ = self.pipeline_tx.send(VoxEvent::Shutdown);
         let _ = self.llm_tx.send(LlmCommand::Shutdown);
         if let Some(join) = self.event_tap_join.take() {
-            let _ = join.join();
+            join.join().expect("event_tap worker thread panicked");
         }
         if let Some(join) = self.router_join.take() {
-            let _ = join.join();
+            join.join().expect("router worker thread panicked");
         }
         if let Some(join) = self.llm_join.take() {
-            let _ = join.join();
+            join.join().expect("llm worker thread panicked");
         }
         if let Some(tx) = self.state.persist_tx.lock().take() {
             let _ = tx.send(vox_lib::persistence::PersistenceEvent::Shutdown);
         }
         if let Some(join) = self.persist_forwarder_join.take() {
-            let _ = join.join();
+            join.join().expect("persist_forwarder worker thread panicked");
         }
     }
 }

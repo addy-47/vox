@@ -104,6 +104,7 @@ async fn run_cognitive_loop(
             harness_arc,
             turn_id,
             "No pipeline event channel".to_string(),
+            None,
         );
     };
 
@@ -171,7 +172,14 @@ async fn execute_loop_iterations(
         let generation_request =
             match step4_assemble_request(ctx.harness_arc, &scratchpad, turn_id, allow_tools) {
                 Ok(req_obj) => req_obj,
-                Err(e) => return step7_handle_error(ctx.harness_arc, turn_id, e),
+                Err(e) => {
+                    return step7_handle_error(
+                        ctx.harness_arc,
+                        turn_id,
+                        e,
+                        Some(&ctx.stream_handles.event_tx),
+                    )
+                }
             };
 
         // === STEP 5: Dispatch Request to Duplex LLM Pipe ===
@@ -183,7 +191,14 @@ async fn execute_loop_iterations(
             &ctx.req.cancel,
         ) {
             Ok(rx) => rx,
-            Err(err) => return step7_handle_error(ctx.harness_arc, turn_id, err),
+            Err(err) => {
+                return step7_handle_error(
+                    ctx.harness_arc,
+                    turn_id,
+                    err,
+                    Some(&ctx.stream_handles.event_tx),
+                )
+            }
         };
 
         // === STEP 6: Stream Tokens & Intercept Tool Calls ===
@@ -221,7 +236,14 @@ async fn execute_loop_iterations(
                     }
                 }
             }
-            Err(err) => return step7_handle_error(ctx.harness_arc, turn_id, err),
+            Err(err) => {
+                return step7_handle_error(
+                    ctx.harness_arc,
+                    turn_id,
+                    err,
+                    Some(&ctx.stream_handles.event_tx),
+                )
+            }
         }
     }
 
@@ -229,6 +251,7 @@ async fn execute_loop_iterations(
         ctx.harness_arc,
         turn_id,
         "Exceeded max tool iterations without terminal response".to_string(),
+        Some(&ctx.stream_handles.event_tx),
     )
 }
 
@@ -309,7 +332,7 @@ async fn handle_pass_outcome(
             LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, partial_text)))
         }
         StreamPassOutcome::Error(err) => {
-            LoopAction::Terminal(step7_handle_error(ctx.harness_arc, turn_id, err))
+            LoopAction::Terminal(step7_handle_error(ctx.harness_arc, turn_id, err, None))
         }
         StreamPassOutcome::ToolCallsReceived {
             preamble_text,
@@ -352,5 +375,7 @@ fn cancelled_ctx<'a>(
         user_text: ctx.req.query.clone(),
         partial_text,
         app_state: &ctx.req.app_state,
+        event_tx: Some(&ctx.stream_handles.event_tx),
+        owner: ctx.req.owner,
     }
 }

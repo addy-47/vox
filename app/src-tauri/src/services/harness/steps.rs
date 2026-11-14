@@ -9,8 +9,8 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     core::{
         events::{
-            ActivityEnvelope, ActivityKind, AudioIntent, IpcEmitter, IpcEvent,
-            PipelineMode, ACTIVITY_COMPACTION,
+            ActivityEnvelope, ActivityKind, AudioIntent, InteractionOwner, IpcEmitter, IpcEvent,
+            PipelineMode, VoxEvent, ACTIVITY_COMPACTION,
         },
         state::{AppState, AppWindow, InteractionState},
     },
@@ -562,6 +562,8 @@ pub struct CancelledTurnContext<'a> {
     pub user_text: String,
     pub partial_text: String,
     pub app_state: &'a AppState,
+    pub event_tx: Option<&'a std::sync::mpsc::Sender<VoxEvent>>,
+    pub owner: InteractionOwner,
 }
 
 /// Handles Phase 7 Branch B: turn cancellation / user barge-in (Invariant 13).
@@ -571,6 +573,13 @@ pub fn step7_handle_cancelled(ctx: CancelledTurnContext<'_>) -> TurnOutcome {
         ctx.turn_id,
         ctx.partial_text.len()
     );
+
+    if let Some(tx) = ctx.event_tx {
+        let _ = tx.send(VoxEvent::Cancelled {
+            turn_id: ctx.turn_id,
+            owner: ctx.owner,
+        });
+    }
 
     let mut guard = ctx.harness_arc.lock();
     if !ctx.partial_text.trim().is_empty() {
@@ -613,12 +622,22 @@ pub fn step7_handle_error(
     harness_arc: &Arc<Mutex<Option<Harness>>>,
     turn_id: u32,
     message: String,
+    event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
 ) -> TurnOutcome {
     log::error!("[Harness::Finalize] Turn {} failed: {}", turn_id, message);
 
     let mut guard = harness_arc.lock();
     if let Some(ref mut harness) = *guard {
         harness.history.rollback_last_user_turn();
+    }
+
+    if let Some(tx) = event_tx {
+        let _ = tx.send(VoxEvent::Error(crate::core::error::PipelineError {
+            turn_id,
+            message: message.clone(),
+            source: "Harness".to_string(),
+            impact: crate::core::error::PipelineImpact::TurnAborted,
+        }));
     }
 
     TurnOutcome::Error { turn_id, message }
