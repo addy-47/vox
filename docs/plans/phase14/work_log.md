@@ -1,5 +1,32 @@
 # Phase 14 Work Log
 
+## 2026-11-14 — Domain 1 Final Cleanups: Terminal Event Routing & Test Parity (Lead Sign-Off)
+
+- **Terminal Event Routing Outside `router.rs` (`services/harness/steps.rs`, `services/harness/loop.rs`)**:
+  - Updated `CancelledTurnContext` to include `event_tx: Option<&Sender<VoxEvent>>` and `owner: InteractionOwner`.
+  - In `step7_handle_cancelled`, dispatched `VoxEvent::Cancelled { turn_id, owner }` on `event_tx` so cancellation during tool execution or between passes always reaches the `vox-router` OS thread and resets turn guards (`turn_open = false`).
+  - In `step7_handle_error`, added `event_tx: Option<&Sender<VoxEvent>>` parameter and dispatched `VoxEvent::Error` on terminal failure paths in `loop.rs` (`step4_assemble_request`, `step5_dispatch_llm`, stream timeout / disconnect, or loop iteration exhaustion), passing `None` when `router.rs` already emitted the error.
+- **Test Infrastructure & Parity Cleanups (`tests/harness_loop_test.rs`, `tests/common/harness.rs`)**:
+  - Deleted premature test `multi_tool_stream_executes_tools_in_parallel_barrier` (reserved for Domain 2 concurrent barrier implementation).
+  - In `multi_tool_stream_accumulates_full_batch_without_early_stream_abort`, added assertions verifying all 3 `Role::Tool` messages are committed to conversation history.
+  - In `HarnessRig::Drop`, eliminated swallowed join handles by replacing `let _ = join.join();` with `.expect("... panicked")` across `event_tap_join`, `router_join`, `llm_join`, and `persist_forwarder_join` (`testing-style-guide.md §14`).
+  - In `HarnessRig::turn_request`, stored active `turn_id` into `self.state.pipeline.turn_id` so router event guards (`peek_turn_id()`) correctly match incoming `VoxEvent::Cancelled` and `VoxEvent::Error` events.
+  - In `turn_cancellation_during_tool_execution_aborts_cleanly_and_clears_turn_open` and `stream_error_clears_turn_open_and_dispatches_error_event`, verified `turn_open` transitions from `true` to `false` via the router thread.
+  - In `critical_threshold_plays_the_compaction_filler`, replaced artificial `llm_tx = None` error with channel synchronization, verifying `InteractionState::Working` and `pending_synthesis_jobs` during live compaction.
+- **Verification**:
+  - Integration Test Suites:
+    - `harness_loop_test`: 18/18 passed in 5.30s.
+    - `agentic_tool_loop_test`: 11/11 passed in 1.95s.
+    - Total: 29/29 integration tests green in release mode.
+  - Compile Gate: `app/src-tauri/scripts/verify-targets.sh` passed cleanly with 0 warnings / 0 errors across:
+    - Backend architectural invariant lint (`lint-arch.sh`)
+    - Desktop lib and bin (`cargo clippy --bin Vox --lib --release -D warnings`)
+    - Desktop tests and benches (`cargo clippy --tests --benches --release -D warnings`)
+    - Desktop build (Vox binary + sidecars)
+    - Android cross-compile (`cargo clippy --target aarch64-linux-android --lib --release`)
+
+---
+
 ## 2026-11-14 — Domain 1 Batch 6 Part B: Test Suite Overhaul (Shared Rig, Production Wiring Parity & Seam Consolidation)
 
 - **Shared Test Infrastructure (`tests/common/harness.rs`)**:
