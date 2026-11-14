@@ -18,9 +18,11 @@ pub fn on_playback_started<R: tauri::Runtime>(
     state: &AppState,
     ctx: &RoutingContext,
 ) {
-    if state.pipeline.is_turn_open() && intent == AudioIntent::InterimFiller {
+    let current_state = state.pipeline.state();
+
+    if current_state == InteractionState::Working && intent == AudioIntent::InterimFiller {
         log::debug!(
-            "[Pipeline::Playback] Interim filler playback started while turn_open=true (turn {}) - remaining in current state",
+            "[Pipeline::Playback] Interim filler playback started while in Working state (turn {}) - remaining in Working",
             turn_id
         );
         return;
@@ -28,7 +30,6 @@ pub fn on_playback_started<R: tauri::Runtime>(
 
     state.pipeline.clear_drained_while_open();
 
-    let current_state = state.pipeline.state();
     if current_state != InteractionState::Thinking && current_state != InteractionState::Working {
         log::debug!(
             "[Pipeline::Playback] PlaybackStarted dropped (turn {}): state is {:?}, expected Thinking or Working",

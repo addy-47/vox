@@ -154,6 +154,61 @@ The implementation is structured into 5 sequential atomic batches based on share
 - **Build Health:** Green across `./scripts/verify-targets.sh`.
 - **Done Criteria:** Pipeline transitions cleanly through `Thinking` $\to$ `Working` $\to$ `Speaking` $\to$ `Ready` on 0-tool and multi-tool turns.
 
+### Batch 6: Production Bug Remediation & Test Suite Overhaul (Lead Audit Alignment)
+
+This batch resolves the P0 production defects and 5 testing violations flagged in the Lead Audit.
+
+#### Part A: P0 Production Bug Fixes
+
+1. **Restore Migration Logic & Table Rebuild (`persistence/schema.rs`):**
+   - Restore `retire_positional_personal_memory_model()` (v9 migration).
+   - Restore error propagation `?` and index creation in `ensure_voice_metadata_columns()`.
+   - Rebuild `session_tool_calls` cleanly under `PRAGMA foreign_keys = OFF;`:
+     `CREATE TABLE session_tool_calls_v2 ...; INSERT INTO session_tool_calls_v2 SELECT ...; DROP TABLE session_tool_calls; ALTER TABLE session_tool_calls_v2 RENAME TO session_tool_calls;`
+     Re-enable `PRAGMA foreign_keys = ON;`. Propagate errors with `?`.
+
+2. **Single-Writer Router Authority for `turn_open` (`loop.rs` & `llm.rs`):**
+   - Remove off-router `ctx.req.app_state.pipeline.clear_turn_open()` calls from Tokio task in `loop.rs:297, 310, 314, 327, 339`.
+   - Maintain `RULE-EVT-01`: `vox-router` is the sole writer of pipeline states and turn lifecycles.
+   - Replace `state.engine.try_lock().unwrap_or(false)` in `llm.rs` with `state.engine.lock()`.
+
+3. **Fix 6-Second `Thinking` Delay on 0-Tool Turns (`playback.rs`):**
+   - Update `on_playback_started`:
+     - If `current_state == InteractionState::Working && intent == AudioIntent::InterimFiller`: return early (remain in `Working`).
+     - If `current_state == InteractionState::Thinking`: transition `Thinking -> Speaking` immediately when audio starts playing on speakers.
+     - When tool calls arrive, `steps.rs` transitions `Speaking -> Working`.
+
+4. **Multi-byte UTF-8 & Case-Insensitive Safety (`think_tags.rs`):**
+   - Prevent byte-slice panics on multi-byte UTF-8 boundaries.
+   - Handle case-insensitive `<think>` / `<THINK>` tags safely.
+
+#### Part B: Test Suite Overhaul per `testing-style-guide.md`
+
+1. **Fold Seam Proliferation (§1 & §6):**
+   - Fold `tests/harness_pipeline_test.rs` and `tests/harness_loop_test.rs` into a single canonical seam binary: `tests/harness_loop_test.rs` (15 subtests total).
+   - Move shared `Rig` and `ScriptedLlmWorker` into `tests/common/harness.rs`.
+   - Delete duplicate `tool_loop_reaches_max_steps_and_forces_tool_free_final_pass`.
+   - Delete redundant binary `tests/harness_pipeline_test.rs`.
+
+2. **Production Wiring Parity (§6.1):**
+   - In `Rig`, spawn the real `spawn_router` loop.
+   - Eliminate direct calls to internal handlers (`on_llm_finished`, `on_playback_started`, `on_playback_finished`) in tests. Route all events through `pipeline_tx`.
+
+3. **Verify Unasserted Claims (§3 Rule 2):**
+   - In `stream_error_clears_turn_open_and_dispatches_error_event`, assert `VoxEvent::Error` is received on `pipeline_rx`.
+
+4. **Fix Test Naming (§4):**
+   - Rename banned `test_*` prefixes in `think_tags.rs` to `<subject>_<scenario>_<outcome>`.
+
+5. **End-to-End Wire Tests for Reasoning Demuxing:**
+   - In `agentic_tool_loop_test.rs`, add mock SSE/NDJSON payloads with `<think>` tags and `reasoning_content` to verify `chat_completions.rs` and `ollama.rs` demuxing end-to-end.
+
+#### Part C: Verification & Review Gates
+
+- **Compile Gate:** `./scripts/verify-targets.sh` (desktop clippy `-D warnings`, android cross-check).
+- **Test Gate:** `cargo nextest run --release --test-threads=1 --no-fail-fast`.
+- **Review Gate:** Dedicated Adversarial Review subagent using `/review` and `testing-style-guide.md`.
+
 ---
 
 ## 5. Risks and Technical Inferences

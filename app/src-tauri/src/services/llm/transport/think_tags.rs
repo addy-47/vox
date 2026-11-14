@@ -55,7 +55,7 @@ impl ThinkTagDemuxer {
 
             match self.state {
                 DemuxState::Normal => {
-                    if let Some(pos) = self.buffer.find(OPEN_TAG) {
+                    if let Some(pos) = find_case_insensitive(&self.buffer, OPEN_TAG) {
                         let prefix = &self.buffer[..pos];
                         if !prefix.is_empty() {
                             let _ = tx.send(LlmStreamEvent::Token(prefix.to_string()));
@@ -63,14 +63,7 @@ impl ThinkTagDemuxer {
                         self.buffer.drain(..pos + OPEN_TAG.len());
                         self.state = DemuxState::Thinking;
                     } else {
-                        let mut matched_len = 0;
-                        for len in (1..OPEN_TAG.len()).rev() {
-                            let prefix = &OPEN_TAG[..len];
-                            if self.buffer.ends_with(prefix) {
-                                matched_len = len;
-                                break;
-                            }
-                        }
+                        let matched_len = match_partial_suffix(&self.buffer, OPEN_TAG);
 
                         if matched_len > 0 {
                             let safe_len = self.buffer.len() - matched_len;
@@ -88,7 +81,7 @@ impl ThinkTagDemuxer {
                     }
                 }
                 DemuxState::Thinking => {
-                    if let Some(pos) = self.buffer.find(CLOSE_TAG) {
+                    if let Some(pos) = find_case_insensitive(&self.buffer, CLOSE_TAG) {
                         let prefix = &self.buffer[..pos];
                         if !prefix.is_empty() {
                             let _ = tx.send(LlmStreamEvent::Thinking(prefix.to_string()));
@@ -96,14 +89,7 @@ impl ThinkTagDemuxer {
                         self.buffer.drain(..pos + CLOSE_TAG.len());
                         self.state = DemuxState::Normal;
                     } else {
-                        let mut matched_len = 0;
-                        for len in (1..CLOSE_TAG.len()).rev() {
-                            let prefix = &CLOSE_TAG[..len];
-                            if self.buffer.ends_with(prefix) {
-                                matched_len = len;
-                                break;
-                            }
-                        }
+                        let matched_len = match_partial_suffix(&self.buffer, CLOSE_TAG);
 
                         if matched_len > 0 {
                             let safe_len = self.buffer.len() - matched_len;
@@ -123,6 +109,45 @@ impl ThinkTagDemuxer {
             }
         }
     }
+}
+
+/// Finds the starting byte offset of an ASCII tag case-insensitively within a UTF-8 string.
+/// Guarantees that the returned offset lies on a valid UTF-8 character boundary.
+fn find_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
+    if needle.len() > haystack.len() {
+        return None;
+    }
+    let needle_bytes = needle.as_bytes();
+    let haystack_bytes = haystack.as_bytes();
+    for i in 0..=(haystack_bytes.len() - needle_bytes.len()) {
+        if haystack.is_char_boundary(i)
+            && haystack.is_char_boundary(i + needle_bytes.len())
+            && haystack_bytes[i..i + needle_bytes.len()].eq_ignore_ascii_case(needle_bytes)
+        {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Matches a partial prefix of `needle` at the end of `haystack` case-insensitively.
+/// Guarantees that the start of the matched suffix lies on a valid UTF-8 character boundary.
+fn match_partial_suffix(haystack: &str, needle: &str) -> usize {
+    let needle_bytes = needle.as_bytes();
+    let haystack_bytes = haystack.as_bytes();
+    for len in (1..needle_bytes.len()).rev() {
+        if haystack_bytes.len() >= len {
+            let start = haystack_bytes.len() - len;
+            if haystack.is_char_boundary(start) {
+                let suffix = &haystack_bytes[start..];
+                let prefix = &needle_bytes[..len];
+                if suffix.eq_ignore_ascii_case(prefix) {
+                    return len;
+                }
+            }
+        }
+    }
+    0
 }
 
 #[cfg(test)]
@@ -203,6 +228,81 @@ mod tests {
             vec![
                 LlmStreamEvent::Token("<table class=\"data\">".to_string()),
                 LlmStreamEvent::Token("value".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_case_insensitive_uppercase_think_tags() {
+        let (tx, rx) = mpsc::channel();
+        let mut demuxer = ThinkTagDemuxer::new();
+
+        demuxer.feed("<THINK>Uppercase reasoning</THINK>Answer", &tx);
+        demuxer.flush(&tx);
+
+        let events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(
+            events,
+            vec![
+                LlmStreamEvent::Thinking("Uppercase reasoning".to_string()),
+                LlmStreamEvent::Token("Answer".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_case_insensitive_mixed_case_think_tags() {
+        let (tx, rx) = mpsc::channel();
+        let mut demuxer = ThinkTagDemuxer::new();
+
+        demuxer.feed("<Think>Mixed reasoning</Think>Done", &tx);
+        demuxer.flush(&tx);
+
+        let events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(
+            events,
+            vec![
+                LlmStreamEvent::Thinking("Mixed reasoning".to_string()),
+                LlmStreamEvent::Token("Done".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_multibyte_utf8_cjk_and_emojis() {
+        let (tx, rx) = mpsc::channel();
+        let mut demuxer = ThinkTagDemuxer::new();
+
+        demuxer.feed("こんにちは 🤖 <THINK> 思案中... 🚀 </THINK> さようなら 🎉", &tx);
+        demuxer.flush(&tx);
+
+        let events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(
+            events,
+            vec![
+                LlmStreamEvent::Token("こんにちは 🤖 ".to_string()),
+                LlmStreamEvent::Thinking(" 思案中... 🚀 ".to_string()),
+                LlmStreamEvent::Token(" さようなら 🎉".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_multibyte_utf8_split_at_boundary() {
+        let (tx, rx) = mpsc::channel();
+        let mut demuxer = ThinkTagDemuxer::new();
+
+        demuxer.feed("ユーザー: 🤖 <THI", &tx);
+        demuxer.feed("NK>プログラミング</THINK> 完了 🚀", &tx);
+        demuxer.flush(&tx);
+
+        let events: Vec<_> = rx.try_iter().collect();
+        assert_eq!(
+            events,
+            vec![
+                LlmStreamEvent::Token("ユーザー: 🤖 ".to_string()),
+                LlmStreamEvent::Thinking("プログラミング".to_string()),
+                LlmStreamEvent::Token(" 完了 🚀".to_string()),
             ]
         );
     }

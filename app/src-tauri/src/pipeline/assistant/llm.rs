@@ -107,13 +107,12 @@ fn evaluate_synthesis_latch<R: tauri::Runtime>(
         .pipeline
         .pending_synthesis_jobs
         .load(Ordering::Relaxed);
-    let sink_active = if let Ok(guard) = state.engine.try_lock() {
+    let sink_active = {
+        let guard = state.engine.blocking_lock();
         guard
             .as_ref()
             .map(|e| e.playback_engine.occupied_len() > 0 || e.playback_engine.buffer_len() > 0)
             .unwrap_or(false)
-    } else {
-        false
     };
 
     let audio_active = pending_jobs > 0 || sink_active;

@@ -294,7 +294,6 @@ async fn handle_pass_outcome(
                 turn_id,
                 assistant_text.len()
             );
-            ctx.req.app_state.pipeline.clear_turn_open();
             if cancel_atomic.load(Relaxed) {
                 LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, assistant_text)))
             } else {
@@ -307,11 +306,9 @@ async fn handle_pass_outcome(
             }
         }
         StreamPassOutcome::Cancelled { partial_text } => {
-            ctx.req.app_state.pipeline.clear_turn_open();
             LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, partial_text)))
         }
         StreamPassOutcome::Error(err) => {
-            ctx.req.app_state.pipeline.clear_turn_open();
             LoopAction::Terminal(step7_handle_error(ctx.harness_arc, turn_id, err))
         }
         StreamPassOutcome::ToolCallsReceived {
@@ -324,7 +321,6 @@ async fn handle_pass_outcome(
                     "[Harness::Loop] Discarding {} tool calls during final tool-free pass; committing text.",
                     calls.len()
                 );
-                ctx.req.app_state.pipeline.clear_turn_open();
                 return LoopAction::Terminal(step7_commit_completed(
                     ctx.harness_arc,
                     turn_id,
@@ -336,7 +332,6 @@ async fn handle_pass_outcome(
             let cancelled =
                 step6_handle_tool_batch(ctx, calls, &preamble_text, scratchpad).await;
             if cancelled {
-                ctx.req.app_state.pipeline.clear_turn_open();
                 LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, String::new())))
             } else {
                 LoopAction::Continue

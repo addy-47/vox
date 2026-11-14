@@ -12,6 +12,7 @@ pub type Result<T> = std::result::Result<T, PersistenceError>;
 
 pub const SCHEMA_VERSION: u32 = 16;
 
+const PERSONAL_MEMORY_SEMANTIC_SCHEMA_VERSION: u32 = 9;
 const EMPTY_PERSONAL_MEMORY_JSON: &str = r#"{"sections":[]}"#;
 
 const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
@@ -210,6 +211,10 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         }
     };
 
+    if current_version == PERSONAL_MEMORY_SEMANTIC_SCHEMA_VERSION {
+        retire_positional_personal_memory_model(conn).await?;
+    }
+
     if current_version < SCHEMA_VERSION {
         log::info!(
             "[Persistence::Schema] Migrating database schema from v{} to v{}",
@@ -257,9 +262,62 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         }
 
         if current_version > 0 && current_version < 16 {
-            let _ = conn
-                .execute("ALTER TABLE session_tool_calls DROP COLUMN tool_kind;", ())
-                .await;
+            let has_tool_kind: bool = {
+                let mut rows = conn.query("PRAGMA table_info(session_tool_calls);", ()).await?;
+                let mut found = false;
+                while let Some(row) = rows.next().await? {
+                    let col_name: String = row.get(1)?;
+                    if col_name == "tool_kind" {
+                        found = true;
+                        break;
+                    }
+                }
+                found
+            };
+
+            if has_tool_kind {
+                conn.execute("PRAGMA foreign_keys = OFF;", ()).await?;
+
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS session_tool_calls_v2 (
+                        id TEXT PRIMARY KEY,
+                        session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                        turn_id INTEGER NOT NULL,
+                        tool_name TEXT NOT NULL,
+                        arguments TEXT NOT NULL,
+                        result TEXT,
+                        is_error INTEGER NOT NULL DEFAULT 0,
+                        duration_ms INTEGER,
+                        created_at INTEGER NOT NULL
+                    );",
+                    (),
+                )
+                .await?;
+
+                conn.execute(
+                    "INSERT INTO session_tool_calls_v2 (id, session_id, turn_id, tool_name, arguments, result, is_error, duration_ms, created_at)
+                     SELECT id, session_id, turn_id, tool_name, arguments, result, is_error, duration_ms, created_at
+                     FROM session_tool_calls;",
+                    (),
+                )
+                .await?;
+
+                conn.execute("DROP TABLE session_tool_calls;", ()).await?;
+                conn.execute("ALTER TABLE session_tool_calls_v2 RENAME TO session_tool_calls;", ()).await?;
+
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_tool_calls_session_turn ON session_tool_calls(session_id, turn_id);",
+                    (),
+                )
+                .await?;
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON session_tool_calls(created_at DESC);",
+                    (),
+                )
+                .await?;
+
+                conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
+            }
         }
 
         let pragma_version = format!("PRAGMA user_version = {};", SCHEMA_VERSION);
@@ -324,24 +382,71 @@ async fn ensure_voice_metadata_columns(conn: &Connection) -> Result<()> {
         }
     }
 
-    let _ = conn
-        .execute(
-            "UPDATE voices SET provider_id = 'chatterbox', source_kind = 'pre_baked'
-             WHERE id LIKE 'chatterbox_voice_%' OR id LIKE 'chatterbox_%';",
-            (),
-        )
-        .await;
-    let _ = conn
-        .execute(
-            "UPDATE voices SET provider_id = 'zipvoice'
-             WHERE source_kind = 'zipvoice_pack';",
-            (),
-        )
-        .await;
+    conn.execute(
+        "UPDATE voices SET provider_id = 'chatterbox', source_kind = 'pre_baked'
+         WHERE id LIKE 'chatterbox_voice_%' OR id LIKE 'chatterbox_%';",
+        (),
+    )
+    .await?;
+    conn.execute(
+        "UPDATE voices SET provider_id = 'zipvoice'
+         WHERE source_kind = 'zipvoice_pack';",
+        (),
+    )
+    .await?;
 
-    let _ = conn.execute("DROP TABLE IF EXISTS voice_favorites;", ()).await;
-    let _ = conn.execute("DROP TABLE IF EXISTS voice_recents;", ()).await;
-    let _ = conn.execute("DROP TABLE IF EXISTS remote_voice_cache;", ()).await;
+    conn.execute("DROP TABLE IF EXISTS voice_favorites;", ()).await?;
+    conn.execute("DROP TABLE IF EXISTS voice_recents;", ()).await?;
+    conn.execute("DROP TABLE IF EXISTS remote_voice_cache;", ()).await?;
 
+    Ok(())
+}
+
+/// Retires the positional Personal Memory model left behind by a v9 database on disk.
+async fn retire_positional_personal_memory_model(conn: &Connection) -> Result<()> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    conn.execute("DROP INDEX IF EXISTS idx_suggestions_pending;", ())
+        .await?;
+    conn.execute("DROP INDEX IF EXISTS idx_suggestions_status_proj;", ())
+        .await?;
+    conn.execute("DROP INDEX IF EXISTS idx_suggestions_created;", ())
+        .await?;
+    conn.execute("DROP TABLE IF EXISTS personal_memory_suggestions;", ())
+        .await?;
+
+    conn.execute(
+        "UPDATE personal_memory SET content = ? WHERE content IS NULL OR TRIM(content) = '' OR content NOT LIKE '{%'",
+        (EMPTY_PERSONAL_MEMORY_JSON,),
+    )
+    .await?;
+
+    conn.execute(
+        "UPDATE memory_facts SET status = 'integrated', updated_at = ? WHERE status = 'consolidated'",
+        (now,),
+    )
+    .await?;
+    conn.execute(
+        "UPDATE memory_facts SET status = 'active', updated_at = ? WHERE status = 'staged'",
+        (now,),
+    )
+    .await?;
+    conn.execute(
+        "UPDATE memory_facts_vectors SET status = 'integrated' WHERE status = 'consolidated'",
+        (),
+    )
+    .await?;
+    conn.execute(
+        "UPDATE memory_facts_vectors SET status = 'active' WHERE status = 'staged'",
+        (),
+    )
+    .await?;
+
+    log::info!(
+        "[Persistence::Schema] Retired the positional Personal Memory model (v9 artifacts removed)"
+    );
     Ok(())
 }

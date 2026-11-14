@@ -60,16 +60,21 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
 tursodb ~/.vox/vox.db "SELECT name FROM sqlite_master WHERE type='table';"
 ```
 
-### 4.2 Code Modification Gate
+### 4.2 Skill & Rule Gating (Mandatory Autonomous Skill Exploitation)
 
-> 🛑 **Before touching code:** Read the corresponding style guide and engineer rule file in `.agents/rules/` for the area you are working on.These are the hard rules that must be followed no matter the task you are working on. 
->
+> 🛑 **Autonomous Skill & Rule Loading:** Vox provides 40+ specialized skills in `.agents/skills/` and `~/.gemini/config/skills/`. Agents MUST autonomously search, read, and enforce the matching skill and engineer rule files in `.agents/rules/` before acting in any role:
+> - **Architecture & System Design:** Read `/architect` and enforce `architectural-invariants.md`.
+> - **Writing / Modifying Tests:** Read `/create-test` and enforce `testing-style-guide.md`.
+> - **Code Implementation & Refactoring:** Read `/implement` and the layer's rule file (`backend-style-guide.md`, `android-style-guide.md`, etc.).
+> - **Adversarial Code & Test Review:** Read `/review`, `/review-ui`, and `testing-style-guide.md`.
+> - **Debugging & Root Cause Analysis:** Read `/rca`.
+> Never wait for explicit user prompting to load required skills. If a task involves a known engineering activity, exploit the corresponding skill immediately.
 
 ### 4.3 Code Style and Engineering Integrity (Non-Negotiable)
 
 **CSG-01 — Code Hygiene:** No inline crate imports or direct crate:: path usage, excessive comments, magic numbers, or hardcoded strings and paths. Follow established repository conventions and use explicit configuration where appropriate.
 
-**CSG-02 — Test Discipline:** Never write or modify tests without first reading the testing style guide and following the `/create-test` workflow.
+**CSG-02 — Test Discipline:** Follow the test discipline and skill workflow defined in §4.2. Never write or modify tests without first reading `testing-style-guide.md` and `/create-test`.
 
 **CSG-03 — Root Cause Over Bandaids (First-Step Diagnostic Gate):** Never patch symptoms while leaving the underlying problem unresolved. Before writing or proposing any code change, every agent MUST pause at the initial thinking step and answer these 5 mandatory diagnostic questions:
 1. *What is the fundamental root cause, and is this failure caused upstream (e.g. invalid test asset, artificial delay, test harness pacing, missing prerequisite)?*
@@ -86,6 +91,21 @@ If the failure is caused by an upstream or faulty test input, STOP immediately a
 **CSG-06 — No Silent Compromises:** Never conceal design flaws, ignore architectural conflicts, or invent requirements to force an implementation through. Surface material risks and seek clarification when necessary. Do not claim completion without validating the implementation and reporting unresolved issues.
 
 **Core principle:** Think critically before implementing. Diagnose before patching. Challenge before agreeing. Design before hacking. Engineering integrity takes precedence over convenience and blind compliance.
+
+### 4.4 Subagent Orchestration & Execution Invariants (Non-Negotiable)
+
+1. **Strictly Sequential Lifecycle (Zero Parallel Spawning):**
+   Subagents MUST execute in a strict sequential dependency order. Never launch implementation, testing, or review subagents concurrently or in parallel:
+   $$\text{Architecture / Spec} \longrightarrow \text{Atomic Implementation} \longrightarrow \text{Test Engineering} \longrightarrow \text{Adversarial Review}$$
+   Every phase must pass its completion gate and compile cleanly before the next agent is spawned.
+
+2. **Adversarial Reviewer as Final Blocking Gate:**
+   The Review subagent MUST run strictly at the end, after all implementation and tests are complete. It must review BOTH production code AND test code against style guides and skills (per §4.2):
+   - Review production code for concurrency leaks, single-writer invariants, and memory bugs.
+   - Review tests for production wiring parity (no bypassing `spawn_router` with direct handler calls), zero bare sleeps, single seam binary discipline, and valid `ASSERTS:` claims.
+
+3. **Context Handoff & Failure Escalation:**
+   Parent orchestrators must supply subagents with explicit boundaries, verbatim reviews, and clear batch criteria. If a subagent encounters an upstream architectural defect or regression, it must stop and escalate rather than writing downstream mocks or bypassing gates.
 
 ---
 

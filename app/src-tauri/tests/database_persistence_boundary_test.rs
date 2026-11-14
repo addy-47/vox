@@ -260,7 +260,7 @@ async fn session_delete_cascades_to_its_child_rows() {
 
         conn.execute(
             "INSERT INTO session_tool_calls (id, session_id, turn_id, tool_name, arguments, result, is_error, duration_ms, created_at) \
-             VALUES ('call_cascade_test', ?, 1, 'respond_and_set_title', '{}', 'ok', 0, 5, 1000);",
+             VALUES ('call_cascade_test', ?, 1, 'set_title', '{}', 'ok', 0, 5, 1000);",
             (session_id,),
         )
         .await
@@ -977,10 +977,9 @@ async fn tool_call_event_self_heals_a_missing_session() {
                 id: call_id.clone(),
                 session_id: orphan_sid,
                 turn_id: 1,
-                tool_name: "respond_and_set_title".to_string(),
+                tool_name: "set_title".to_string(),
                 arguments: serde_json::json!({
-                    "title": "Self Healing Session",
-                    "spoken_response": "Hello world"
+                    "title": "Self Healing Session"
                 }),
                 result: "Session title updated".to_string(),
                 is_error: false,
@@ -1003,7 +1002,7 @@ async fn tool_call_event_self_heals_a_missing_session() {
             if let Ok(Some(row)) = rows.next().await {
                 let name: String = row.get(0).unwrap();
                 let dur: i64 = row.get(1).unwrap();
-                assert_eq!(name, "respond_and_set_title");
+                assert_eq!(name, "set_title");
                 assert_eq!(dur, 45);
                 tool_call_found = true;
                 break;
@@ -1060,7 +1059,7 @@ async fn tool_call_is_not_persisted_in_private_mode() {
                 id: public_call_id.clone(),
                 session_id: orphan_sid,
                 turn_id: 1,
-                tool_name: "respond_and_set_title".to_string(),
+                tool_name: "set_title".to_string(),
                 arguments: serde_json::json!({ "title": "Public" }),
                 result: "ok".to_string(),
                 is_error: false,

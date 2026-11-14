@@ -1,5 +1,30 @@
 # Phase 14 Work Log
 
+## 2026-11-13 — Domain 1 Batch 6 Part A: Production Bug Fixes (Schema Safety, Single-Writer Latch, 0-Tool Delay & Think Tags)
+
+- **Database Schema & Migration Safety (`persistence/schema.rs`, `database_persistence_boundary_test.rs`)**:
+  - Restored `retire_positional_personal_memory_model()` and `PERSONAL_MEMORY_SEMANTIC_SCHEMA_VERSION = 9` for safe v9 legacy personal memory retirement.
+  - Restored error propagation `?` across all migration and DDL statements in `ensure_voice_metadata_columns()`.
+  - Rebuilt `session_tool_calls` cleanly under `PRAGMA foreign_keys = OFF;` using the table recreation pattern (`session_tool_calls_v2` $\to$ copy $\to$ drop $\to$ rename $\to$ indexes $\to$ `PRAGMA foreign_keys = ON;`), propagating all errors with `?`.
+  - Replaced residual `"respond_and_set_title"` strings in `database_persistence_boundary_test.rs` with canonical `"set_title"`.
+- **Single-Writer Router Authority for `turn_open` (`services/harness/loop.rs`, `pipeline/assistant/llm.rs`)**:
+  - Removed all off-router `ctx.req.app_state.pipeline.clear_turn_open()` invocations from Tokio worker tasks in `loop.rs`.
+  - Enforced single-writer ownership: `turn_open` is cleared exclusively on the `vox-router` OS thread in response to `VoxEvent::LlmFinished`, `VoxEvent::Cancelled`, and `VoxEvent::Error` (`RULE-EVT-01`).
+  - Replaced `try_lock()` with blocking lock on `state.engine` in `llm.rs` latch evaluation.
+- **Immediate State Transition on 0-Tool Turns (`pipeline/assistant/playback.rs`)**:
+  - In `on_playback_started`: If `current_state == InteractionState::Working && intent == AudioIntent::InterimFiller`, returns early remaining in `Working`.
+  - If `current_state == InteractionState::Thinking`, transitions `Thinking -> InteractionState::Speaking` immediately when audio starts on speakers (eliminating the 6-second thinking display delay on 0-tool turns).
+  - If tool calls arrive subsequently, `step6_handle_tool_batch` transitions `Speaking -> Working`.
+- **Multi-byte UTF-8 & Case-Insensitive Safety (`services/llm/transport/think_tags.rs`)**:
+  - Implemented `find_case_insensitive` and `match_partial_suffix` with strict UTF-8 char boundary checking (`is_char_boundary`) and case-insensitive byte comparison (`eq_ignore_ascii_case`).
+  - Added unit test suite covering uppercase `<THINK>`, mixed-case `<Think>`, multi-byte CJK Japanese characters, emojis, and cross-chunk split tags.
+- **Verification**:
+  - Compile Gate: `app/src-tauri/scripts/verify-targets.sh` passed cleanly with 0 warnings / 0 errors across desktop and Android.
+  - Unit Tests: `think_tags::tests` passed 8/8.
+  - Integration Tests: `database_persistence_boundary_test` passed 18/18; `harness_loop_test` passed 6/6; `agentic_tool_loop_test` passed 9/9.
+
+---
+
 ## 2026-11-13 — Domain 1 Review Remediation: ZBC Cleanups, Voice Index Migration & Test Budget Alignment
 
 - **Tool Loop Test Budget Assertion (`tests/harness_loop_test.rs`)**:
