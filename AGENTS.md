@@ -44,6 +44,7 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
    ```bash
    cargo nextest run -- --ignored
    ```
+> **Note for every agent:** compilation in release takes longer so avoid premature checks and never poll for completion. Let the system automitcally inform you.
 
 ---
 

@@ -49,18 +49,13 @@ impl ContextBudgetStage {
             .sum()
     }
 
-    /// Calculates tracked tokens across history, ephemeral scratchpad, and active tool schemas.
+    /// Calculates tracked tokens across history and active tool schemas.
     pub fn calculate_tracked_tokens_with_extras(
         &self,
         messages: &[ChatMessage],
-        scratchpad: &[ChatMessage],
         tools: Option<&[crate::services::llm::CanonicalToolDefinition]>,
     ) -> usize {
         let history_tokens: usize = messages
-            .iter()
-            .map(|msg| estimate_tokens(&msg.content))
-            .sum();
-        let scratchpad_tokens: usize = scratchpad
             .iter()
             .map(|msg| estimate_tokens(&msg.content))
             .sum();
@@ -76,17 +71,16 @@ impl ContextBudgetStage {
             None => 0,
         };
 
-        history_tokens + scratchpad_tokens + tool_tokens
+        history_tokens + tool_tokens
     }
 
     /// Calculates the maximum allowed observation tokens for a tool execution (clamped to 30% of remaining usable context, max 2000, min 100).
     pub fn calculate_max_observation_tokens(
         &self,
         messages: &[ChatMessage],
-        scratchpad: &[ChatMessage],
         tools: Option<&[crate::services::llm::CanonicalToolDefinition]>,
     ) -> usize {
-        let tracked = self.calculate_tracked_tokens_with_extras(messages, scratchpad, tools);
+        let tracked = self.calculate_tracked_tokens_with_extras(messages, tools);
         let remaining = self.usable_budget().saturating_sub(tracked);
         let cap = ((remaining as f32) * 0.30) as usize;
         cap.clamp(500, 2000)

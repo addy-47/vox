@@ -20,6 +20,28 @@ pub use search_memory::MemorySearchTool;
 pub use set_title::{SetSessionTitleTool, SetTitleTool};
 pub use web_search::WebSearchTool;
 
+/// Concurrency mode declaring whether a tool can execute in parallel or requires an exclusive barrier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolExecutionMode {
+    /// Read-only or idempotent operations safe to run concurrently with other Parallel calls.
+    Parallel,
+    /// Mutating, stateful, or control-flow operations that form strict sequential barriers.
+    Exclusive,
+}
+
+/// Control flow directive returned by cognitive tools to alter ReAct loop iteration.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ToolControlAction {
+    /// Normal continuation of ReAct loop.
+    #[default]
+    Continue,
+    /// Suspends ReAct cognitive loop to await user clarification or input.
+    SuspendForUser {
+        question: String,
+        options: Option<Vec<String>>,
+    },
+}
+
 /// Operational domain classification defining where a tool can be utilized.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ToolDomain {
@@ -41,10 +63,13 @@ impl ToolDomain {
 }
 
 /// Execution context passed to cognitive tools during turn evaluation.
+#[derive(Clone)]
 pub struct ToolExecutionContext {
     pub app_state: Arc<AppState>,
     pub session_id: i64,
     pub turn_id: u32,
+    pub step_id: String,
+    pub step_index: u32,
     pub cancel: tokio_util::sync::CancellationToken,
     pub on_sessions_changed: Option<Arc<dyn Fn() + Send + Sync>>,
     pub max_observation_tokens: Option<usize>,
@@ -63,10 +88,19 @@ impl ToolExecutionContext {
             app_state,
             session_id,
             turn_id,
+            step_id: String::new(),
+            step_index: 0,
             cancel,
             on_sessions_changed,
             max_observation_tokens: None,
         }
+    }
+
+    /// Attaches step tracking metadata to the execution context.
+    pub fn with_step(mut self, step_id: impl Into<String>, step_index: u32) -> Self {
+        self.step_id = step_id.into();
+        self.step_index = step_index;
+        self
     }
 
     /// Attaches an observation token budget ceiling (used by Modular retrieval tools).
@@ -96,6 +130,7 @@ impl ToolExecutionContext {
 #[derive(Debug, Clone)]
 pub struct ToolResult {
     pub content: String,
+    pub control: ToolControlAction,
 }
 
 impl ToolResult {
@@ -103,6 +138,15 @@ impl ToolResult {
     pub fn new(content: impl Into<String>) -> Self {
         Self {
             content: content.into(),
+            control: ToolControlAction::Continue,
+        }
+    }
+
+    /// Constructs a tool result with a specific control flow action.
+    pub fn with_control(content: impl Into<String>, control: ToolControlAction) -> Self {
+        Self {
+            content: content.into(),
+            control,
         }
     }
 }
@@ -141,6 +185,16 @@ pub trait ToolDefinition: Send + Sync {
 
     /// JSON schema describing the required and optional arguments for this tool in the active mode.
     fn parameters_schema(&self, mode: PipelineMode) -> Value;
+
+    /// Concurrency mode declaring whether this tool can run in parallel waves or forms an exclusive barrier.
+    fn execution_mode(&self, _args: &Value) -> ToolExecutionMode {
+        ToolExecutionMode::Parallel
+    }
+
+    /// Whether this tool manages its own internal timeout promotion (e.g. bash auto-backgrounding).
+    fn handles_own_timeout(&self) -> bool {
+        false
+    }
 
     /// Executes the tool asynchronously, returning a structured observation or error.
     fn execute<'a>(

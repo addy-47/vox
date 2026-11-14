@@ -120,6 +120,15 @@ impl StreamRoutingStage {
                     "[Harness::Stream] Stream cancelled (turn {})",
                     handles.turn_id
                 );
+                if !tool_calls_batch.is_empty() {
+                    self.flush_remainder(handles, AudioIntent::InterimFiller);
+                    let preamble_text = handles.accumulator.lock().assistant_response.clone();
+                    return Ok(StreamPassOutcome::ToolCallsReceived {
+                        preamble_text,
+                        thinking_text: thinking_buffer,
+                        calls: tool_calls_batch,
+                    });
+                }
                 self.emit_cancelled(handles);
                 return Ok(StreamPassOutcome::Cancelled {
                     partial_text: handles.accumulator.lock().assistant_response.clone(),
@@ -182,6 +191,15 @@ impl StreamRoutingStage {
                         "[Harness::Stream] Stream cancelled (turn {})",
                         handles.turn_id
                     );
+                    if !tool_calls_batch.is_empty() {
+                        self.flush_remainder(handles, AudioIntent::InterimFiller);
+                        let preamble_text = handles.accumulator.lock().assistant_response.clone();
+                        return Ok(StreamPassOutcome::ToolCallsReceived {
+                            preamble_text,
+                            thinking_text: thinking_buffer,
+                            calls: tool_calls_batch,
+                        });
+                    }
                     self.emit_cancelled(handles);
                     return Ok(StreamPassOutcome::Cancelled {
                         partial_text: handles.accumulator.lock().assistant_response.clone(),

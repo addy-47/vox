@@ -11,6 +11,7 @@ pub use history::ConversationHistoryStage;
 pub use prompt::PromptBuilderStage;
 pub use streaming::{ClauseChunker, StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage};
 pub use tools::{
-    MemorySearchTool, SetSessionTitleTool, SetTitleTool, ToolDefinition, ToolDomain, ToolError,
-    ToolExecutionContext, ToolExecutionOutcome, ToolExecutor, ToolFilter, ToolRegistry, ToolResult,
+    MemorySearchTool, SetSessionTitleTool, SetTitleTool, ToolControlAction, ToolDefinition,
+    ToolDomain, ToolError, ToolExecutionContext, ToolExecutionMode, ToolExecutionOutcome,
+    ToolExecutor, ToolFilter, ToolRegistry, ToolResult,
 };

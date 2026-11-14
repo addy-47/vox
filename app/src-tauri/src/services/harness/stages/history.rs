@@ -82,6 +82,38 @@ impl ConversationHistoryStage {
         self.kv_synced_index = self.messages.len();
     }
 
+    /// Commits completed tool execution step to conversation history.
+    pub fn commit_tool_step(
+        &mut self,
+        preamble_text: String,
+        calls: Vec<crate::services::llm::CanonicalToolCall>,
+        tool_results: Vec<(String, String)>,
+    ) {
+        assert_eq!(
+            calls.len(),
+            tool_results.len(),
+            "FATAL: Tool call count mismatch. Expected {} tool results for {} tool calls.",
+            calls.len(),
+            tool_results.len()
+        );
+
+        let mut assistant_msg = ChatMessage::new(Role::Assistant, preamble_text);
+        assistant_msg.tool_calls = Some(calls);
+        self.messages.push(assistant_msg);
+
+        for (call_id, content) in tool_results {
+            let mut tool_msg = ChatMessage::new(Role::Tool, content);
+            tool_msg.tool_call_id = Some(call_id);
+            self.messages.push(tool_msg);
+        }
+
+        self.kv_synced_index = self.messages.len();
+        log::debug!(
+            "[Harness::History] Committed tool step to history. Total messages: {}",
+            self.messages.len()
+        );
+    }
+
     /// Rolls back the most recent user turn if interrupted before assistant generated any response.
     pub fn rollback_last_user_turn(&mut self) -> Option<ChatMessage> {
         if let Some(last) = self.messages.last() {

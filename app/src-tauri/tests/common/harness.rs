@@ -1800,4 +1800,79 @@ impl Drop for HarnessRig {
     }
 }
 
+// ============================================================================
+// Deterministic Concurrency Seam: BarrierTraceTool
+// ============================================================================
+
+pub struct BarrierTraceTool {
+    pub name: String,
+    pub mode: vox_lib::services::harness::ToolExecutionMode,
+    pub barrier: Option<Arc<tokio::sync::Barrier>>,
+    pub trace: Arc<parking_lot::Mutex<Vec<String>>>,
+    pub post_barrier_yields: usize,
+}
+
+impl BarrierTraceTool {
+    pub fn new(
+        name: impl Into<String>,
+        mode: vox_lib::services::harness::ToolExecutionMode,
+        barrier: Option<Arc<tokio::sync::Barrier>>,
+        trace: Arc<parking_lot::Mutex<Vec<String>>>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            mode,
+            barrier,
+            trace,
+            post_barrier_yields: 0,
+        }
+    }
+
+    pub fn with_yields(mut self, yields: usize) -> Self {
+        self.post_barrier_yields = yields;
+        self
+    }
+}
+
+impl vox_lib::services::harness::ToolDefinition for BarrierTraceTool {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn description(&self, _: vox_lib::core::events::PipelineMode) -> &str {
+        "Deterministic test barrier tool"
+    }
+
+    fn parameters_schema(&self, _: vox_lib::core::events::PipelineMode) -> serde_json::Value {
+        serde_json::json!({})
+    }
+
+    fn execution_mode(&self, _: &serde_json::Value) -> vox_lib::services::harness::ToolExecutionMode {
+        self.mode
+    }
+
+    fn execute<'a>(
+        &'a self,
+        _mode: vox_lib::core::events::PipelineMode,
+        _args: serde_json::Value,
+        _ctx: &'a vox_lib::services::harness::ToolExecutionContext,
+    ) -> futures_util::future::BoxFuture<'a, Result<vox_lib::services::harness::ToolResult, vox_lib::services::harness::ToolError>> {
+        use futures_util::future::FutureExt;
+        async move {
+            self.trace.lock().push(format!("start:{}", self.name));
+            if let Some(ref b) = self.barrier {
+                tokio::time::timeout(std::time::Duration::from_secs(2), b.wait())
+                    .await
+                    .map_err(|_| vox_lib::services::harness::ToolError::Timeout)?;
+            }
+            for _ in 0..self.post_barrier_yields {
+                tokio::task::yield_now().await;
+            }
+            self.trace.lock().push(format!("end:{}", self.name));
+            Ok(vox_lib::services::harness::ToolResult::new(format!("done:{}", self.name)))
+        }
+        .boxed()
+    }
+}
+
 

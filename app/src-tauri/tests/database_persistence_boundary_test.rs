@@ -977,6 +977,8 @@ async fn tool_call_event_self_heals_a_missing_session() {
                 id: call_id.clone(),
                 session_id: orphan_sid,
                 turn_id: 1,
+                step_id: None,
+                step_index: 0,
                 tool_name: "set_title".to_string(),
                 arguments: serde_json::json!({
                     "title": "Self Healing Session"
@@ -1059,6 +1061,8 @@ async fn tool_call_is_not_persisted_in_private_mode() {
                 id: public_call_id.clone(),
                 session_id: orphan_sid,
                 turn_id: 1,
+                step_id: None,
+                step_index: 0,
                 tool_name: "set_title".to_string(),
                 arguments: serde_json::json!({ "title": "Public" }),
                 result: "ok".to_string(),
@@ -1107,6 +1111,8 @@ async fn tool_call_is_not_persisted_in_private_mode() {
                 id: private_call_id.clone(),
                 session_id: orphan_sid,
                 turn_id: 2,
+                step_id: None,
+                step_index: 0,
                 tool_name: "search_memory".to_string(),
                 arguments: serde_json::json!({ "query": "secret" }),
                 result: "None".to_string(),
@@ -1398,3 +1404,296 @@ async fn search_history_matches_titles_and_turns() {
     .await
     .expect("timeout");
 }
+
+/// PURPOSE:  Catch foreign key constraint failures (`step_id REFERENCES session_steps(id)`) or missing step trajectories in Turso DB during multi-step tool execution.
+/// SCENARIO: Execute a 2-step turn through `PersistenceWorker` where Step 0 runs 2 tools (`search_memory`, `web_search`) with preamble "Checking notes." and Step 1 runs 1 tool (`set_title`).
+/// ASSERTS:  `session_steps` contains 2 rows for `(session_id, turn_id)` with `step_index = 0` (`tool_count = 2`, `preamble_text = "Checking notes."`) and `step_index = 1` (`tool_count = 1`); `session_tool_calls` contains 3 rows whose `step_id` foreign keys match the respective `session_steps.id` rows.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   In `step6_execute_tool_batch` (`steps.rs`), dispatch `PersistenceEvent::ToolCallExecuted` before `PersistenceEvent::StepCompleted` so the foreign key lookup fails.
+#[tokio::test]
+async fn multi_step_turn_persists_session_steps_and_foreign_key_linked_tool_calls() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _paths = TempPathsGuard::new();
+        let dir = tempdir().expect("tempdir");
+        let db_path = dir.path().join("test_steps.db");
+
+        let db = VoxDb::open(&db_path).await.expect("open db");
+        let conn = db.connect().expect("connect");
+        run_migrations(&conn).await.expect("migrations");
+
+        let is_healthy = Arc::new(AtomicBool::new(true));
+        let rate = Arc::new(AtomicU32::new(0));
+        let is_private = Arc::new(AtomicBool::new(false));
+
+        let persist_tx = spawn_persistence_worker(
+            Arc::new(db),
+            is_healthy,
+            rate,
+            Arc::clone(&is_private),
+        );
+
+        let session_id = 888001i64;
+        let turn_id = 1u32;
+        let step0_id = "step-0-uuid".to_string();
+        let step1_id = "step-1-uuid".to_string();
+
+        let now = 1700000000000u64;
+        persist_tx
+            .send(PersistenceEvent::SessionStarted {
+                session_id,
+                timestamp_ms: now,
+            })
+            .expect("SessionStarted");
+
+        // Step 0: 2 tools (search_memory, web_search), preamble "Checking notes."
+        persist_tx
+            .send(PersistenceEvent::StepCompleted {
+                id: step0_id.clone(),
+                session_id,
+                turn_id,
+                step_index: 0,
+                preamble_text: Some("Checking notes.".to_string()),
+                tool_count: 2,
+                duration_ms: Some(120),
+                created_at: now + 10,
+            })
+            .expect("StepCompleted 0");
+
+        persist_tx
+            .send(PersistenceEvent::ToolCallExecuted {
+                id: "call-search-0".to_string(),
+                session_id,
+                turn_id,
+                step_id: Some(step0_id.clone()),
+                step_index: 0,
+                tool_name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "notes" }),
+                result: "Found note".to_string(),
+                is_error: false,
+                duration_ms: 50,
+                created_at: now + 20,
+            })
+            .expect("ToolCallExecuted 0a");
+
+        persist_tx
+            .send(PersistenceEvent::ToolCallExecuted {
+                id: "call-web-0".to_string(),
+                session_id,
+                turn_id,
+                step_id: Some(step0_id.clone()),
+                step_index: 0,
+                tool_name: "web_search".to_string(),
+                arguments: serde_json::json!({ "query": "current status" }),
+                result: "Web result".to_string(),
+                is_error: false,
+                duration_ms: 60,
+                created_at: now + 30,
+            })
+            .expect("ToolCallExecuted 0b");
+
+        // Step 1: 1 tool (set_title)
+        persist_tx
+            .send(PersistenceEvent::StepCompleted {
+                id: step1_id.clone(),
+                session_id,
+                turn_id,
+                step_index: 1,
+                preamble_text: None,
+                tool_count: 1,
+                duration_ms: Some(40),
+                created_at: now + 100,
+            })
+            .expect("StepCompleted 1");
+
+        persist_tx
+            .send(PersistenceEvent::ToolCallExecuted {
+                id: "call-title-1".to_string(),
+                session_id,
+                turn_id,
+                step_id: Some(step1_id.clone()),
+                step_index: 1,
+                tool_name: "set_title".to_string(),
+                arguments: serde_json::json!({ "title": "New Title" }),
+                result: "Title updated".to_string(),
+                is_error: false,
+                duration_ms: 35,
+                created_at: now + 110,
+            })
+            .expect("ToolCallExecuted 1");
+
+        // Quiescence: wait until worker has processed all events
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut steps_persisted = false;
+        while std::time::Instant::now() < deadline {
+            if let Ok(mut rows) = conn
+                .query(
+                    "SELECT COUNT(*) FROM session_steps WHERE session_id = ? AND turn_id = ?;",
+                    (session_id, turn_id),
+                )
+                .await
+            {
+                if let Ok(Some(row)) = rows.next().await {
+                    let count: i64 = row.get(0).unwrap_or(0);
+                    if count == 2 {
+                        steps_persisted = true;
+                        break;
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        assert!(
+            steps_persisted,
+            "session_steps must contain 2 rows for session {} turn {}",
+            session_id, turn_id
+        );
+
+        // Verify Step 0 details
+        let mut s0_rows = conn
+            .query(
+                "SELECT tool_count, preamble_text FROM session_steps WHERE id = ?;",
+                (step0_id.clone(),),
+            )
+            .await
+            .expect("query step 0");
+        let s0_row = s0_rows.next().await.unwrap().expect("step 0 row");
+        let s0_tool_count: i64 = s0_row.get(0).unwrap();
+        let s0_preamble: Option<String> = s0_row.get(1).unwrap();
+        assert_eq!(s0_tool_count, 2);
+        assert_eq!(s0_preamble.as_deref(), Some("Checking notes."));
+
+        // Verify Step 1 details
+        let mut s1_rows = conn
+            .query(
+                "SELECT tool_count, preamble_text FROM session_steps WHERE id = ?;",
+                (step1_id.clone(),),
+            )
+            .await
+            .expect("query step 1");
+        let s1_row = s1_rows.next().await.unwrap().expect("step 1 row");
+        let s1_tool_count: i64 = s1_row.get(0).unwrap();
+        assert_eq!(s1_tool_count, 1);
+
+        // Verify session_tool_calls links to session_steps.id
+        let mut tc_rows = conn
+            .query(
+                "SELECT step_id FROM session_tool_calls WHERE session_id = ? ORDER BY created_at ASC;",
+                (session_id,),
+            )
+            .await
+            .expect("query tool calls");
+        let mut linked_step_ids = Vec::new();
+        while let Ok(Some(row)) = tc_rows.next().await {
+            let sid: Option<String> = row.get(0).unwrap();
+            linked_step_ids.push(sid);
+        }
+        assert_eq!(linked_step_ids.len(), 3);
+        assert_eq!(linked_step_ids[0].as_deref(), Some(step0_id.as_str()));
+        assert_eq!(linked_step_ids[1].as_deref(), Some(step0_id.as_str()));
+        assert_eq!(linked_step_ids[2].as_deref(), Some(step1_id.as_str()));
+    })
+    .await
+    .expect("multi_step_turn_persists_session_steps_and_foreign_key_linked_tool_calls timed out");
+}
+
+/// PURPOSE:  Catch orphaned rows in `session_steps` or `session_tool_calls` when a parent session is hard-deleted (`RULE-DB-10`).
+/// SCENARIO: Persist a session with 1 turn, 2 `session_steps`, and 3 `session_tool_calls`, then execute hard session deletion.
+/// ASSERTS:  `SELECT COUNT(*) FROM session_steps WHERE session_id = ?` is 0, and `SELECT COUNT(*) FROM session_tool_calls WHERE session_id = ?` is 0.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   In `persistence/schema.rs`, omit `ON DELETE CASCADE` from `session_steps.session_id` or `session_tool_calls.step_id`.
+#[tokio::test]
+async fn session_hard_delete_cascades_to_session_steps_and_session_tool_calls() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _paths = TempPathsGuard::new();
+        let dir = tempdir().expect("tempdir");
+        let db_path = dir.path().join("test_cascade.db");
+
+        let db = VoxDb::open(&db_path).await.expect("open db");
+        let conn = db.connect().expect("connect");
+        run_migrations(&conn).await.expect("migrations");
+
+        let session_id = 999222i64;
+        let now = 1700000000000i64;
+
+        conn.execute(
+            "INSERT INTO sessions (id, project_id, title, created_at, updated_at) VALUES (?, 'default', 'Test Cascade', ?, ?);",
+            (session_id, now, now),
+        )
+        .await
+        .expect("insert session");
+
+        conn.execute(
+            "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, created_at) VALUES (?, 1, 'Hello', 'World', ?);",
+            (session_id, now),
+        )
+        .await
+        .expect("insert turn");
+
+        // Insert 2 session_steps
+        conn.execute(
+            "INSERT INTO session_steps (id, session_id, turn_id, step_index, preamble_text, tool_count, duration_ms, created_at)
+             VALUES ('step-cas-0', ?, 1, 0, 'Preamble', 2, 100, ?);",
+            (session_id, now),
+        )
+        .await
+        .expect("insert step 0");
+
+        conn.execute(
+            "INSERT INTO session_steps (id, session_id, turn_id, step_index, preamble_text, tool_count, duration_ms, created_at)
+             VALUES ('step-cas-1', ?, 1, 1, NULL, 1, 50, ?);",
+            (session_id, now),
+        )
+        .await
+        .expect("insert step 1");
+
+        // Insert 3 session_tool_calls referencing session_steps
+        conn.execute(
+            "INSERT INTO session_tool_calls (id, session_id, turn_id, step_id, step_index, tool_name, arguments, result, is_error, duration_ms, created_at)
+             VALUES ('tc-1', ?, 1, 'step-cas-0', 0, 'search_memory', '{}', 'ok', 0, 40, ?);",
+            (session_id, now),
+        )
+        .await
+        .expect("insert tc 1");
+
+        conn.execute(
+            "INSERT INTO session_tool_calls (id, session_id, turn_id, step_id, step_index, tool_name, arguments, result, is_error, duration_ms, created_at)
+             VALUES ('tc-2', ?, 1, 'step-cas-0', 0, 'web_search', '{}', 'ok', 0, 50, ?);",
+            (session_id, now),
+        )
+        .await
+        .expect("insert tc 2");
+
+        conn.execute(
+            "INSERT INTO session_tool_calls (id, session_id, turn_id, step_id, step_index, tool_name, arguments, result, is_error, duration_ms, created_at)
+             VALUES ('tc-3', ?, 1, 'step-cas-1', 1, 'set_title', '{}', 'ok', 0, 30, ?);",
+            (session_id, now),
+        )
+        .await
+        .expect("insert tc 3");
+
+        // Delete session (hard delete)
+        delete_session(&conn, session_id, true).await.expect("delete_session");
+
+        // Assert session_steps rows are 0
+        let mut step_rows = conn
+            .query("SELECT COUNT(*) FROM session_steps WHERE session_id = ?;", (session_id,))
+            .await
+            .expect("query session_steps count");
+        let step_count: i64 = step_rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(step_count, 0, "session_steps rows must cascade delete with session");
+
+        // Assert session_tool_calls rows are 0
+        let mut tc_rows = conn
+            .query("SELECT COUNT(*) FROM session_tool_calls WHERE session_id = ?;", (session_id,))
+            .await
+            .expect("query session_tool_calls count");
+        let tc_count: i64 = tc_rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(tc_count, 0, "session_tool_calls rows must cascade delete with session");
+    })
+    .await
+    .expect("session_hard_delete_cascades_to_session_steps_and_session_tool_calls timed out");
+}
+

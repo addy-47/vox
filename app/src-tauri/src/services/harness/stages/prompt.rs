@@ -152,16 +152,15 @@ impl PromptBuilderStage {
         }
     }
 
-    /// Assembles the complete GenerationRequest payload including history, scratchpad, options, and tools.
+    /// Assembles the complete GenerationRequest payload including history, options, and tools.
     pub fn build_generation_request(
         &self,
         history: &[ChatMessage],
-        scratchpad: &[ChatMessage],
         options: GenerationOptions,
         tools: Option<Vec<CanonicalToolDefinition>>,
     ) -> GenerationRequest {
         let mut messages = history.to_vec();
-        let has_web_search_evidence = scratchpad
+        let has_web_search_evidence = history
             .iter()
             .any(|m| m.content.contains("<web_search_evidence>"));
         let assembled_prompt =
@@ -171,7 +170,6 @@ impl PromptBuilderStage {
         } else {
             messages.insert(0, ChatMessage::new(Role::System, assembled_prompt));
         }
-        messages.extend_from_slice(scratchpad);
 
         GenerationRequest {
             input: ConversationInput { messages },

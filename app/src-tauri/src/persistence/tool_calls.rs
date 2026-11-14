@@ -8,6 +8,8 @@ pub async fn persist_tool_call(conn: &Connection, event: &PersistenceEvent) -> R
         id,
         session_id,
         turn_id,
+        step_id,
+        step_index,
         tool_name,
         arguments,
         result,
@@ -26,11 +28,13 @@ pub async fn persist_tool_call(conn: &Connection, event: &PersistenceEvent) -> R
     let created_at_ms = *created_at as i64;
 
     conn.execute(
-        "INSERT INTO session_tool_calls (id, session_id, turn_id, tool_name, arguments, result, is_error, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+        "INSERT INTO session_tool_calls (id, session_id, turn_id, step_id, step_index, tool_name, arguments, result, is_error, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
         (
             id.clone(),
             *session_id,
             *turn_id as i64,
+            step_id.clone(),
+            *step_index as i64,
             tool_name.clone(),
             args_str,
             result.clone(),

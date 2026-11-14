@@ -163,6 +163,7 @@ fn persistence_event_label(event: &PersistenceEvent) -> &'static str {
         PersistenceEvent::SessionStarted { .. } => "SessionStarted",
         PersistenceEvent::SessionEnded { .. } => "SessionEnded",
         PersistenceEvent::TurnCompleted { .. } => "TurnCompleted",
+        PersistenceEvent::StepCompleted { .. } => "StepCompleted",
         PersistenceEvent::ToolCallExecuted { .. } => "ToolCallExecuted",
         PersistenceEvent::UpdateSessionMetadata { .. } => "UpdateSessionMetadata",
         PersistenceEvent::Shutdown => "Shutdown",
@@ -194,6 +195,19 @@ fn log_skipped_private_event(event: &PersistenceEvent) {
                 "[Persistence::Worker] Private Mode active: skipping turn record (session={}, turn={})",
                 session_id,
                 turn_id
+            );
+        }
+        PersistenceEvent::StepCompleted {
+            session_id,
+            turn_id,
+            step_index,
+            ..
+        } => {
+            log::info!(
+                "[Persistence::Worker] Private Mode active: skipping step record (session={}, turn={}, step={})",
+                session_id,
+                turn_id,
+                step_index
             );
         }
         PersistenceEvent::ToolCallExecuted {
@@ -365,6 +379,9 @@ async fn process_event(conn: &Connection, event: PersistenceEvent) -> anyhow::Re
                     );
                 }
             }
+        }
+        PersistenceEvent::StepCompleted { .. } => {
+            super::steps::persist_step(conn, &event).await?;
         }
         PersistenceEvent::ToolCallExecuted { .. } => {
             persist_tool_call(conn, &event).await?;

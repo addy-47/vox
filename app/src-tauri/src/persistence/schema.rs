@@ -10,7 +10,7 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-pub const SCHEMA_VERSION: u32 = 16;
+pub const SCHEMA_VERSION: u32 = 17;
 
 const PERSONAL_MEMORY_SEMANTIC_SCHEMA_VERSION: u32 = 9;
 const EMPTY_PERSONAL_MEMORY_JSON: &str = r#"{"sections":[]}"#;
@@ -143,10 +143,24 @@ const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS idx_voices_source ON voices(source_kind);",
     "CREATE INDEX IF NOT EXISTS idx_voices_favorite ON voices(is_favorite);",
     "CREATE INDEX IF NOT EXISTS idx_voices_last_used ON voices(last_used_at DESC);",
+    "CREATE TABLE IF NOT EXISTS session_steps (
+        id TEXT PRIMARY KEY,
+        session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        turn_id INTEGER NOT NULL,
+        step_index INTEGER NOT NULL,
+        preamble_text TEXT,
+        tool_count INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER,
+        created_at INTEGER NOT NULL
+    );",
+    "CREATE INDEX IF NOT EXISTS idx_session_steps_lookup ON session_steps(session_id, turn_id, step_index);",
+    "CREATE INDEX IF NOT EXISTS idx_session_steps_created ON session_steps(created_at DESC);",
     "CREATE TABLE IF NOT EXISTS session_tool_calls (
         id TEXT PRIMARY KEY,
         session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
         turn_id INTEGER NOT NULL,
+        step_id TEXT REFERENCES session_steps(id) ON DELETE CASCADE,
+        step_index INTEGER NOT NULL DEFAULT 0,
         tool_name TEXT NOT NULL,
         arguments TEXT NOT NULL,
         result TEXT,
@@ -155,6 +169,7 @@ const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
         created_at INTEGER NOT NULL
     );",
     "CREATE INDEX IF NOT EXISTS idx_tool_calls_session_turn ON session_tool_calls(session_id, turn_id);",
+    "CREATE INDEX IF NOT EXISTS idx_tool_calls_step_lookup ON session_tool_calls(step_id, step_index);",
     "CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON session_tool_calls(created_at DESC);",
     "CREATE TABLE IF NOT EXISTS personal_memory_revisions (
         id TEXT PRIMARY KEY,
@@ -226,41 +241,6 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
 
         ensure_voice_metadata_columns(conn).await?;
 
-        for stmt in SCHEMA_TABLE_STATEMENTS {
-            conn.execute(stmt, ()).await?;
-        }
-
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as i64;
-
-        conn.execute(
-            "INSERT OR IGNORE INTO projects (id, name, created_at, updated_at) VALUES ('default', 'Default', ?, ?);",
-            (now, now),
-        )
-        .await?;
-
-        conn.execute(
-            "INSERT INTO personal_memory (project_id, content, version, last_consolidated_at, updated_at)
-             SELECT NULL, ?, 1, ?, ? WHERE NOT EXISTS (SELECT 1 FROM personal_memory WHERE project_id IS NULL);",
-            (EMPTY_PERSONAL_MEMORY_JSON, now, now),
-        )
-        .await?;
-
-        if current_version < 14 {
-            let _ = conn
-                .execute(
-                    "INSERT OR IGNORE INTO models (id, model_type, category, provider, parameters, is_favorite, last_active_at, created_at, updated_at) \
-                     SELECT id, 'llm', 'cloud', NULL, '{}', 1, NULL, created_at, created_at FROM favorite_models;",
-                    (),
-                )
-                .await;
-            let _ = conn
-                .execute("DROP TABLE IF EXISTS favorite_models;", ())
-                .await;
-        }
-
         if current_version > 0 && current_version < 16 {
             let has_tool_kind: bool = {
                 let mut rows = conn.query("PRAGMA table_info(session_tool_calls);", ()).await?;
@@ -318,6 +298,149 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
 
                 conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
             }
+        }
+
+        if current_version > 0 && current_version < 17 {
+            log::info!("[Persistence::Schema] Migrating schema to v17: adding session_steps and linking session_tool_calls");
+            conn.execute("PRAGMA foreign_keys = OFF;", ()).await?;
+
+            // 1. Create session_steps table and indices
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS session_steps (
+                    id TEXT PRIMARY KEY,
+                    session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    turn_id INTEGER NOT NULL,
+                    step_index INTEGER NOT NULL,
+                    preamble_text TEXT,
+                    tool_count INTEGER NOT NULL DEFAULT 0,
+                    duration_ms INTEGER,
+                    created_at INTEGER NOT NULL
+                );",
+                (),
+            )
+            .await?;
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_session_steps_lookup ON session_steps(session_id, turn_id, step_index);",
+                (),
+            )
+            .await?;
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_session_steps_created ON session_steps(created_at DESC);",
+                (),
+            )
+            .await?;
+
+            // 2. Rebuild session_tool_calls table to attach step_id foreign key
+            let has_tool_calls: bool = {
+                let mut rows = conn
+                    .query(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_tool_calls';",
+                        (),
+                    )
+                    .await?;
+                rows.next().await?.is_some()
+            };
+
+            if has_tool_calls {
+                let has_step_id: bool = {
+                    let mut rows = conn.query("PRAGMA table_info(session_tool_calls);", ()).await?;
+                    let mut found = false;
+                    while let Some(row) = rows.next().await? {
+                        let col_name: String = row.get(1)?;
+                        if col_name == "step_id" {
+                            found = true;
+                            break;
+                        }
+                    }
+                    found
+                };
+
+                if !has_step_id {
+                    conn.execute(
+                        "CREATE TABLE IF NOT EXISTS session_tool_calls_v17 (
+                            id TEXT PRIMARY KEY,
+                            session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                            turn_id INTEGER NOT NULL,
+                            step_id TEXT REFERENCES session_steps(id) ON DELETE CASCADE,
+                            step_index INTEGER NOT NULL DEFAULT 0,
+                            tool_name TEXT NOT NULL,
+                            arguments TEXT NOT NULL,
+                            result TEXT,
+                            is_error INTEGER NOT NULL DEFAULT 0,
+                            duration_ms INTEGER,
+                            created_at INTEGER NOT NULL
+                        );",
+                        (),
+                    )
+                    .await?;
+
+                    conn.execute(
+                        "INSERT INTO session_tool_calls_v17 (id, session_id, turn_id, step_id, step_index, tool_name, arguments, result, is_error, duration_ms, created_at)
+                         SELECT id, session_id, turn_id, NULL, 0, tool_name, arguments, result, is_error, duration_ms, created_at
+                         FROM session_tool_calls;",
+                        (),
+                    )
+                    .await?;
+
+                    conn.execute("DROP TABLE session_tool_calls;", ()).await?;
+                    conn.execute("ALTER TABLE session_tool_calls_v17 RENAME TO session_tool_calls;", ())
+                        .await?;
+
+                    conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_tool_calls_session_turn ON session_tool_calls(session_id, turn_id);",
+                        (),
+                    )
+                    .await?;
+                    conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_tool_calls_step_lookup ON session_tool_calls(step_id, step_index);",
+                        (),
+                    )
+                    .await?;
+                    conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON session_tool_calls(created_at DESC);",
+                        (),
+                    )
+                    .await?;
+                }
+            }
+
+            conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
+        }
+
+        for stmt in SCHEMA_TABLE_STATEMENTS {
+            conn.execute(stmt, ()).await?;
+        }
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+
+        conn.execute(
+            "INSERT OR IGNORE INTO projects (id, name, created_at, updated_at) VALUES ('default', 'Default', ?, ?);",
+            (now, now),
+        )
+        .await?;
+
+        conn.execute(
+            "INSERT INTO personal_memory (project_id, content, version, last_consolidated_at, updated_at)
+             SELECT NULL, ?, 1, ?, ? WHERE NOT EXISTS (SELECT 1 FROM personal_memory WHERE project_id IS NULL);",
+            (EMPTY_PERSONAL_MEMORY_JSON, now, now),
+        )
+        .await?;
+
+        if current_version < 14 {
+            let _ = conn
+                .execute(
+                    "INSERT OR IGNORE INTO models (id, model_type, category, provider, parameters, is_favorite, last_active_at, created_at, updated_at) \
+                     SELECT id, 'llm', 'cloud', NULL, '{}', 1, NULL, created_at, created_at FROM favorite_models;",
+                    (),
+                )
+                .await;
+            let _ = conn
+                .execute("DROP TABLE IF EXISTS favorite_models;", ())
+                .await;
         }
 
         let pragma_version = format!("PRAGMA user_version = {};", SCHEMA_VERSION);

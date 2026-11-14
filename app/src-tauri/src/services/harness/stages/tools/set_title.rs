@@ -1,7 +1,9 @@
 use futures_util::future::{BoxFuture, FutureExt};
 use serde_json::{json, Value};
 
-use super::{ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolResult};
+use super::{
+    ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolExecutionMode, ToolResult,
+};
 use crate::{core::events::PipelineMode, persistence::PersistenceEvent};
 
 /// Built-in tool that assigns a concise title to initialize a conversation session in Modular mode.
@@ -18,6 +20,10 @@ impl ToolDefinition for SetTitleTool {
 
     fn description(&self, _mode: PipelineMode) -> &str {
         "Assigns a concise 3 to 5 word title summarizing the user's intent to initialize this new conversation session."
+    }
+
+    fn execution_mode(&self, _args: &Value) -> ToolExecutionMode {
+        ToolExecutionMode::Parallel
     }
 
     fn parameters_schema(&self, _mode: PipelineMode) -> Value {
@@ -78,6 +84,10 @@ impl ToolDefinition for SetSessionTitleTool {
 
     fn description(&self, _mode: PipelineMode) -> &str {
         "Assigns a concise 3-5 word title to initialize this conversation session."
+    }
+
+    fn execution_mode(&self, _args: &Value) -> ToolExecutionMode {
+        ToolExecutionMode::Parallel
     }
 
     fn parameters_schema(&self, _mode: PipelineMode) -> Value {

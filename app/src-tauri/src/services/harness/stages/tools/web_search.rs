@@ -3,7 +3,9 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use futures_util::future::{BoxFuture, FutureExt};
 use serde_json::{json, Value};
 
-use super::{ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolResult};
+use super::{
+    ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolExecutionMode, ToolResult,
+};
 use crate::{
     core::events::PipelineMode,
     services::memory::ml::{embedder, estimate_tokens},
@@ -104,6 +106,10 @@ impl ToolDefinition for WebSearchTool {
 
     fn description(&self, _mode: PipelineMode) -> &str {
         "Searches the live web and extracts relevant, verified passages from top sources to answer questions about current events, technical facts, or documentation."
+    }
+
+    fn execution_mode(&self, _args: &Value) -> ToolExecutionMode {
+        ToolExecutionMode::Parallel
     }
 
     fn parameters_schema(&self, _mode: PipelineMode) -> Value {

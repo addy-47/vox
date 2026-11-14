@@ -17,11 +17,11 @@ use crate::{
             },
             steps::{
                 step1_intake, step3_execute_compaction, step4_assemble_request, step5_dispatch_llm,
-                step6_handle_tool_batch, step6_run_stream_pass,
+                step6_execute_tool_batch, step6_run_stream_pass,
                 step7_commit_completed, step7_handle_cancelled, step7_handle_error,
                 CancelledTurnContext, IntakeResult,
             },
-            ChatMessage, TurnExecutionRequest, TurnOutcome,
+            TurnExecutionRequest, TurnOutcome,
         },
     },
 };
@@ -150,12 +150,18 @@ async fn execute_loop_iterations(
     cancel_atomic: &Arc<AtomicBool>,
 ) -> TurnOutcome {
     let turn_id = ctx.req.turn_id;
-    let mut scratchpad: Vec<ChatMessage> = Vec::new();
     let mut allow_tools = supports_tools;
     let mut iteration: usize = 0;
+    let max_steps = {
+        let guard = ctx.harness_arc.lock();
+        guard
+            .as_ref()
+            .and_then(|h| h.max_steps)
+            .unwrap_or(MAX_TOOL_STEPS)
+    };
 
-    // === REENTRANT COGNITIVE LOOP (Up to MAX_TOOL_STEPS passes) ===
-    while iteration <= MAX_TOOL_STEPS {
+    // === REENTRANT COGNITIVE LOOP (Up to max_steps passes) ===
+    while iteration <= max_steps {
         if ctx.req.cancel.is_cancelled() || cancel_atomic.load(Relaxed) {
             let partial = ctx
                 .stream_handles
@@ -166,11 +172,11 @@ async fn execute_loop_iterations(
             return step7_handle_cancelled(cancelled_ctx(ctx, partial));
         }
 
-        check_loop_budget(ctx, &scratchpad, allow_tools, iteration);
+        check_loop_budget(ctx, allow_tools, iteration);
 
-        // === STEP 4: Assemble Generation Request with Scratchpad ===
+        // === STEP 4: Assemble Generation Request ===
         let generation_request =
-            match step4_assemble_request(ctx.harness_arc, &scratchpad, turn_id, allow_tools) {
+            match step4_assemble_request(ctx.harness_arc, turn_id, allow_tools) {
                 Ok(req_obj) => req_obj,
                 Err(e) => {
                     return step7_handle_error(
@@ -210,9 +216,9 @@ async fn execute_loop_iterations(
                 let action = handle_pass_outcome(
                     ctx,
                     pass_outcome,
-                    &mut scratchpad,
                     cancel_atomic,
                     allow_tools,
+                    iteration,
                 )
                 .await;
                 match action {
@@ -221,15 +227,15 @@ async fn execute_loop_iterations(
                     LoopAction::Continue => {
                         iteration += 1;
                         log::info!(
-                            "[Harness::Loop] Turn {} iteration {} continuing: scratchpad_messages={}",
+                            "[Harness::Loop] Turn {} iteration {} continuing",
                             turn_id,
                             iteration,
-                            scratchpad.len()
                         );
-                        if iteration >= MAX_TOOL_STEPS {
+                        if iteration >= max_steps {
                             log::warn!(
-                                "[Harness::Loop] Turn {} reached MAX_TOOL_STEPS; running final tool-free pass.",
-                                turn_id
+                                "[Harness::Loop] Turn {} reached max_steps ({}); running final tool-free pass.",
+                                turn_id,
+                                max_steps
                             );
                             allow_tools = false;
                         }
@@ -255,10 +261,9 @@ async fn execute_loop_iterations(
     )
 }
 
-/// Evaluates context budget including history, scratchpad, and tool schemas.
+/// Evaluates context budget including history and tool schemas.
 fn check_loop_budget(
     ctx: &TurnLoopContext<'_>,
-    scratchpad: &[ChatMessage],
     allow_tools: bool,
     iteration: usize,
 ) {
@@ -278,7 +283,6 @@ fn check_loop_budget(
             };
             let total_tokens = budget.calculate_tracked_tokens_with_extras(
                 harness.history.messages(),
-                scratchpad,
                 tools.as_deref(),
             );
             let (utilization, status) = budget.evaluate_utilization(total_tokens);
@@ -302,9 +306,9 @@ fn check_loop_budget(
 async fn handle_pass_outcome(
     ctx: &TurnLoopContext<'_>,
     pass_outcome: StreamPassOutcome,
-    scratchpad: &mut Vec<ChatMessage>,
     cancel_atomic: &Arc<AtomicBool>,
     allow_tools: bool,
+    iteration: usize,
 ) -> LoopAction {
     let turn_id = ctx.req.turn_id;
     match pass_outcome {
@@ -324,7 +328,6 @@ async fn handle_pass_outcome(
                     ctx.harness_arc,
                     turn_id,
                     assistant_text,
-                    scratchpad,
                 ))
             }
         }
@@ -348,14 +351,15 @@ async fn handle_pass_outcome(
                     ctx.harness_arc,
                     turn_id,
                     preamble_text,
-                    scratchpad,
                 ));
             }
 
-            let cancelled =
-                step6_handle_tool_batch(ctx, calls, &preamble_text, scratchpad).await;
+            let (cancelled, suspended_question) =
+                step6_execute_tool_batch(ctx, calls, &preamble_text, iteration).await;
             if cancelled {
                 LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, String::new())))
+            } else if let Some(question) = suspended_question {
+                LoopAction::Terminal(step7_commit_completed(ctx.harness_arc, turn_id, question))
             } else {
                 LoopAction::Continue
             }

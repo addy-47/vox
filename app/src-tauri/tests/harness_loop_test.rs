@@ -927,3 +927,547 @@ async fn stream_error_clears_turn_open_and_dispatches_error_event() {
     .await
     .expect("test timed out");
 }
+
+// ============================================================================
+// Section 7: Domain 2 — Cognitive Loop, Concurrency & Immediate Step Commits
+// ============================================================================
+
+/// PURPOSE:  Catch loss of completed tool observations or accidental deletion of the user prompt when a turn is cancelled after Step 1 completes.
+/// SCENARIO: Step 1 executes [set_title, search_memory] and commits; during Step 2 tool execution, `cancel_token.cancel()` fires.
+/// ASSERTS:  TurnOutcome is Cancelled; `harness.messages()` retains the User message, Step 1 Assistant(tool_calls) + 2 Tool observations, and Step 2 Assistant(tool_calls) + synthesized cancelled Tool observation (zero orphaned tool_call_ids); `state.pipeline.is_turn_open()` is false after router processes VoxEvent::Cancelled.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   In `ConversationHistoryStage::rollback_last_user_turn` (`history.rs`), remove the `if last.role == Role::User` guard so it pops unconditionally, OR move `commit_tool_step` back to `step7_commit_completed`.
+#[tokio::test]
+async fn mid_turn_cancellation_on_step_two_preserves_step_one_history_and_forbids_user_rollback() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 501;
+
+        rig.state.pipeline.set_turn_open(true);
+        let cancel_token = rig.state.pipeline.turn_token();
+        let cancel_clone = cancel_token.clone();
+
+        // Pass 1 (Step 1): Emits 2 tool calls (set_title and search_memory)
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-s1-title".to_string(),
+                name: "set_title".to_string(),
+                arguments: serde_json::json!({ "title": "Preserved History Title" }),
+            }));
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-s1-search".to_string(),
+                name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "preserved facts" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Pass 2 (Step 2): Emits 1 tool call and triggers cancellation
+        rig.scripted_llm.push_step(move |tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-s2-search".to_string(),
+                name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "interrupted search" }),
+            }));
+            cancel_clone.cancel();
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let query = "Multi-step query that gets cancelled during step two";
+        let req = rig.turn_request(query, turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+        match outcome {
+            TurnOutcome::Cancelled { .. } => {}
+            other => panic!("Expected Cancelled outcome on mid-turn cancel, got {:?}", other),
+        }
+
+        // Wait for router thread to process VoxEvent::Cancelled and clear turn_open
+        let _ = rig
+            .wait_for_event(
+                |ev| matches!(ev, VoxEvent::Cancelled { turn_id: tid, .. } if *tid == turn_id),
+                Duration::from_secs(5),
+            )
+            .await
+            .expect("VoxEvent::Cancelled must be emitted on event channel");
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while tokio::time::Instant::now() < deadline && rig.state.pipeline.is_turn_open() {
+            tokio::task::yield_now().await;
+        }
+        assert!(!rig.state.pipeline.is_turn_open(), "turn_open must be false after cancellation");
+
+        // Assert conversation history invariants
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let messages = harness.messages();
+
+        // 1. User message must be preserved (rollback forbidden after step 1 execution!)
+        let user_msg = messages.iter().find(|m| m.role == Role::User);
+        assert!(
+            user_msg.is_some(),
+            "User query must remain in conversation history; rollback_last_user_turn must NOT pop answered turns!"
+        );
+        assert_eq!(user_msg.unwrap().content, query);
+
+        // 2. Step 1 Assistant message with tool calls must exist
+        let s1_assistant = messages.iter().find(|m| {
+            m.role == Role::Assistant
+                && m.tool_calls
+                    .as_ref()
+                    .map(|calls| calls.iter().any(|c| c.id == "call-s1-title"))
+                    .unwrap_or(false)
+        });
+        assert!(s1_assistant.is_some(), "Step 1 Assistant message with tool calls must be committed");
+        assert_eq!(s1_assistant.unwrap().tool_calls.as_ref().unwrap().len(), 2);
+
+        // 3. Step 1 Tool observation messages must exist in declaration order
+        let tool_msgs: Vec<_> = messages.iter().filter(|m| m.role == Role::Tool).collect();
+        assert!(
+            tool_msgs.len() >= 2,
+            "Step 1 tool observations must be preserved in history, got {}",
+            tool_msgs.len()
+        );
+        assert_eq!(tool_msgs[0].tool_call_id.as_deref(), Some("call-s1-title"));
+        assert_eq!(tool_msgs[1].tool_call_id.as_deref(), Some("call-s1-search"));
+
+        // 4. Step 2 Assistant message + synthesized Tool observation must prevent orphaned tool_call_id
+        assert_eq!(
+            tool_msgs.len(),
+            3,
+            "Step 2 cancelled tool must synthesize a Tool observation so tool_calls <-> Role::Tool is 1:1, got {}",
+            tool_msgs.len()
+        );
+        assert_eq!(tool_msgs[2].tool_call_id.as_deref(), Some("call-s2-search"));
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch stale unanswered Role::User turns polluting history when the user barges in during Step 0 thinking before any preamble speech or tool execution.
+/// SCENARIO: Model streams Thinking tokens in Step 0 and `cancel_token.cancel()` triggers before any Token or ToolCall is emitted.
+/// ASSERTS:  TurnOutcome is Cancelled; `rollback_last_user_turn` pops the unanswered Role::User message leaving only Role::System in `harness.messages()`; `turn_open` is false.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   In `step7_handle_cancelled` (`steps.rs`), delete the call to `harness.rollback_last_user_turn()`.
+#[tokio::test]
+async fn step_zero_cancellation_before_speech_or_tools_rolls_back_unanswered_user_turn() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 502;
+
+        rig.state.pipeline.set_turn_open(true);
+        let cancel_token = rig.state.pipeline.turn_token();
+        let cancel_clone = cancel_token.clone();
+
+        // Step 0: Model streams thinking tokens and gets cancelled before any token or tool call
+        rig.scripted_llm.push_step(move |tx| {
+            let _ = tx.send(LlmResponse::Thinking("Thinking deeply in Step 0...".to_string()));
+            cancel_clone.cancel();
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let query = "Unanswered query cancelled during Step 0 thinking";
+        let req = rig.turn_request(query, turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+        match outcome {
+            TurnOutcome::Cancelled { .. } => {}
+            other => panic!("Expected Cancelled outcome on step 0 cancel, got {:?}", other),
+        }
+
+        // Wait for router thread to process VoxEvent::Cancelled
+        let _ = rig
+            .wait_for_event(
+                |ev| matches!(ev, VoxEvent::Cancelled { turn_id: tid, .. } if *tid == turn_id),
+                Duration::from_secs(5),
+            )
+            .await
+            .expect("VoxEvent::Cancelled must be emitted on event channel");
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while tokio::time::Instant::now() < deadline && rig.state.pipeline.is_turn_open() {
+            tokio::task::yield_now().await;
+        }
+        assert!(!rig.state.pipeline.is_turn_open(), "turn_open must be false after cancellation");
+
+        // Assert unanswered user turn was rolled back
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let messages = harness.messages();
+
+        let has_user_msg = messages.iter().any(|m| m.role == Role::User);
+        assert!(
+            !has_user_msg,
+            "Unanswered user turn must be rolled back on Step 0 cancellation before speech or tools!"
+        );
+        assert!(
+            messages.iter().any(|m| m.role == Role::System),
+            "System prompt must be retained"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch serial execution regression or out-of-order observation commits when parallel tools finish out of order.
+/// SCENARIO: A single ReAct step emits 3 Parallel tools [P1, P2, P3] that rendezvous at a 3-party barrier, where P3 finishes fastest and P1 finishes slowest.
+/// ASSERTS:  All 3 tools pass the concurrency rendezvous without timing out; trace log records all 3 "start:*" entries before any "end:*" entry; ConversationHistoryStage records Role::Tool messages in exact [P1, P2, P3] declaration order.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   In `ToolExecutor::run_parallel_wave` (`executor.rs`), replace `join_all(futs).await` with a sequential `for call in wave` loop.
+#[tokio::test]
+async fn parallel_tool_wave_executes_concurrently_and_commits_in_declaration_order() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 601;
+
+        let barrier = Arc::new(tokio::sync::Barrier::new(3));
+        let trace = Arc::new(parking_lot::Mutex::new(Vec::new()));
+
+        let p1 = Arc::new(
+            common::harness::BarrierTraceTool::new(
+                "P1",
+                vox_lib::services::harness::ToolExecutionMode::Parallel,
+                Some(barrier.clone()),
+                trace.clone(),
+            )
+            .with_yields(4),
+        );
+
+        let p2 = Arc::new(
+            common::harness::BarrierTraceTool::new(
+                "P2",
+                vox_lib::services::harness::ToolExecutionMode::Parallel,
+                Some(barrier.clone()),
+                trace.clone(),
+            )
+            .with_yields(2),
+        );
+
+        let p3 = Arc::new(
+            common::harness::BarrierTraceTool::new(
+                "P3",
+                vox_lib::services::harness::ToolExecutionMode::Parallel,
+                Some(barrier.clone()),
+                trace.clone(),
+            )
+            .with_yields(0),
+        );
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness must be mounted");
+            harness.register_tool(p1);
+            harness.register_tool(p2);
+            harness.register_tool(p3);
+        }
+
+        // Pass 1: Model emits [P1, P2, P3] in a single ReAct step
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-p1".to_string(),
+                name: "P1".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-p2".to_string(),
+                name: "P2".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-p3".to_string(),
+                name: "P3".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Pass 2: Final response
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("All parallel tools executed.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Run 3 parallel tools", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "Turn must complete successfully, got {:?}",
+            outcome
+        );
+
+        // Concurrency proof: All 3 tools must rendezvous and record "start:*" before ANY "end:*" is recorded
+        let t = trace.lock().clone();
+        assert_eq!(t.len(), 6, "Expected 3 starts and 3 ends in trace log, got {:?}", t);
+        assert!(t[0].starts_with("start:"), "Entry 0 must be start:*, got {}", t[0]);
+        assert!(t[1].starts_with("start:"), "Entry 1 must be start:*, got {}", t[1]);
+        assert!(t[2].starts_with("start:"), "Entry 2 must be start:*, got {}", t[2]);
+
+        // Out-of-order completion proof: P3 finishes fastest (0 yields), P2 next (2 yields), P1 slowest (4 yields)
+        assert_eq!(t[3], "end:P3", "P3 must finish first due to 0 yields");
+        assert_eq!(t[4], "end:P2", "P2 must finish second due to 2 yields");
+        assert_eq!(t[5], "end:P1", "P1 must finish last due to 4 yields");
+
+        // Declaration order commit: In ConversationHistoryStage, Role::Tool messages must be exact [P1, P2, P3] order
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let tool_msgs: Vec<_> = harness
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::Tool)
+            .collect();
+        assert_eq!(tool_msgs.len(), 3, "All 3 tools must be committed to history");
+        assert_eq!(tool_msgs[0].tool_call_id.as_deref(), Some("call-p1"));
+        assert_eq!(tool_msgs[1].tool_call_id.as_deref(), Some("call-p2"));
+        assert_eq!(tool_msgs[2].tool_call_id.as_deref(), Some("call-p3"));
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch read-after-write race conditions if an Exclusive tool runs concurrently with preceding or succeeding Parallel tools.
+/// SCENARIO: Model emits [P1 (Parallel), P2 (Parallel), E1 (Exclusive), P3 (Parallel), P4 (Parallel)] in Step 1.
+/// ASSERTS:  Trace log proves P1 and P2 both complete ("end:P1", "end:P2") before "start:E1" is recorded, and "end:E1" is recorded before either "start:P3" or "start:P4" is recorded; all 5 observations commit in [P1, P2, E1, P3, P4] order.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   In `ToolExecutor::execute_batch` (`executor.rs`), return `ToolExecutionMode::Parallel` unconditionally instead of querying `t.execution_mode(&call.arguments)`.
+#[tokio::test]
+async fn exclusive_tool_acts_as_strict_barrier_between_parallel_waves() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 602;
+
+        let trace = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let wave1_barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let wave2_barrier = Arc::new(tokio::sync::Barrier::new(2));
+
+        let p1 = Arc::new(common::harness::BarrierTraceTool::new(
+            "P1",
+            vox_lib::services::harness::ToolExecutionMode::Parallel,
+            Some(wave1_barrier.clone()),
+            trace.clone(),
+        ));
+        let p2 = Arc::new(common::harness::BarrierTraceTool::new(
+            "P2",
+            vox_lib::services::harness::ToolExecutionMode::Parallel,
+            Some(wave1_barrier.clone()),
+            trace.clone(),
+        ));
+        let e1 = Arc::new(common::harness::BarrierTraceTool::new(
+            "E1",
+            vox_lib::services::harness::ToolExecutionMode::Exclusive,
+            None,
+            trace.clone(),
+        ));
+        let p3 = Arc::new(common::harness::BarrierTraceTool::new(
+            "P3",
+            vox_lib::services::harness::ToolExecutionMode::Parallel,
+            Some(wave2_barrier.clone()),
+            trace.clone(),
+        ));
+        let p4 = Arc::new(common::harness::BarrierTraceTool::new(
+            "P4",
+            vox_lib::services::harness::ToolExecutionMode::Parallel,
+            Some(wave2_barrier.clone()),
+            trace.clone(),
+        ));
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness must be mounted");
+            harness.register_tool(p1);
+            harness.register_tool(p2);
+            harness.register_tool(e1);
+            harness.register_tool(p3);
+            harness.register_tool(p4);
+        }
+
+        // Pass 1: Model emits [P1, P2, E1, P3, P4] in Step 1
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-p1".to_string(),
+                name: "P1".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-p2".to_string(),
+                name: "P2".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-e1".to_string(),
+                name: "E1".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-p3".to_string(),
+                name: "P3".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-p4".to_string(),
+                name: "P4".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Pass 2: Final synthesis
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Batch with exclusive barrier executed.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Run exclusive barrier batch", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "Turn must complete successfully, got {:?}",
+            outcome
+        );
+
+        let t = trace.lock().clone();
+        assert_eq!(t.len(), 10, "Expected 10 events for 5 tools, got {:?}", t);
+
+        let p1_end = t.iter().position(|e| e == "end:P1").expect("end:P1");
+        let p2_end = t.iter().position(|e| e == "end:P2").expect("end:P2");
+        let e1_start = t.iter().position(|e| e == "start:E1").expect("start:E1");
+        let e1_end = t.iter().position(|e| e == "end:E1").expect("end:E1");
+        let p3_start = t.iter().position(|e| e == "start:P3").expect("start:P3");
+        let p4_start = t.iter().position(|e| e == "start:P4").expect("start:P4");
+
+        // P1 and P2 both complete before start:E1
+        assert!(p1_end < e1_start, "P1 must complete before E1 starts (p1_end={}, e1_start={})", p1_end, e1_start);
+        assert!(p2_end < e1_start, "P2 must complete before E1 starts (p2_end={}, e1_start={})", p2_end, e1_start);
+
+        // end:E1 is recorded before either start:P3 or start:P4
+        assert!(e1_end < p3_start, "E1 must complete before P3 starts (e1_end={}, p3_start={})", e1_end, p3_start);
+        assert!(e1_end < p4_start, "E1 must complete before P4 starts (e1_end={}, p4_start={})", e1_end, p4_start);
+
+        // Declaration order commit: [P1, P2, E1, P3, P4]
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let tool_msgs: Vec<_> = harness
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::Tool)
+            .collect();
+        assert_eq!(tool_msgs.len(), 5, "All 5 observations must commit");
+        assert_eq!(tool_msgs[0].tool_call_id.as_deref(), Some("call-p1"));
+        assert_eq!(tool_msgs[1].tool_call_id.as_deref(), Some("call-p2"));
+        assert_eq!(tool_msgs[2].tool_call_id.as_deref(), Some("call-e1"));
+        assert_eq!(tool_msgs[3].tool_call_id.as_deref(), Some("call-p3"));
+        assert_eq!(tool_msgs[4].tool_call_id.as_deref(), Some("call-p4"));
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch hard turn abort on reaching MAX_TOOL_STEPS instead of synthesizing a final tool-free spoken answer.
+/// SCENARIO: Configure Harness with `max_steps = 3`; scripted LLM emits a tool call on Steps 0, 1, and 2, then on the forced summary pass (`allow_tools == false`) emits final spoken text.
+/// ASSERTS:  LLM worker receives 4 requests total; requests 0..=2 have non-empty `tools`, request 3 has `tools.is_empty()` (or `None`); TurnOutcome is Completed with the final summary text dispatched to TTS as `AudioIntent::TurnResponse`; all 3 tool steps (6 messages) + final Assistant message are in `harness.messages()`.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   In `execute_loop_iterations` (`loop.rs`), return `TurnOutcome::Error` when `step_index >= max_steps` instead of setting `allow_tools = false`.
+#[tokio::test]
+async fn step_ceiling_breach_disables_tools_and_forces_spoken_summary_pass() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 605;
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness must be mounted");
+            harness.set_max_steps(3);
+        }
+
+        // Pass 0 (Step 0): tool call
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-step-0".to_string(),
+                name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "step 0" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Pass 1 (Step 1): tool call
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-step-1".to_string(),
+                name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "step 1" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Pass 2 (Step 2): tool call
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-step-2".to_string(),
+                name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "step 2" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Pass 3 (Forced Summary Pass with allow_tools == false): Final spoken summary
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Final synthesized summary after reaching step limit.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Exhaust tool step limit", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+        match outcome {
+            TurnOutcome::Completed { ref assistant_response, .. } => {
+                assert_eq!(
+                    assistant_response,
+                    "Final synthesized summary after reaching step limit."
+                );
+            }
+            other => panic!("Expected Completed outcome after forced summary pass, got {:?}", other),
+        }
+
+        // Assert: LLM worker received 4 requests total; requests 0..=2 have non-empty tools, request 3 has false (tool-free)
+        let requests = rig.requests();
+        assert_eq!(requests.len(), 4, "Expected 4 dispatches (3 tool steps + 1 summary pass), got {}", requests.len());
+        assert!(requests[0].1, "Pass 0 must offer tools");
+        assert!(requests[1].1, "Pass 1 must offer tools");
+        assert!(requests[2].1, "Pass 2 must offer tools");
+        assert!(!requests[3].1, "Pass 3 (summary pass) must be tool-free (allow_tools == false)");
+
+        // Assert: TTS received AudioIntent::TurnResponse
+        let tts_cmds = rig.drain_tts_commands();
+        let turn_response_cmd = tts_cmds.iter().find(|cmd| {
+            matches!(cmd, TtsCommand::Generate { intent: AudioIntent::TurnResponse, text, .. }
+                if text.contains("Final synthesized summary"))
+        });
+        assert!(turn_response_cmd.is_some(), "Summary pass must dispatch TurnResponse to TTS");
+
+        // Assert: Conversation history holds all 3 tool steps (3 Assistant + 3 Tool) + final Assistant summary
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let tool_msgs: Vec<_> = harness
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::Tool)
+            .collect();
+        assert_eq!(tool_msgs.len(), 3, "All 3 tool observations must be committed");
+        let assistant_msgs: Vec<_> = harness
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::Assistant)
+            .collect();
+        assert_eq!(assistant_msgs.len(), 4, "3 intermediate tool calls + 1 final summary pass");
+    })
+    .await
+    .expect("test timed out");
+}
+
+

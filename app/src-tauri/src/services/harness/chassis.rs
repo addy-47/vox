@@ -22,7 +22,7 @@ use crate::{
                 history::ConversationHistoryStage,
                 prompt::PromptBuilderStage,
                 streaming::StreamRoutingStage,
-                tools::{ToolFilter, ToolRegistry},
+                tools::{ToolDefinition, ToolFilter, ToolRegistry},
             },
             ChatMessage,
         },
@@ -50,6 +50,7 @@ pub struct Harness {
     pub(crate) memory_retrieval_enabled: bool,
     pub(crate) web_search_enabled: bool,
     pub(crate) has_played_filler: bool,
+    pub max_steps: Option<usize>,
 }
 
 /// Dynamic per-model execution parameters resolved from database models table.
@@ -118,6 +119,7 @@ impl Harness {
             memory_retrieval_enabled: settings.memory.context_retrieval_enabled,
             web_search_enabled: settings.interaction.web_search_enabled,
             has_played_filler: false,
+            max_steps: None,
         }
     }
 
@@ -155,6 +157,7 @@ impl Harness {
             memory_retrieval_enabled: settings.memory.context_retrieval_enabled,
             web_search_enabled: settings.interaction.web_search_enabled,
             has_played_filler: false,
+            max_steps: None,
         }
     }
 
@@ -172,6 +175,16 @@ impl Harness {
 
     pub fn assembled_system_prompt(&self) -> String {
         self.prompt.assemble()
+    }
+
+    /// Registers a custom cognitive tool in the harness tool registry.
+    pub fn register_tool(&mut self, tool: Arc<dyn ToolDefinition>) {
+        self.tool_registry.register(tool);
+    }
+
+    /// Sets the maximum allowable tool execution steps before forcing a summary pass.
+    pub fn set_max_steps(&mut self, max_steps: usize) {
+        self.max_steps = Some(max_steps);
     }
 
     /// Returns the exact system prompt that will be dispatched on the first generation turn.

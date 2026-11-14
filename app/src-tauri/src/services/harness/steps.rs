@@ -29,7 +29,7 @@ use crate::{
                 },
                 tools::{ToolExecutionContext, ToolExecutor, ToolFilter},
             },
-            ChatMessage, Role, TurnExecutionRequest, TurnOutcome,
+            TurnExecutionRequest, TurnOutcome,
         },
         llm::{
             actor::{LlmCommand, LlmResponse},
@@ -313,7 +313,6 @@ fn apply_compaction_result(
 /// Assembles the complete GenerationRequest payload delegating to PromptBuilderStage.
 pub fn step4_assemble_request(
     harness_arc: &Arc<Mutex<Option<Harness>>>,
-    scratchpad: &[ChatMessage],
     turn_id: u32,
     allow_tools: bool,
 ) -> Result<GenerationRequest, String> {
@@ -365,7 +364,6 @@ pub fn step4_assemble_request(
     let start_assemble = std::time::Instant::now();
     let req = harness.prompt.build_generation_request(
         harness.history.messages(),
-        scratchpad,
         harness.generation_options.clone(),
         tools,
     );
@@ -430,28 +428,20 @@ pub async fn step6_run_stream_pass(
     .unwrap_or_else(|join_err| Err(format!("Stream task panic: {:?}", join_err)))
 }
 
-/// Handles Phase 6 Case B: Multi-tool batch execution with preamble preservation (Working state, barriers, scratchpad).
-pub async fn step6_handle_tool_batch(
+/// Handles Phase 6 Case B: Multi-tool batch execution with wave scheduling and immediate step commits.
+pub async fn step6_execute_tool_batch(
     ctx: &TurnLoopContext<'_>,
     calls: Vec<CanonicalToolCall>,
     preamble_text: &str,
-    scratchpad: &mut Vec<ChatMessage>,
-) -> bool {
+    step_index: usize,
+) -> (bool, Option<String>) {
     let turn_id = ctx.req.turn_id;
+    let step_start = std::time::Instant::now();
     ctx.stream_handles
         .accumulator
         .lock()
         .assistant_response
         .clear();
-
-    // Commit preamble text and tool calls to scratchpad as the assistant turn initiating tools
-    scratchpad.push(ChatMessage {
-        role: Role::Assistant,
-        content: preamble_text.to_string(),
-        timestamp_ms: current_timestamp_ms(),
-        tool_call_id: None,
-        tool_calls: Some(calls.clone()),
-    });
 
     let first_tool = calls.first().map(|c| c.name.as_str()).unwrap_or("tool");
     let non_terminal = NonTerminalPhase::tool(first_tool, "", None);
@@ -480,7 +470,6 @@ pub async fn step6_handle_tool_batch(
                 let tools = harness.tool_registry.active_definitions(&filter);
                 budget.calculate_max_observation_tokens(
                     harness.history.messages(),
-                    scratchpad,
                     Some(&tools),
                 )
             } else {
@@ -491,50 +480,90 @@ pub async fn step6_handle_tool_batch(
         }
     };
 
-    for call in calls {
-        if ctx.req.cancel.is_cancelled() {
-            log::info!(
-                "[Harness::Tools] Tool batch cancelled before executing {} (turn {})",
-                call.name,
-                turn_id
-            );
-            return true;
-        }
+    let step_id = uuid::Uuid::new_v4().to_string();
 
-        let tool_ctx = ToolExecutionContext::new(
-            Arc::clone(&ctx.req.app_state),
-            ctx.session_id,
-            turn_id,
-            ctx.req.cancel.clone(),
-            make_sessions_changed_callback(&ctx.req.emitter),
-        )
-        .with_observation_budget(max_observation_tokens);
+    let tool_ctx = ToolExecutionContext::new(
+        Arc::clone(&ctx.req.app_state),
+        ctx.session_id,
+        turn_id,
+        ctx.req.cancel.clone(),
+        make_sessions_changed_callback(&ctx.req.emitter),
+    )
+    .with_step(step_id.clone(), step_index as u32)
+    .with_observation_budget(max_observation_tokens);
 
-        let outcome = ToolExecutor::execute_tool(
-            ctx.tool_registry,
-            PipelineMode::Modular,
-            call.clone(),
-            tool_ctx,
-        )
-        .await;
+    let (outcomes, suspended_question) = ToolExecutor::execute_batch(
+        ctx.tool_registry,
+        PipelineMode::Modular,
+        calls.clone(),
+        &tool_ctx,
+    )
+    .await;
 
+    // Flip title_set flag on successful set_title execution
+    for outcome in &outcomes {
         if outcome.tool_name == "set_title" && !outcome.is_error {
             let mut guard = ctx.harness_arc.lock();
             if let Some(ref mut harness) = *guard {
                 harness.title_set = true;
             }
         }
-
-        scratchpad.push(ChatMessage {
-            role: Role::Tool,
-            content: outcome.result.content,
-            timestamp_ms: current_timestamp_ms(),
-            tool_call_id: Some(call.id),
-            tool_calls: None,
-        });
     }
 
-    false
+    // Always commit tool step to history, even if cancelled mid-batch
+    let tool_results: Vec<(String, String)> = outcomes
+        .iter()
+        .map(|o| (o.call_id.clone(), o.result.content.clone()))
+        .collect();
+
+    {
+        let mut guard = ctx.harness_arc.lock();
+        if let Some(ref mut harness) = *guard {
+            harness.history.commit_tool_step(
+                preamble_text.to_string(),
+                calls,
+                tool_results,
+            );
+        }
+    }
+
+    // Dispatch persistence events in strict parent-then-child FIFO order
+    let now = current_timestamp_ms();
+    let step_duration_ms = step_start.elapsed().as_millis() as u64;
+
+    let persist_lock = ctx.req.app_state.persist_tx.lock();
+    if let Some(ref tx) = *persist_lock {
+        // 1. Dispatch parent StepCompleted record
+        let _ = tx.try_send(PersistenceEvent::StepCompleted {
+            id: step_id.clone(),
+            session_id: ctx.session_id,
+            turn_id,
+            step_index: step_index as u32,
+            preamble_text: Some(preamble_text.to_string()),
+            tool_count: outcomes.len() as u32,
+            duration_ms: Some(step_duration_ms),
+            created_at: now,
+        });
+
+        // 2. Dispatch child tool call records with valid foreign key
+        for outcome in &outcomes {
+            let _ = tx.try_send(PersistenceEvent::ToolCallExecuted {
+                id: outcome.call_id.clone(),
+                session_id: ctx.session_id,
+                turn_id,
+                step_id: Some(step_id.clone()),
+                step_index: step_index as u32,
+                tool_name: outcome.tool_name.clone(),
+                arguments: outcome.arguments.clone(),
+                result: outcome.result.content.clone(),
+                is_error: outcome.is_error,
+                duration_ms: outcome.duration_ms,
+                created_at: now,
+            });
+        }
+    }
+
+    (ctx.req.cancel.is_cancelled(), suspended_question)
 }
 
 fn make_sessions_changed_callback(
@@ -648,20 +677,15 @@ pub fn step7_commit_completed(
     harness_arc: &Arc<Mutex<Option<Harness>>>,
     turn_id: u32,
     assistant_response: String,
-    scratchpad: &[ChatMessage],
 ) -> TurnOutcome {
     log::info!(
-        "[Harness::Finalize] Committing turn {} ({} chars, {} scratchpad messages)",
+        "[Harness::Finalize] Committing turn {} ({} chars)",
         turn_id,
-        assistant_response.len(),
-        scratchpad.len()
+        assistant_response.len()
     );
 
     let mut guard = harness_arc.lock();
     if let Some(ref mut harness) = *guard {
-        for msg in scratchpad {
-            harness.history.push_message(msg.clone());
-        }
         harness
             .history
             .push_assistant_turn(assistant_response.clone());

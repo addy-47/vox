@@ -24,6 +24,7 @@ pub mod projects;
 pub mod queue;
 pub mod schema;
 pub mod sessions;
+pub mod steps;
 pub mod tool_calls;
 pub mod voices;
 pub mod worker;
@@ -65,6 +66,7 @@ pub use sessions::{
     ensure_session_exists, fetch_session_project_id, search_history, set_session_title,
     HistorySearchHit, SessionRow, TurnRow,
 };
+pub use steps::persist_step;
 pub use tool_calls::persist_tool_call;
 
 /// Asynchronous pipeline events offloaded from the voice hot-path to the persistence worker.
@@ -84,10 +86,22 @@ pub enum PersistenceEvent {
         user_text: String,
         assistant_text: String,
     },
+    StepCompleted {
+        id: String,
+        session_id: i64,
+        turn_id: u32,
+        step_index: u32,
+        preamble_text: Option<String>,
+        tool_count: u32,
+        duration_ms: Option<u64>,
+        created_at: u64,
+    },
     ToolCallExecuted {
         id: String,
         session_id: i64,
         turn_id: u32,
+        step_id: Option<String>,
+        step_index: u32,
         tool_name: String,
         arguments: serde_json::Value,
         result: String,

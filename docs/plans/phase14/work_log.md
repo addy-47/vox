@@ -1,5 +1,38 @@
 # Phase 14 Work Log
 
+## 2026-11-14 — Domain 2: ReAct Step Loop, Concurrency Barriers & Immediate Step Commits (TDD Red-Seam First)
+
+- **Phase 1: Minimal Signatures & Stubs**:
+  - Defined `ToolExecutionMode` (`Parallel`, `Exclusive`) and `ToolControlAction` in `tools/mod.rs`.
+  - Added `step_id: String` and `step_index: u32` to `ToolExecutionContext`.
+  - Added `execution_mode` to `ToolDefinition` trait and implemented on `search_memory`, `web_search`, `set_title`.
+  - Added `PersistenceEvent::StepCompleted` and updated `PersistenceEvent::ToolCallExecuted` in `persistence/mod.rs`.
+  - Added `commit_tool_step` stub to `ConversationHistoryStage`.
+  - Added `register_tool` and `set_max_steps` to `Harness` in `chassis.rs`.
+- **Phase 2: Black-Box Seam Tests (RED Proofs)**:
+  - Implemented `BarrierTraceTool` in `tests/common/harness.rs` with `post_barrier_yields: usize` for deterministic concurrency proof without wall-clock sleeps.
+  - Authored Subtests 1–5 in `tests/harness_loop_test.rs` and Subtests 6–7 in `tests/database_persistence_boundary_test.rs`.
+  - Empirically proved all new subtests fail RED against the v1 / stubbed implementation.
+- **Phase 3: Atomic Implementation (GREEN)**:
+  - Turso DB Migration v17: Added `session_steps` table and rebuilt `session_tool_calls` table attaching `step_id REFERENCES session_steps(id) ON DELETE CASCADE` and `step_index` using `PRAGMA foreign_keys = OFF` table rebuild pattern.
+  - Implemented `persistence/steps.rs::persist_step` and wired `PersistenceEvent::StepCompleted` in `persistence/worker.rs`.
+  - Implemented `ToolExecutor::execute_batch` and `run_parallel_wave` using `futures_util::future::join_all`, preserving model declaration order and synthesizing fallback outcomes on early exit to preserve 1:1 `tool_calls` <-> `Role::Tool` bijection.
+  - Eradicated `scratchpad: Vec<ChatMessage>` across `history.rs`, `budget.rs`, `prompt.rs`, `steps.rs`, and `loop.rs`.
+  - Implemented `commit_tool_step` with runtime `assert_eq!(calls.len(), tool_results.len())` and protected `rollback_last_user_turn` against deleting answered turns.
+  - Dispatched `StepCompleted` strictly before child `ToolCallExecuted` events in `step6_execute_tool_batch` to guarantee FIFO parent-before-child ordering.
+  - Enforced configurable `max_steps` ceiling with forced tool-free summary generation pass in `loop.rs`.
+  - Refined `router.rs` to preserve already batched tool calls when stream cancellation occurs.
+- **Phase 4: Adversarial Audit & Mutation Proof**:
+  - Adversarial audit confirmed zero concurrency leaks, strict FIFO persistence ordering, zero scratchpad remnants, and zero test file modifications by backend engineer.
+  - Mutation testing campaign: 7/7 mutants killed (100% mutation score, 0 survivors).
+- **Verification**:
+  - `cargo nextest run --test harness_loop_test --test database_persistence_boundary_test --release --test-threads=1`: **PASSED (43/43 tests green)**
+  - `./scripts/verify-targets.sh`: **PASSED (0 warnings / 0 errors on desktop and aarch64-linux-android cross-target)**
+
+---
+
+---
+
 ## 2026-11-14 — Domain 1 Final Cleanups: Terminal Event Routing & Test Parity (Lead Sign-Off)
 
 - **Terminal Event Routing Outside `router.rs` (`services/harness/steps.rs`, `services/harness/loop.rs`)**:
@@ -719,3 +752,48 @@
 - `pnpm lint:arch`: passed with zero violations.
 - `pnpm eslint src/shared/components/settings/appearance/ src/shared/theme/oklchColor.ts`: 0 errors, 0 warnings.
 - `pnpm build`: clean compilation and production build.
+
+## 2026-11-14 — Domain 2: ReAct Step Loop, Concurrency Barriers & Immediate Step Commits (Phase 3: Atomic Implementation GREEN)
+
+**Task:** Complete Phase 3 implementation of Domain 2 under the Red-Seam First / TDD Workflow (Option B in `AGENTS.md` §4.4), turning all 7 black-box seam subtests across `tests/harness_loop_test.rs` and `tests/database_persistence_boundary_test.rs` GREEN strictly via production code in `app/src-tauri/src/`.
+
+### Changes Implemented
+1. **Turso Schema v17 & Foreign Key Ordering (`persistence/schema.rs`, `steps.rs`, `tool_calls.rs`, `worker.rs`)**:
+   - Bumped `SCHEMA_VERSION` to 17.
+   - Added `session_steps` table and indices (`idx_session_steps_lookup`, `idx_session_steps_created`) to `SCHEMA_TABLE_STATEMENTS`.
+   - Rebuilt `session_tool_calls` with `step_id TEXT REFERENCES session_steps(id) ON DELETE CASCADE` and `step_index INTEGER NOT NULL DEFAULT 0` with `idx_tool_calls_step_lookup`.
+   - Placed the 12-step v17 table-rebuild migration with `PRAGMA foreign_keys = OFF/ON` prior to index creation so existing and test databases cleanly migrate before index creation.
+   - Implemented `persistence/steps.rs::persist_step` with `ensure_session_exists` and SQL insertion.
+   - Updated `persistence/tool_calls.rs::persist_tool_call` to insert `step_id` and `step_index`.
+   - Wired `PersistenceEvent::StepCompleted` in `persistence/worker.rs` (handling, skip in private mode, event label).
+   - Resolved Defect 1 (Foreign Key Insertion Paradox) by moving persistence dispatching out of `ToolExecutor::execute_tool` to `step6_execute_tool_batch`, dispatching `StepCompleted` strictly before child `ToolCallExecuted` events in FIFO order.
+
+2. **Tool Wave Scheduler & Concurrency Barriers (`services/harness/stages/tools/executor.rs`, `mod.rs`)**:
+   - Implemented `ToolExecutor::execute_batch` and `run_parallel_wave` using `futures_util::future::join_all` to execute contiguous parallel tools concurrently while isolating `ToolExecutionMode::Exclusive` barriers alone.
+   - Resolved Defect 2 (1:1 Bijection & HTTP 400 Prevention) by synthesizing fallback `ToolExecutionOutcome` entries (`is_error: true`, cancelled/skipped messages) for any unexecuted calls on mid-batch cancellation or `ToolControlAction::SuspendForUser`.
+   - Ensured outcome ordering strictly mirrors model declaration order matching `calls`.
+   - Added `call_id`, `arguments`, and `duration_ms` to `ToolExecutionOutcome`.
+
+3. **History Invariants & Immediate Step Commits (`services/harness/stages/history.rs`)**:
+   - Implemented `commit_tool_step`: pushes assistant call and tool observations immediately into `history.messages` in declaration order, updates `kv_synced_index`, and enforces `assert_eq!(calls.len(), tool_results.len())`.
+   - Preserved `rollback_last_user_turn` guard checking `last.role == Role::User`, preventing user query rollback if assistant/tool turns have already committed.
+
+4. **Scratchpad Eradication & ReAct Step Loop (`services/harness/loop.rs`, `steps.rs`, `stages/budget.rs`, `stages/prompt.rs`, `chassis.rs`)**:
+   - Completely eradicated `scratchpad: Vec<ChatMessage>` across the ReAct loop, step functions, prompt builder, and budget calculators (Zero Backward Compatibility).
+   - Replaced `step6_execute_tools` with `step6_execute_tool_batch`, generating unique `step_id` per step and executing wave-scheduled tool execution.
+   - Added `max_steps` to `Harness` (default 20, configurable via `set_max_steps`). When iteration ceiling is reached, forces final generation pass with `allow_tools = false` and dispatches spoken summary.
+
+### Verification
+- `cargo test --test harness_loop_test --release -- --test-threads=1`: **PASSED (23/23 tests green)**
+  - Subtest 1 (`parallel_tool_wave_executes_concurrently_and_commits_in_declaration_order`): PASSED
+  - Subtest 2 (`exclusive_tool_acts_as_strict_barrier_between_parallel_waves`): PASSED
+  - Subtest 3 (`mid_turn_cancellation_on_step_two_preserves_step_one_history_and_forbids_user_rollback`): PASSED
+  - Subtest 4 (`step_zero_cancellation_before_speech_or_tools_rolls_back_unanswered_user_turn`): PASSED
+  - Subtest 5 (`step_ceiling_breach_disables_tools_and_forces_spoken_summary_pass`): PASSED
+- `cargo test --test database_persistence_boundary_test --release -- --test-threads=1`: **PASSED (20/20 tests green)**
+  - Subtest 6 (`multi_step_turn_persists_session_steps_and_foreign_key_linked_tool_calls`): PASSED
+  - Subtest 7 (`session_hard_delete_cascades_to_session_steps_and_session_tool_calls`): PASSED
+- `cd app/src-tauri && ./scripts/verify-targets.sh`: **PASSED (0 warnings / 0 errors on desktop and aarch64-linux-android cross-target)**
+- Architectural Invariants: **PASSED (`./scripts/lint-arch.sh` holds)**
+- Zero files in `tests/**` were modified during Phase 3.
+

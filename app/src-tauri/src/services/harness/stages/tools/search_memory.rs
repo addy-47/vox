@@ -3,7 +3,9 @@ use std::{collections::HashMap, time::Instant};
 use futures_util::future::{BoxFuture, FutureExt};
 use serde_json::{json, Value};
 
-use super::{ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolResult};
+use super::{
+    ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolExecutionMode, ToolResult,
+};
 use crate::{
     core::events::PipelineMode,
     persistence::{
@@ -29,6 +31,10 @@ impl ToolDefinition for MemorySearchTool {
 
     fn description(&self, _mode: PipelineMode) -> &str {
         "Searches personal cognitive memory for user facts, preferences, background context, or past conversational details."
+    }
+
+    fn execution_mode(&self, _args: &Value) -> ToolExecutionMode {
+        ToolExecutionMode::Parallel
     }
 
     fn parameters_schema(&self, _mode: PipelineMode) -> Value {
