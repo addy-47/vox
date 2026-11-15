@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 
 use super::{
     ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolExecutionMode, ToolResult,
+    TruncationPolicy,
 };
 use crate::{core::events::PipelineMode, persistence::PersistenceEvent};
 
@@ -16,6 +17,10 @@ impl ToolDefinition for SetTitleTool {
 
     fn domain(&self) -> ToolDomain {
         ToolDomain::Modular
+    }
+
+    fn truncation_policy(&self) -> TruncationPolicy {
+        TruncationPolicy::None
     }
 
     fn description(&self, _mode: PipelineMode) -> &str {
@@ -80,6 +85,10 @@ impl ToolDefinition for SetSessionTitleTool {
 
     fn domain(&self) -> ToolDomain {
         ToolDomain::Realtime
+    }
+
+    fn truncation_policy(&self) -> TruncationPolicy {
+        TruncationPolicy::None
     }
 
     fn description(&self, _mode: PipelineMode) -> &str {

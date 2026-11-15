@@ -353,6 +353,16 @@ pub async fn delete_session(conn: &Connection, session_id: i64, hard: bool) -> R
             return Err(anyhow!("Session not found: {}", session_id));
         }
     }
+
+    let cache_dir = crate::utils::paths::session_tool_outputs_dir(session_id);
+    if cache_dir.exists() {
+        let _ = std::fs::remove_dir_all(&cache_dir);
+        log::info!(
+            "[Persistence::Sessions] Purged tool outputs directory for session_id={}",
+            session_id
+        );
+    }
+
     Ok(())
 }
 

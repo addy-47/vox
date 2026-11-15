@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 
 use super::{
     ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolExecutionMode, ToolResult,
+    TruncationPolicy,
 };
 use crate::{
     core::events::PipelineMode,
@@ -102,6 +103,10 @@ impl ToolDefinition for WebSearchTool {
 
     fn domain(&self) -> ToolDomain {
         ToolDomain::Modular
+    }
+
+    fn truncation_policy(&self) -> TruncationPolicy {
+        TruncationPolicy::HeadTail { head_ratio: 0.8 }
     }
 
     fn description(&self, _mode: PipelineMode) -> &str {

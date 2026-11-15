@@ -15,8 +15,8 @@ pub async fn persist_tool_call(conn: &Connection, event: &PersistenceEvent) -> R
         result,
         is_error,
         duration_ms,
-        truncated: _,
-        spillover_path: _,
+        truncated,
+        spillover_path,
         created_at,
     } = event
     else {
@@ -27,10 +27,11 @@ pub async fn persist_tool_call(conn: &Connection, event: &PersistenceEvent) -> R
 
     let args_str = serde_json::to_string(arguments).unwrap_or_else(|_| "{}".to_string());
     let is_error_int = if *is_error { 1i64 } else { 0i64 };
+    let truncated_int = if *truncated { 1i64 } else { 0i64 };
     let created_at_ms = *created_at as i64;
 
     conn.execute(
-        "INSERT INTO session_tool_calls (id, session_id, turn_id, step_id, step_index, tool_name, arguments, result, is_error, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+        "INSERT INTO session_tool_calls (id, session_id, turn_id, step_id, step_index, tool_name, arguments, result, is_error, duration_ms, truncated, spillover_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
         (
             id.clone(),
             *session_id,
@@ -42,6 +43,8 @@ pub async fn persist_tool_call(conn: &Connection, event: &PersistenceEvent) -> R
             result.clone(),
             is_error_int,
             *duration_ms as i64,
+            truncated_int,
+            spillover_path.clone(),
             created_at_ms,
         ),
     )

@@ -10,7 +10,7 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-pub const SCHEMA_VERSION: u32 = 17;
+pub const SCHEMA_VERSION: u32 = 18;
 
 const PERSONAL_MEMORY_SEMANTIC_SCHEMA_VERSION: u32 = 9;
 const EMPTY_PERSONAL_MEMORY_JSON: &str = r#"{"sections":[]}"#;
@@ -151,6 +151,10 @@ const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
         preamble_text TEXT,
         tool_count INTEGER NOT NULL DEFAULT 0,
         duration_ms INTEGER,
+        prompt_tokens INTEGER,
+        completion_tokens INTEGER,
+        guardrail_strike INTEGER NOT NULL DEFAULT 0,
+        is_compacted INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL
     );",
     "CREATE INDEX IF NOT EXISTS idx_session_steps_lookup ON session_steps(session_id, turn_id, step_index);",
@@ -166,6 +170,8 @@ const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
         result TEXT,
         is_error INTEGER NOT NULL DEFAULT 0,
         duration_ms INTEGER,
+        truncated INTEGER NOT NULL DEFAULT 0,
+        spillover_path TEXT,
         created_at INTEGER NOT NULL
     );",
     "CREATE INDEX IF NOT EXISTS idx_tool_calls_session_turn ON session_tool_calls(session_id, turn_id);",
@@ -408,6 +414,36 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
         }
 
+        if current_version > 0 && current_version < 18 {
+            log::info!("[Persistence::Schema] Migrating schema to v18: adding step provenance and truncation fields");
+
+            let step_cols = get_table_columns(conn, "session_steps").await?;
+            if !step_cols.is_empty() {
+                if !step_cols.contains("prompt_tokens") {
+                    conn.execute("ALTER TABLE session_steps ADD COLUMN prompt_tokens INTEGER;", ()).await?;
+                }
+                if !step_cols.contains("completion_tokens") {
+                    conn.execute("ALTER TABLE session_steps ADD COLUMN completion_tokens INTEGER;", ()).await?;
+                }
+                if !step_cols.contains("guardrail_strike") {
+                    conn.execute("ALTER TABLE session_steps ADD COLUMN guardrail_strike INTEGER NOT NULL DEFAULT 0;", ()).await?;
+                }
+                if !step_cols.contains("is_compacted") {
+                    conn.execute("ALTER TABLE session_steps ADD COLUMN is_compacted INTEGER NOT NULL DEFAULT 0;", ()).await?;
+                }
+            }
+
+            let tool_cols = get_table_columns(conn, "session_tool_calls").await?;
+            if !tool_cols.is_empty() {
+                if !tool_cols.contains("truncated") {
+                    conn.execute("ALTER TABLE session_tool_calls ADD COLUMN truncated INTEGER NOT NULL DEFAULT 0;", ()).await?;
+                }
+                if !tool_cols.contains("spillover_path") {
+                    conn.execute("ALTER TABLE session_tool_calls ADD COLUMN spillover_path TEXT;", ()).await?;
+                }
+            }
+        }
+
         for stmt in SCHEMA_TABLE_STATEMENTS {
             conn.execute(stmt, ()).await?;
         }
@@ -572,4 +608,19 @@ async fn retire_positional_personal_memory_model(conn: &Connection) -> Result<()
         "[Persistence::Schema] Retired the positional Personal Memory model (v9 artifacts removed)"
     );
     Ok(())
+}
+
+/// Retrieves the set of column names for a given table via PRAGMA table_info.
+async fn get_table_columns(
+    conn: &Connection,
+    table_name: &str,
+) -> Result<std::collections::HashSet<String>> {
+    let mut cols = std::collections::HashSet::new();
+    let query = format!("PRAGMA table_info({});", table_name);
+    let mut rows = conn.query(&query, ()).await?;
+    while let Some(row) = rows.next().await? {
+        let col_name: String = row.get(1)?;
+        cols.insert(col_name);
+    }
+    Ok(cols)
 }

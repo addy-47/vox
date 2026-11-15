@@ -89,18 +89,34 @@ impl ToolExecutor {
             };
         }
 
-        let (result, is_error) = run_with_guards(&tool, mode, &call, &ctx).await;
+        let (mut result, is_error) = run_with_guards(&tool, mode, &call, &ctx).await;
         let duration_ms = start.elapsed().as_millis() as u64;
+
+        let max_tokens = ctx.max_observation_tokens.unwrap_or(2000);
+        let (preview_content, truncated, spillover_path) =
+            crate::services::harness::stages::truncation::TruncationStage::apply(
+                ctx.session_id,
+                &call.id,
+                &call.name,
+                &result.content,
+                max_tokens,
+                tool.truncation_policy(),
+            );
+        result.content = preview_content;
+        result.truncated = truncated;
+        result.spillover_path = spillover_path.clone();
+
         ctx.app_state
             .turn_metrics
             .record_tool_finish(duration_ms, is_error);
 
         log::info!(
-            "[ToolExecutor] Executed {} (mode: {:?}) in {}ms (is_error: {})",
+            "[ToolExecutor] Executed {} (mode: {:?}) in {}ms (is_error: {}, truncated: {})",
             call.name,
             mode,
             duration_ms,
-            is_error
+            is_error,
+            truncated
         );
 
         ToolExecutionOutcome {
@@ -110,8 +126,8 @@ impl ToolExecutor {
             result,
             is_error,
             duration_ms,
-            truncated: false,
-            spillover_path: None,
+            truncated,
+            spillover_path,
         }
     }
 
