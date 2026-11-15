@@ -976,8 +976,8 @@ async fn mid_turn_cancellation_on_step_two_preserves_step_one_history_and_forbid
                 name: "search_memory".to_string(),
                 arguments: serde_json::json!({ "query": "interrupted search" }),
             }));
-            cancel_clone.cancel();
             let _ = tx.send(LlmResponse::Finished);
+            cancel_clone.cancel();
         });
 
         let query = "Multi-step query that gets cancelled during step two";
@@ -2014,23 +2014,36 @@ async fn truncation_policy_none_preserves_full_output_without_disk_spillover() {
         };
         assert_eq!(file_count, 0, "Zero spillover files must be created for TruncationPolicy::None");
 
-        // Provenance assert: session_tool_calls must record truncated = 0
+        // Provenance assert: session_tool_calls must record truncated = 0 (bounded poll for async persistence)
         let conn = rig.state.db.connect().expect("db connect");
-        let mut rows = conn
-            .query(
-                "SELECT truncated, spillover_path FROM session_tool_calls WHERE id = ?;",
-                (call_id,),
-            )
-            .await
-            .expect("query session_tool_calls truncation columns");
-        if let Some(row) = rows.next().await.expect("fetch row") {
-            let truncated: i64 = row.get(0).expect("truncated");
-            let spillover_path: Option<String> = row.get(1).expect("spillover_path");
-            assert_eq!(truncated, 0, "session_tool_calls must record truncated = 0 for TruncationPolicy::None");
-            assert!(spillover_path.is_none(), "spillover_path must be NULL for TruncationPolicy::None");
-        } else {
-            panic!("Expected session_tool_calls row for tool call");
+        let start = std::time::Instant::now();
+        let mut found_row = None;
+        while start.elapsed() < Duration::from_secs(5) {
+            let mut rows = conn
+                .query(
+                    "SELECT truncated, spillover_path FROM session_tool_calls WHERE id = ?;",
+                    (call_id.clone(),),
+                )
+                .await
+                .expect("query session_tool_calls truncation columns");
+            if let Some(row) = rows.next().await.expect("fetch row") {
+                let truncated: i64 = row.get(0).expect("truncated");
+                let spillover_path: Option<String> = row.get(1).expect("spillover_path");
+                found_row = Some((truncated, spillover_path));
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
+        let (truncated, spillover_path) =
+            found_row.expect("session_tool_calls row must be persisted within deadline");
+        assert_eq!(
+            truncated, 0,
+            "session_tool_calls must record truncated = 0 for TruncationPolicy::None"
+        );
+        assert!(
+            spillover_path.is_none(),
+            "spillover_path must be NULL for TruncationPolicy::None"
+        );
     })
     .await
     .expect("test timed out");
@@ -2078,13 +2091,14 @@ async fn mid_loop_critical_budget_triggers_compaction_while_preserving_active_tu
         {
             let mut guard = rig.state.harness.lock();
             let harness = guard.as_mut().expect("Harness must be mounted");
+            harness.register_tool(Arc::new(LargeHeadTailTool));
             for i in 0..90 {
                 harness.push_user_turn(format!(
-                    "Turn {} historical context question about distributed cognitive loops and state machines.",
+                    "Turn {} user statement with sufficient length and detail to accumulate tokens in accountant memory buffer. We are discussing neural networks, integration testing, and long context tracking across conversational agents.",
                     i
                 ));
                 harness.push_assistant_turn(format!(
-                    "Turn {} historical answer explaining pipeline stages, token budgets, and memory compaction.",
+                    "Turn {} assistant response describing system operations, memory compaction protocols, and pipeline states in detail. High token utilization will trigger inline compaction and transition filler phrase dispatch.",
                     i
                 ));
             }
@@ -2094,8 +2108,8 @@ async fn mid_loop_critical_budget_triggers_compaction_while_preserving_active_tu
         rig.scripted_llm.push_step(|tx| {
             let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
                 id: "call-step0-mid".to_string(),
-                name: "search_memory".to_string(),
-                arguments: serde_json::json!({ "query": "in-flight investigation" }),
+                name: "large_head_tail_tool".to_string(),
+                arguments: serde_json::json!({}),
             }));
             let _ = tx.send(LlmResponse::Finished);
         });
@@ -2120,7 +2134,7 @@ async fn mid_loop_critical_budget_triggers_compaction_while_preserving_active_tu
         let messages = harness.messages();
 
         // 1. Verify older prior turns were compacted into session_context prompt
-        let has_old_turn_0 = messages.iter().any(|m| m.content.contains("Turn 0 historical"));
+        let has_old_turn_0 = messages.iter().any(|m| m.content.contains("Turn 0 user statement"));
         assert!(
             !has_old_turn_0,
             "Older historical turns must be compacted and removed from active message history"
