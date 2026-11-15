@@ -25,7 +25,7 @@ use crate::{
                 streaming::StreamRoutingStage,
                 tools::{ToolDefinition, ToolFilter, ToolRegistry},
             },
-            ChatMessage,
+            ChatMessage, Role,
         },
         llm::{actor::LlmCommand, GenerationOptions, ReasoningMode},
         memory::compaction::CompactionResult,
@@ -54,6 +54,7 @@ pub struct Harness {
     pub max_steps: Option<usize>,
     pub(crate) guardrails: GuardrailsStage,
     pub(crate) guardrails_state: TurnGuardrailsState,
+    pub(crate) is_compacted_this_turn: bool,
 }
 
 /// Dynamic per-model execution parameters resolved from database models table.
@@ -123,8 +124,9 @@ impl Harness {
             web_search_enabled: settings.interaction.web_search_enabled,
             has_played_filler: false,
             max_steps: None,
-            guardrails: GuardrailsStage::default(),
+            guardrails: GuardrailsStage,
             guardrails_state: TurnGuardrailsState::default(),
+            is_compacted_this_turn: false,
         }
     }
 
@@ -163,8 +165,9 @@ impl Harness {
             web_search_enabled: settings.interaction.web_search_enabled,
             has_played_filler: false,
             max_steps: None,
-            guardrails: GuardrailsStage::default(),
+            guardrails: GuardrailsStage,
             guardrails_state: TurnGuardrailsState::default(),
+            is_compacted_this_turn: false,
         }
     }
 
@@ -236,6 +239,7 @@ impl Harness {
     pub fn intake_recorded_turn(&mut self, query: String) -> bool {
         self.has_played_filler = false;
         self.guardrails_state = TurnGuardrailsState::default();
+        self.is_compacted_this_turn = false;
         self.history.push_user_turn(query);
         let assembled_system = self.prompt.assemble();
         self.history.sync_system_prompt(&assembled_system);
@@ -419,19 +423,39 @@ impl Harness {
     }
 
     pub fn apply_session_context(&mut self, session_context: &str, active_query: &str) {
+        self.is_compacted_this_turn = true;
         self.prompt
             .set_session_context(Some(session_context.to_string()));
         if let Some(ref mut compaction) = self.compaction {
             compaction.apply_session_context(session_context);
         }
         let assembled_prompt = self.prompt.assemble();
+
+        // 1. Extract the active turn's trailing slice (from the last Role::User message onward)
+        let active_turn_tail: Vec<ChatMessage> = {
+            let msgs = self.history.messages();
+            if let Some(last_user_idx) = msgs.iter().rposition(|m| m.role == Role::User) {
+                msgs[last_user_idx..].to_vec()
+            } else {
+                Vec::new()
+            }
+        };
+
+        // 2. Reset conversation history with the newly compacted system prompt
         self.history.clear();
         self.history.reset(assembled_prompt);
-        if !active_query.trim().is_empty() {
+
+        // 3. Re-push the active turn's messages intact (preserving intermediate tool steps)
+        if !active_turn_tail.is_empty() {
+            for msg in active_turn_tail {
+                self.history.push_message(msg);
+            }
+        } else if !active_query.trim().is_empty() {
             self.history.push_user_turn(active_query.to_string());
         }
+
         log::info!(
-            "[Harness::Chassis] History rebuilt with session context. Total turns: {}",
+            "[Harness::Chassis] History rebuilt with session context. Active turn preserved. Total messages: {}",
             self.history.messages().len()
         );
     }

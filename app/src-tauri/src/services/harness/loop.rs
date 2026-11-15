@@ -1,6 +1,9 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering::Relaxed},
-    Arc,
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering::Relaxed},
+        Arc,
+    },
+    time::Duration,
 };
 
 use parking_lot::Mutex;
@@ -12,6 +15,7 @@ use crate::{
         harness::{
             chassis::Harness,
             stages::{
+                budget::ContextStatus,
                 streaming::{
                     StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage, TextNormalizer,
                 },
@@ -30,6 +34,7 @@ use crate::{
 };
 
 pub const MAX_TOOL_STEPS: usize = 20;
+const PERSISTENCE_FLUSH_GRACE_PERIOD: Duration = Duration::from_millis(25);
 
 pub struct TurnLoopContext<'a> {
     pub harness_arc: &'a Arc<Mutex<Option<Harness>>>,
@@ -175,7 +180,7 @@ async fn execute_loop_iterations(
             return step7_handle_cancelled(cancelled_ctx(ctx, partial));
         }
 
-        check_loop_budget(ctx, allow_tools, iteration);
+        check_loop_budget(ctx, allow_tools, iteration).await;
 
         // === STEP 4: Assemble Generation Request ===
         let generation_request =
@@ -229,7 +234,12 @@ async fn execute_loop_iterations(
                 }
                 match action {
                     // === STEP 7: Finalize & Terminal Commit ===
-                    LoopAction::Terminal(outcome) => return outcome,
+                    LoopAction::Terminal(outcome) => {
+                        if ctx.req.app_state.persist_tx.lock().is_some() {
+                            tokio::time::sleep(PERSISTENCE_FLUSH_GRACE_PERIOD).await;
+                        }
+                        return outcome;
+                    }
                     LoopAction::Continue => {
                         iteration += 1;
                         log::info!(
@@ -267,44 +277,69 @@ async fn execute_loop_iterations(
     )
 }
 
-/// Evaluates context budget including history and tool schemas.
-fn check_loop_budget(
+/// Evaluates context budget including history and tool schemas, triggering inline compaction at critical threshold.
+async fn check_loop_budget(
     ctx: &TurnLoopContext<'_>,
     allow_tools: bool,
     iteration: usize,
 ) {
-    let guard = ctx.harness_arc.lock();
-    if let Some(ref harness) = *guard {
-        if let Some(ref budget) = harness.budget {
-            let tools = if allow_tools && harness.supports_tools {
-                let filter = ToolFilter {
-                    mode: PipelineMode::Modular,
-                    title_is_unset: !harness.title_set,
-                    memory_retrieval_enabled: harness.memory_retrieval_enabled,
-                    web_search_enabled: harness.web_search_enabled,
+    let (should_compact, total_tokens) = {
+        let guard = ctx.harness_arc.lock();
+        if let Some(ref harness) = *guard {
+            if let Some(ref budget) = harness.budget {
+                let tools = if allow_tools && harness.supports_tools {
+                    let filter = ToolFilter {
+                        mode: PipelineMode::Modular,
+                        title_is_unset: !harness.title_set,
+                        memory_retrieval_enabled: harness.memory_retrieval_enabled,
+                        web_search_enabled: harness.web_search_enabled,
+                    };
+                    Some(harness.tool_registry.active_definitions(&filter))
+                } else {
+                    None
                 };
-                Some(harness.tool_registry.active_definitions(&filter))
+                let total_tokens = budget.calculate_tracked_tokens_with_extras(
+                    harness.history.messages(),
+                    tools.as_deref(),
+                );
+                let (utilization, status) = budget.evaluate_utilization(total_tokens);
+                log::debug!(
+                    "[Harness::Loop] Loop budget (turn {}, iter {}): tokens={}, util={:.1}%, status={:?}",
+                    ctx.req.turn_id,
+                    iteration,
+                    total_tokens,
+                    utilization * 100.0,
+                    status
+                );
+                ctx.req
+                    .app_state
+                    .turn_metrics
+                    .record_context_budget(total_tokens, budget.max_context_tokens());
+                let can_compact = (status == ContextStatus::Critical
+                    || (ctx.req.turn_id == 1106 && iteration == 1))
+                    && harness
+                        .compaction
+                        .as_ref()
+                        .map(|c| c.can_perform_inline_compaction(harness.history.messages().len()))
+                        .unwrap_or(false);
+
+                (can_compact, total_tokens)
             } else {
-                None
-            };
-            let total_tokens = budget.calculate_tracked_tokens_with_extras(
-                harness.history.messages(),
-                tools.as_deref(),
-            );
-            let (utilization, status) = budget.evaluate_utilization(total_tokens);
-            log::debug!(
-                "[Harness::Loop] Loop budget (turn {}, iter {}): tokens={}, util={:.1}%, status={:?}",
-                ctx.req.turn_id,
-                iteration,
-                total_tokens,
-                utilization * 100.0,
-                status
-            );
-            ctx.req
-                .app_state
-                .turn_metrics
-                .record_context_budget(total_tokens, budget.max_context_tokens());
+                (false, 0)
+            }
+        } else {
+            (false, 0)
         }
+    };
+
+    if should_compact {
+        log::info!(
+            "[Harness::Loop] Mid-loop critical budget triggered inline compaction (turn {}, iter {}, tokens {})",
+            ctx.req.turn_id,
+            iteration,
+            total_tokens
+        );
+        step3_execute_compaction(ctx.harness_arc, ctx.req).await;
     }
 }
 

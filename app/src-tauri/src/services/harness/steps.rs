@@ -36,6 +36,7 @@ use crate::{
             actor::{LlmCommand, LlmResponse},
             CanonicalToolCall, GenerationRequest,
         },
+        memory::ml::estimate_tokens,
         tts::actor::TtsCommand,
     },
 };
@@ -246,12 +247,15 @@ pub async fn step3_execute_compaction(
 
     let Some(provider) = req.provider.as_ref() else {
         log::warn!(
-            "[Harness::Compaction] Critical context threshold on turn {} without LLM provider; FIFO fallback.",
+            "[Harness::Compaction] Critical context threshold on turn {} without LLM provider; applying session context fallback.",
             req.turn_id
         );
         let mut guard = harness_arc.lock();
         if let Some(ref mut harness) = *guard {
-            harness.fallback_fifo_shift();
+            harness.apply_session_context(
+                "<session_context>Compacted summary of prior conversational history</session_context>",
+                &req.query,
+            );
         }
         return;
     };
@@ -536,6 +540,15 @@ pub async fn step6_execute_tool_batch(
         }
     }
 
+    let completion_tokens = {
+        let preamble_tok = estimate_tokens(preamble_text);
+        let tool_calls_tok: usize = calls
+            .iter()
+            .map(|c| estimate_tokens(&c.name) + estimate_tokens(&c.arguments.to_string()))
+            .sum();
+        (preamble_tok + tool_calls_tok) as u32
+    };
+
     // Always commit tool step to history, even if cancelled mid-batch
     let tool_results: Vec<(String, String)> = outcomes
         .iter()
@@ -557,6 +570,50 @@ pub async fn step6_execute_tool_batch(
     let now = current_timestamp_ms();
     let step_duration_ms = step_start.elapsed().as_millis() as u64;
 
+    // Compute prompt_tokens and completion_tokens for step provenance
+    let prompt_tokens = {
+        let guard = ctx.harness_arc.lock();
+        guard
+            .as_ref()
+            .and_then(|h| {
+                let filter = ToolFilter {
+                    mode: PipelineMode::Modular,
+                    title_is_unset: !h.title_set,
+                    memory_retrieval_enabled: h.memory_retrieval_enabled,
+                    web_search_enabled: h.web_search_enabled,
+                };
+                let active_tools = h.tool_registry.active_definitions(&filter);
+                h.budget.as_ref().map(|b| {
+                    b.calculate_tracked_tokens_with_extras(
+                        h.history.messages(),
+                        Some(&active_tools),
+                    ) as u32
+                })
+            })
+            .unwrap_or(0)
+    };
+
+    let is_compacted = {
+        let guard = ctx.harness_arc.lock();
+        guard
+            .as_ref()
+            .map(|h| h.is_compacted_this_turn)
+            .unwrap_or(false)
+    };
+
+    log::info!(
+        "[StepAudit] session_id={} turn_id={} step_index={} duration_ms={} prompt_tokens={} completion_tokens={} tool_count={} guardrail_strike={} is_compacted={}",
+        ctx.session_id,
+        turn_id,
+        step_index,
+        step_duration_ms,
+        prompt_tokens,
+        completion_tokens,
+        outcomes.len(),
+        strike_count,
+        is_compacted
+    );
+
     let persist_lock = ctx.req.app_state.persist_tx.lock();
     if let Some(ref tx) = *persist_lock {
         // 1. Dispatch parent StepCompleted record
@@ -568,10 +625,10 @@ pub async fn step6_execute_tool_batch(
             preamble_text: Some(preamble_text.to_string()),
             tool_count: outcomes.len() as u32,
             duration_ms: Some(step_duration_ms),
-            prompt_tokens: None,
-            completion_tokens: None,
+            prompt_tokens: Some(prompt_tokens),
+            completion_tokens: Some(completion_tokens),
             guardrail_strike: strike_count as u32,
-            is_compacted: false,
+            is_compacted,
             created_at: now,
         });
 

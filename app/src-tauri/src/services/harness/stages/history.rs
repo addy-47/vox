@@ -177,4 +177,17 @@ impl ConversationHistoryStage {
             log::info!("[Harness::History] Truncated {} oldest turns", drain_count);
         }
     }
+
+    /// Truncates a specific slice of dialogue messages by index range.
+    pub fn truncate_range(&mut self, range: std::ops::Range<usize>) {
+        if range.start < self.messages.len()
+            && range.end <= self.messages.len()
+            && range.start < range.end
+        {
+            let count = range.end - range.start;
+            self.messages.drain(range);
+            self.kv_synced_index = 0;
+            log::info!("[Harness::History] Truncated {} messages in range", count);
+        }
+    }
 }

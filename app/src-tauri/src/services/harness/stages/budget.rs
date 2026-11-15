@@ -1,5 +1,5 @@
 use crate::services::{
-    harness::{ChatMessage, ConversationHistoryStage},
+    harness::{ChatMessage, ConversationHistoryStage, Role},
     memory::ml::estimate_tokens,
 };
 
@@ -115,15 +115,29 @@ impl ContextBudgetStage {
         let mut dropped = 0;
 
         while self.calculate_tracked_tokens(history.messages()) > target_budget {
-            if history.messages().len() <= 2 {
+            let msgs = history.messages();
+            let user_indices: Vec<usize> = msgs
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| m.role == Role::User)
+                .map(|(i, _)| i)
+                .collect();
+
+            // Never drop the active turn: we need at least 2 User turns to drop the older one.
+            if user_indices.len() < 2 {
                 break;
             }
-            history.truncate_oldest_turns(2);
-            dropped += 2;
+
+            let start = user_indices[0];
+            let end = user_indices[1];
+            let unit_len = end - start;
+
+            history.truncate_range(start..end);
+            dropped += unit_len;
         }
 
         log::warn!(
-            "[Harness::Budget] FIFO sliding window shift executed. Dropped {} turns. Remaining: {}",
+            "[Harness::Budget] FIFO sliding window shift executed. Dropped {} messages across complete turn units. Remaining: {}",
             dropped,
             history.messages().len()
         );
