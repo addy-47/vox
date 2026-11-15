@@ -104,7 +104,7 @@ impl SeamRig {
                     reasoning_enabled: false,
                 },
                 llm_tx.clone(),
-                true,
+                false,
             ));
         }
 

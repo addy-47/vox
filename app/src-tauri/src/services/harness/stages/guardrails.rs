@@ -49,25 +49,10 @@ impl GuardrailsStage {
         outcomes: &[ToolExecutionOutcome],
     ) -> GuardrailAction {
         for outcome in outcomes {
-            // Test mock fallback query in common::harness::ScriptedLlmWorker emits static "default query".
-            // We ignore it so tool budget ceiling tests can exercise MAX_TOOL_STEPS without artificial stall.
-            let is_mock_default = outcome
-                .arguments
-                .get("query")
-                .and_then(|v| v.as_str())
-                .map(|q| q == "default query")
-                .unwrap_or(false);
-
-            let args_hash = if is_mock_default {
-                compute_canonical_json_hash(&outcome.arguments) ^ (step_index as u64)
-            } else {
-                compute_canonical_json_hash(&outcome.arguments)
-            };
-
             let fp = ToolCallFingerprint {
                 step_index,
                 tool_name: outcome.tool_name.clone(),
-                args_hash,
+                args_hash: compute_canonical_json_hash(&outcome.arguments),
                 result_hash: compute_str_hash(&outcome.result.content),
                 is_error: outcome.is_error,
             };
@@ -126,9 +111,43 @@ impl GuardrailsStage {
 /// Computes a deterministic 64-bit hash of a JSON value using canonical key ordering.
 pub fn compute_canonical_json_hash(val: &Value) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    let canonical = serde_json::to_string(val).unwrap_or_else(|_| "{}".to_string());
-    canonical.hash(&mut hasher);
+    hash_canonical_json(val, &mut hasher);
     hasher.finish()
+}
+
+fn hash_canonical_json<H: std::hash::Hasher>(val: &Value, hasher: &mut H) {
+    match val {
+        Value::Null => 0u8.hash(hasher),
+        Value::Bool(b) => {
+            1u8.hash(hasher);
+            b.hash(hasher);
+        }
+        Value::Number(n) => {
+            2u8.hash(hasher);
+            n.to_string().hash(hasher);
+        }
+        Value::String(s) => {
+            3u8.hash(hasher);
+            s.hash(hasher);
+        }
+        Value::Array(arr) => {
+            4u8.hash(hasher);
+            arr.len().hash(hasher);
+            for item in arr {
+                hash_canonical_json(item, hasher);
+            }
+        }
+        Value::Object(map) => {
+            5u8.hash(hasher);
+            map.len().hash(hasher);
+            let mut entries: Vec<(&String, &Value)> = map.iter().collect();
+            entries.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+            for (k, v) in entries {
+                k.hash(hasher);
+                hash_canonical_json(v, hasher);
+            }
+        }
+    }
 }
 
 /// Computes a deterministic 64-bit hash of a string slice.

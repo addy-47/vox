@@ -44,7 +44,7 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
    ```bash
    cargo nextest run -- --ignored
    ```
-> **Note for every agent:** Polling cargo compilation commands is forbidden , always let the system inform you . cargo test list should never be run as it hangs .
+> **Note for every agent:** Polling cargo compilation commands is forbidden , always let the system inform you . 'cargo nextest list' should never be run as it hangs .
 
 ---
 

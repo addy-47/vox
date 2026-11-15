@@ -107,8 +107,8 @@ impl EchoScene {
             while self.rig.cap_prod.occupied_len() >= frame * 4 {
                 std::thread::sleep(Duration::from_millis(1));
             }
-            self.rig.cap_prod.push_slice(&padded);
             self.rig.sink.process_output_buffer(&mut stereo_out);
+            self.rig.cap_prod.push_slice(&padded);
             off += frame;
         }
     }

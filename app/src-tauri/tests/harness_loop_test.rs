@@ -2051,7 +2051,7 @@ async fn truncation_policy_none_preserves_full_output_without_disk_spillover() {
 
 /// PURPOSE:  Catch mid-loop context overflow and prevent erasure of in-flight active turn steps during inline compaction.
 /// SCENARIO: Seed prior turns to ~80% context budget; on Turn N Step 0, model executes tool pushing context >= 85% (Critical); before Step 1 LLM dispatch, inline compaction triggers.
-/// ASSERTS:  State transition/activity records ActivityKind::Compaction; older prior turns compacted into <session_context>, while Turn N's Role::User query, Step 0 Role::Assistant(tool_calls), and Step 0 Role::Tool observation remain intact in harness.messages() for Step 1's request.
+/// ASSERTS:  Older prior turns compacted into <session_context>, while Turn N's Role::User query, Step 0 Role::Assistant(tool_calls), and Step 0 Role::Tool observation remain intact in harness.messages(); session_steps records is_compacted = 1.
 /// CLASS:    edge-case
 /// REQUIRES: none
 /// MUTANT:   In apply_session_context (chassis.rs), wipe the active turn's committed tool steps during mid-loop reset.
@@ -2129,36 +2129,67 @@ async fn mid_loop_critical_budget_triggers_compaction_while_preserving_active_tu
             outcome
         );
 
-        let guard = rig.state.harness.lock();
-        let harness = guard.as_ref().expect("Harness must be mounted");
-        let messages = harness.messages();
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().expect("Harness must be mounted");
+            let messages = harness.messages();
 
-        // 1. Verify older prior turns were compacted into session_context prompt
-        let has_old_turn_0 = messages.iter().any(|m| m.content.contains("Turn 0 user statement"));
-        assert!(
-            !has_old_turn_0,
-            "Older historical turns must be compacted and removed from active message history"
-        );
+            // 1. Verify older prior turns were compacted into session_context prompt
+            let has_old_turn_0 = messages.iter().any(|m| m.content.contains("Turn 0 user statement"));
+            assert!(
+                !has_old_turn_0,
+                "Older historical turns must be compacted and removed from active message history"
+            );
 
-        // 2. Verify Turn N's active User query remains intact
-        let active_user_msg = messages.iter().find(|m| m.role == Role::User && m.content.contains("Turn N active query"));
-        assert!(
-            active_user_msg.is_some(),
-            "Turn N active user query must be preserved intact after mid-loop compaction"
-        );
+            // 2. Verify Turn N's active User query remains intact
+            let active_user_msg = messages.iter().find(|m| m.role == Role::User && m.content.contains("Turn N active query"));
+            assert!(
+                active_user_msg.is_some(),
+                "Turn N active user query must be preserved intact after mid-loop compaction"
+            );
 
-        // 3. Verify Step 0's Role::Assistant tool call remains intact
-        let step0_assistant_msg = messages.iter().find(|m| m.role == Role::Assistant && m.tool_calls.as_ref().map(|c| !c.is_empty()).unwrap_or(false));
-        assert!(
-            step0_assistant_msg.is_some(),
-            "Step 0 Role::Assistant tool call must be preserved intact after mid-loop compaction"
-        );
+            // 3. Verify Step 0's Role::Assistant tool call remains intact
+            let step0_assistant_msg = messages.iter().find(|m| m.role == Role::Assistant && m.tool_calls.as_ref().map(|c| !c.is_empty()).unwrap_or(false));
+            assert!(
+                step0_assistant_msg.is_some(),
+                "Step 0 Role::Assistant tool call must be preserved intact after mid-loop compaction"
+            );
 
-        // 4. Verify Step 0's Role::Tool observation remains intact
-        let step0_tool_msg = messages.iter().find(|m| m.role == Role::Tool);
+            // 4. Verify Step 0's Role::Tool observation remains intact
+            let step0_tool_msg = messages.iter().find(|m| m.role == Role::Tool);
+            assert!(
+                step0_tool_msg.is_some(),
+                "Step 0 Role::Tool observation must be preserved intact after mid-loop compaction"
+            );
+        }
+
+        // 5. Provenance assert: session_steps must record is_compacted = 1
+        let conn = rig.state.db.connect().expect("db connect");
+        let start = std::time::Instant::now();
+        let mut found_compacted = false;
+        while start.elapsed() < Duration::from_secs(5) {
+            let mut rows = conn
+                .query(
+                    "SELECT is_compacted FROM session_steps WHERE session_id = ? AND turn_id = ?;",
+                    (rig.session_id, turn_id as i64),
+                )
+                .await
+                .expect("query session_steps");
+            while let Some(row) = rows.next().await.expect("fetch row") {
+                let is_compacted: i64 = row.get(0).expect("is_compacted");
+                if is_compacted == 1 {
+                    found_compacted = true;
+                    break;
+                }
+            }
+            if found_compacted {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
         assert!(
-            step0_tool_msg.is_some(),
-            "Step 0 Role::Tool observation must be preserved intact after mid-loop compaction"
+            found_compacted,
+            "session_steps must record is_compacted = 1 when mid-loop compaction triggers"
         );
     })
     .await

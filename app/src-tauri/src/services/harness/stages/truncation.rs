@@ -52,15 +52,17 @@ impl TruncationStage {
         }
 
         let spillover_file = spillover_dir.join(format!("{}.txt", sanitized_id));
-        let spillover_path_str = spillover_file.to_string_lossy().to_string();
-
-        if let Err(e) = std::fs::write(&spillover_file, raw_output.as_bytes()) {
-            log::warn!(
-                "[TruncationStage] Failed to write spillover file at {:?}: {}",
-                spillover_file,
-                e
-            );
-        }
+        let spillover_path_opt = match std::fs::write(&spillover_file, raw_output.as_bytes()) {
+            Ok(()) => Some(spillover_file.to_string_lossy().to_string()),
+            Err(e) => {
+                log::warn!(
+                    "[TruncationStage] Failed to write spillover file at {:?}: {}",
+                    spillover_file,
+                    e
+                );
+                None
+            }
+        };
 
         let (head_ratio, _tail_ratio) = match policy {
             TruncationPolicy::None => unreachable!(),
@@ -122,6 +124,9 @@ impl TruncationStage {
         );
 
         let preview_tokens = estimate_tokens(&preview);
+        let display_path = spillover_path_opt
+            .as_deref()
+            .unwrap_or("<write_failed>");
         log::info!(
             "[TruncationAudit] call_id={} tool={} policy={:?} original_tokens={} preview_tokens={} spillover_path={}",
             call_id,
@@ -129,9 +134,9 @@ impl TruncationStage {
             policy,
             total_tokens,
             preview_tokens,
-            spillover_path_str
+            display_path
         );
 
-        (preview, true, Some(spillover_path_str))
+        (preview, true, spillover_path_opt)
     }
 }

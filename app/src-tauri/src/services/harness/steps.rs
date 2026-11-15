@@ -435,6 +435,7 @@ pub async fn step6_execute_tool_batch(
     ctx: &TurnLoopContext<'_>,
     calls: Vec<CanonicalToolCall>,
     preamble_text: &str,
+    thinking_text: &str,
     step_index: usize,
 ) -> (bool, Option<String>, bool) {
     let turn_id = ctx.req.turn_id;
@@ -539,11 +540,35 @@ pub async fn step6_execute_tool_batch(
 
     let completion_tokens = {
         let preamble_tok = estimate_tokens(preamble_text);
+        let thinking_tok = estimate_tokens(thinking_text);
         let tool_calls_tok: usize = calls
             .iter()
             .map(|c| estimate_tokens(&c.name) + estimate_tokens(&c.arguments.to_string()))
             .sum();
-        (preamble_tok + tool_calls_tok) as u32
+        (preamble_tok + thinking_tok + tool_calls_tok) as u32
+    };
+
+    // Compute prompt_tokens for step provenance BEFORE committing this step's observations
+    let prompt_tokens = {
+        let guard = ctx.harness_arc.lock();
+        guard
+            .as_ref()
+            .and_then(|h| {
+                let filter = ToolFilter {
+                    mode: PipelineMode::Modular,
+                    title_is_unset: !h.title_set,
+                    memory_retrieval_enabled: h.memory_retrieval_enabled,
+                    web_search_enabled: h.web_search_enabled,
+                };
+                let active_tools = h.tool_registry.active_definitions(&filter);
+                h.budget.as_ref().map(|b| {
+                    b.calculate_tracked_tokens_with_extras(
+                        h.history.messages(),
+                        Some(&active_tools),
+                    ) as u32
+                })
+            })
+            .unwrap_or(0)
     };
 
     // Always commit tool step to history, even if cancelled mid-batch
@@ -567,35 +592,15 @@ pub async fn step6_execute_tool_batch(
     let now = current_timestamp_ms();
     let step_duration_ms = step_start.elapsed().as_millis() as u64;
 
-    // Compute prompt_tokens and completion_tokens for step provenance
-    let prompt_tokens = {
-        let guard = ctx.harness_arc.lock();
-        guard
-            .as_ref()
-            .and_then(|h| {
-                let filter = ToolFilter {
-                    mode: PipelineMode::Modular,
-                    title_is_unset: !h.title_set,
-                    memory_retrieval_enabled: h.memory_retrieval_enabled,
-                    web_search_enabled: h.web_search_enabled,
-                };
-                let active_tools = h.tool_registry.active_definitions(&filter);
-                h.budget.as_ref().map(|b| {
-                    b.calculate_tracked_tokens_with_extras(
-                        h.history.messages(),
-                        Some(&active_tools),
-                    ) as u32
-                })
-            })
-            .unwrap_or(0)
-    };
-
     let is_compacted = {
-        let guard = ctx.harness_arc.lock();
-        guard
-            .as_ref()
-            .map(|h| h.is_compacted_this_turn)
-            .unwrap_or(false)
+        let mut guard = ctx.harness_arc.lock();
+        if let Some(ref mut h) = *guard {
+            let was = h.is_compacted_this_turn;
+            h.is_compacted_this_turn = false;
+            was
+        } else {
+            false
+        }
     };
 
     log::info!(

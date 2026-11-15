@@ -370,7 +370,7 @@ async fn handle_pass_outcome(
         }
         StreamPassOutcome::ToolCallsReceived {
             preamble_text,
-            thinking_text: _,
+            thinking_text,
             calls,
         } => {
             if !allow_tools {
@@ -386,7 +386,7 @@ async fn handle_pass_outcome(
             }
 
             let (cancelled, suspended_question, circuit_broken) =
-                step6_execute_tool_batch(ctx, calls, &preamble_text, iteration).await;
+                step6_execute_tool_batch(ctx, calls, &preamble_text, &thinking_text, iteration).await;
             if cancelled {
                 (LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, String::new()))), circuit_broken)
             } else if let Some(question) = suspended_question {

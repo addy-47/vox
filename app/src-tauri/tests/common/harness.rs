@@ -982,8 +982,31 @@ pub struct AudioSceneRig {
     pub vad_tx: Sender<VadCommand>,
     pub engine: Arc<PlaybackEngine>,
     pub sink: vox_lib::services::audio::sink::PlaybackStreamContext,
-    pub router_join: std::thread::JoinHandle<()>,
+    pub router_join: Option<std::thread::JoinHandle<()>>,
     pub audio_suppressed: Arc<AtomicBool>,
+    pub vox_event_tx: Sender<VoxEvent>,
+    pub state: Arc<vox_lib::core::state::AppState>,
+}
+
+impl Drop for AudioSceneRig {
+    fn drop(&mut self) {
+        self.state.pipeline.engine_shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+        let _ = self.vox_event_tx.send(VoxEvent::Shutdown);
+        let _ = self.vad_tx.send(VadCommand::Shutdown);
+        if let Ok(mut guard) = self.state.engine.try_lock() {
+            if let Some(ref mut engine) = *guard {
+                if let Some(handle) = engine.aec_handle.take() {
+                    let _ = handle.join();
+                }
+                if let Some(handle) = engine.vad_handle.take() {
+                    let _ = handle.join();
+                }
+            }
+        }
+        if let Some(handle) = self.router_join.take() {
+            let _ = handle.join();
+        }
+    }
 }
 
 impl AudioSceneRig {
@@ -1014,7 +1037,7 @@ impl AudioSceneRig {
             wired.vad_tx.clone(),
             None,
             None,
-            vox_event_tx,
+            vox_event_tx.clone(),
             wired.aec_tx,
             Arc::clone(&engine),
             Some(wired.aec_handle),
@@ -1030,8 +1053,10 @@ impl AudioSceneRig {
             vad_tx: wired.vad_tx,
             engine,
             sink,
-            router_join,
+            router_join: Some(router_join),
             audio_suppressed: wired.audio_suppressed,
+            vox_event_tx,
+            state,
         }
     }
 }
@@ -1461,11 +1486,12 @@ pub fn run_scripted_worker(
                 if let Some(step) = next_step {
                     step(response_tx);
                 } else if offers_tools {
+                    let dispatch_idx = scripted.requests.lock().len();
                     let _ = response_tx.send(vox_lib::services::llm::actor::LlmResponse::ToolCall(
                         vox_lib::services::llm::CanonicalToolCall {
-                            id: format!("call-{}", turn_id),
+                            id: format!("call-{}-{}", turn_id, dispatch_idx),
                             name: "search_memory".to_string(),
-                            arguments: serde_json::json!({ "query": "default query" }),
+                            arguments: serde_json::json!({ "query": format!("default query {}", dispatch_idx) }),
                         },
                     ));
                     let _ = response_tx.send(vox_lib::services::llm::actor::LlmResponse::Finished);

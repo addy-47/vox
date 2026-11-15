@@ -115,46 +115,61 @@ impl StreamRoutingStage {
         let mut last_activity = std::time::Instant::now();
 
         loop {
-            if handles.cancel.load(Ordering::Relaxed) {
-                log::info!(
-                    "[Harness::Stream] Stream cancelled (turn {})",
-                    handles.turn_id
-                );
-                if !tool_calls_batch.is_empty() {
-                    self.flush_remainder(handles, AudioIntent::InterimFiller);
-                    let preamble_text = handles.accumulator.lock().assistant_response.clone();
-                    return Ok(StreamPassOutcome::ToolCallsReceived {
-                        preamble_text,
-                        thinking_text: thinking_buffer,
-                        calls: tool_calls_batch,
-                    });
-                }
-                self.emit_cancelled(handles);
-                return Ok(StreamPassOutcome::Cancelled {
-                    partial_text: handles.accumulator.lock().assistant_response.clone(),
-                });
-            }
-
-            let response = match response_rx.recv_timeout(timeout_interval) {
+            let next_resp = match response_rx.try_recv() {
                 Ok(resp) => {
                     last_activity = std::time::Instant::now();
-                    resp
+                    Some(resp)
                 }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    if last_activity.elapsed() > max_idle {
-                        log::error!(
-                            "[Harness::Stream] Stream timed out after 30s idle (turn {})",
-                            handles.turn_id
-                        );
-                        return Err(format!(
-                            "LLM provider response timed out after {:?}",
-                            max_idle
-                        ));
-                    }
-                    continue;
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                Err(std::sync::mpsc::TryRecvError::Empty) => None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     break;
+                }
+            };
+
+            let response = if let Some(resp) = next_resp {
+                resp
+            } else {
+                if handles.cancel.load(Ordering::Relaxed) {
+                    log::info!(
+                        "[Harness::Stream] Stream cancelled (turn {})",
+                        handles.turn_id
+                    );
+                    if !tool_calls_batch.is_empty() {
+                        self.flush_remainder(handles, AudioIntent::InterimFiller);
+                        let preamble_text = handles.accumulator.lock().assistant_response.clone();
+                        return Ok(StreamPassOutcome::ToolCallsReceived {
+                            preamble_text,
+                            thinking_text: thinking_buffer,
+                            calls: tool_calls_batch,
+                        });
+                    }
+                    self.emit_cancelled(handles);
+                    return Ok(StreamPassOutcome::Cancelled {
+                        partial_text: handles.accumulator.lock().assistant_response.clone(),
+                    });
+                }
+
+                match response_rx.recv_timeout(timeout_interval) {
+                    Ok(resp) => {
+                        last_activity = std::time::Instant::now();
+                        resp
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        if last_activity.elapsed() > max_idle {
+                            log::error!(
+                                "[Harness::Stream] Stream timed out after 30s idle (turn {})",
+                                handles.turn_id
+                            );
+                            return Err(format!(
+                                "LLM provider response timed out after {:?}",
+                                max_idle
+                            ));
+                        }
+                        continue;
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        break;
+                    }
                 }
             };
 
