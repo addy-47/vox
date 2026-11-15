@@ -1987,19 +1987,21 @@ async fn truncation_policy_none_preserves_full_output_without_disk_spillover() {
             outcome
         );
 
-        let guard = rig.state.harness.lock();
-        let harness = guard.as_ref().expect("Harness must be mounted");
-        let tool_msgs: Vec<_> = harness
-            .messages()
-            .iter()
-            .filter(|m| m.role == Role::Tool)
-            .collect();
-        assert_eq!(tool_msgs.len(), 1, "Exactly 1 tool observation committed");
-        let obs = &tool_msgs[0].content;
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().expect("Harness must be mounted");
+            let tool_msgs: Vec<_> = harness
+                .messages()
+                .iter()
+                .filter(|m| m.role == Role::Tool)
+                .collect();
+            assert_eq!(tool_msgs.len(), 1, "Exactly 1 tool observation committed");
+            let obs = &tool_msgs[0].content;
 
-        assert!(obs.contains("POLICY_NONE_HEAD"));
-        assert!(obs.contains("POLICY_NONE_TAIL"));
-        assert!(!obs.contains("Output truncated"), "Truncation notice must NOT appear for Policy::None");
+            assert!(obs.contains("POLICY_NONE_HEAD"));
+            assert!(obs.contains("POLICY_NONE_TAIL"));
+            assert!(!obs.contains("Output truncated"), "Truncation notice must NOT appear for Policy::None");
+        }
 
         // Zero files created in session tool outputs dir
         let session_tool_dir = vox_lib::utils::paths::session_tool_outputs_dir(rig.session_id);

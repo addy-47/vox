@@ -216,6 +216,8 @@ async fn project_delete_is_restricted_while_sessions_exist() {
 #[tokio::test]
 async fn session_delete_cascades_to_its_child_rows() {
     tokio::time::timeout(Duration::from_secs(15), async {
+        let _paths = TempPathsGuard::new();
+        vox_lib::utils::paths::init();
         let dir = tempdir().expect("Failed to create tempdir");
         let db_path = dir.path().join("test_cascades.db");
 
@@ -314,6 +316,8 @@ async fn session_delete_cascades_to_its_child_rows() {
 #[tokio::test]
 async fn session_delete_preserves_fact_and_its_vector() {
     tokio::time::timeout(Duration::from_secs(15), async {
+        let _paths = TempPathsGuard::new();
+        vox_lib::utils::paths::init();
         let dir = tempdir().expect("Failed to create tempdir");
         let db_path = dir.path().join("test_setnull.db");
 
@@ -606,6 +610,7 @@ async fn new_in_progress_compaction_is_allowed_after_previous_completes() {
 async fn concurrent_readers_and_persistence_worker_complete_without_db_errors() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let _guard = TempPathsGuard::new();
+        vox_lib::utils::paths::init();
         let dir = tempdir().expect("Failed to create tempdir");
         let db_path = dir.path().join("test_mvcc.db");
 
@@ -720,6 +725,7 @@ async fn concurrent_readers_and_persistence_worker_complete_without_db_errors() 
 async fn persistence_worker_writes_every_queued_turn() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let _guard = TempPathsGuard::new();
+        vox_lib::utils::paths::init();
         let dir = tempdir().expect("Failed to create tempdir");
         let db_path = dir.path().join("test_worker_drain.db");
 
@@ -952,6 +958,8 @@ async fn tool_call_indexes_exist_on_session_tool_calls() {
 #[tokio::test]
 async fn tool_call_event_self_heals_a_missing_session() {
     tokio::time::timeout(Duration::from_secs(15), async {
+        let _paths = TempPathsGuard::new();
+        vox_lib::utils::paths::init();
         let dir = tempdir().expect("Failed to create tempdir");
         let db_path = dir.path().join("test_tool_calls.db");
 
@@ -1038,6 +1046,8 @@ async fn tool_call_event_self_heals_a_missing_session() {
 #[tokio::test]
 async fn tool_call_is_not_persisted_in_private_mode() {
     tokio::time::timeout(Duration::from_secs(15), async {
+        let _paths = TempPathsGuard::new();
+        vox_lib::utils::paths::init();
         let dir = tempdir().expect("Failed to create tempdir");
         let db_path = dir.path().join("test_tool_calls_private.db");
 
@@ -1421,6 +1431,7 @@ async fn search_history_matches_titles_and_turns() {
 async fn multi_step_turn_persists_session_steps_and_foreign_key_linked_tool_calls() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let _paths = TempPathsGuard::new();
+        vox_lib::utils::paths::init();
         let dir = tempdir().expect("tempdir");
         let db_path = dir.path().join("test_steps.db");
 
@@ -1628,6 +1639,7 @@ async fn multi_step_turn_persists_session_steps_and_foreign_key_linked_tool_call
 async fn session_hard_delete_cascades_to_session_steps_and_session_tool_calls() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let _paths = TempPathsGuard::new();
+        vox_lib::utils::paths::init();
         let dir = tempdir().expect("tempdir");
         let db_path = dir.path().join("test_cascade.db");
 

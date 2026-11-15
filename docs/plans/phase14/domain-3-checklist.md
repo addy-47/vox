@@ -24,14 +24,14 @@
 *Depends on: Phase 1*
 *Gate: Run `cargo nextest run --test harness_loop_test --test database_persistence_boundary_test --release` -> Confirm ALL 8 SUBTESTS FAIL (RED)*
 *Commit Gate: `git commit -m "test(harness): add red seam tests for domain 3 guardrails & truncation"`*
-- [ ] `app/src-tauri/tests/harness_loop_test.rs`
+- [x] `app/src-tauri/tests/harness_loop_test.rs`
   - Add Subtest 1: `identical_tool_call_loop_triggers_strike_one_warning_then_strike_two_circuit_breaker`.
   - Add Subtest 2: `ping_pong_alternating_tool_loop_triggers_two_strike_circuit_breaker`.
   - Add Subtest 3: `consecutive_error_steps_trigger_two_strike_guardrail_and_force_summary`.
   - Add Subtest 4: `oversized_tool_observation_spills_to_tier4_cache_and_commits_head_tail_preview`.
   - Add Subtest 5: `truncation_policy_none_preserves_full_output_without_disk_spillover`.
   - Add Subtest 6: `mid_loop_critical_budget_triggers_compaction_while_preserving_active_turn_steps`.
-- [ ] `app/src-tauri/tests/database_persistence_boundary_test.rs`
+- [x] `app/src-tauri/tests/database_persistence_boundary_test.rs`
   - Add Subtest 7: `schema_v18_persists_step_tokens_strikes_compaction_and_tool_spillover_metadata`.
   - Add Subtest 8: `session_deletion_and_startup_sweep_purge_tier4_tool_output_cache_directories`.
 
@@ -120,7 +120,7 @@
 ### Phase 4: Mutation Proof & Verification (Test Engineer)
 *Agent: Test Engineer exclusively*
 *Commit Gate: `git commit -m "test(harness): verify mutation test coverage for domain 3"`*
-- [ ] Test Engineer seeds each deliberate mutant from False-Green Table into production code:
+- [x] Test Engineer seeds each deliberate mutant from False-Green Table into production code:
   - Mutant 1: Bypass identical call check in `guardrails.rs` -> Confirm Subtest 1 fails RED. Revert.
   - Mutant 2: Disable ping-pong check in `guardrails.rs` -> Confirm Subtest 2 fails RED. Revert.
   - Mutant 3: Ignore `is_error` in `guardrails.rs` -> Confirm Subtest 3 fails RED. Revert.
@@ -129,7 +129,7 @@
   - Mutant 6: Wipe active turn in `apply_session_context` -> Confirm Subtest 6 fails RED. Revert.
   - Mutant 7: Hardcode `0` for v18 columns in `steps.rs` / `tool_calls.rs` -> Confirm Subtest 7 fails RED. Revert.
   - Mutant 8: Omit `remove_dir_all` in `delete_session` -> Confirm Subtest 8 fails RED. Revert.
-- [ ] Confirm full test suite returns to 100% green.
+- [x] Confirm full test suite returns to 100% green.
 
 ---
 
