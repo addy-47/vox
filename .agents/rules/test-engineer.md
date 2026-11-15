@@ -27,17 +27,15 @@ Binding standard: [`testing-style-guide.md`](./testing-style-guide.md). Read it 
    - Enforce bounded timeouts on every async task per the testing standard.
    - Classify the test level by what it proves, not by where the file lives.
 2. **Execution (`cargo-nextest`, local and on demand):**
+   - 🛑 **HARD BAN: NEVER RUN 'cargo nextest list' UNDER ANY CIRCUMSTANCES.** It is an interactive command that hangs indefinitely in headless agent shells.
    - Run one seam at a time, sequentially, in release mode:
      ```bash
      cd app/src-tauri
      export VOX_MODELS_DIR="${VOX_MODELS_DIR:-$HOME/.vox/models}"
      cargo nextest run --test <seam> --release --test-threads=1 --no-fail-fast
      ```
-   - For an isolated failure:
-     ```bash
-     cargo nextest run --test <seam> -E 'test(<subtest>)' --release --nocapture --test-threads=1
-     ```
-   - Batch edits per seam. One compile per seam, not per edit.
+   - **Zero Single-Subtest Looping:** Do NOT run individual subtests sequentially in a loop (`-E 'test(<name>)'`). Always run the target seam binary in a single command. Individual filters are reserved strictly for single-test debugging when an isolated test failure occurs.
+   - **Batch First, Compile Once:** Author all seam subtests before invoking `cargo`. One compile per seam, never per subtest.
    - Tier wrapper: `./scripts/test.sh default|models|all|remote|seam <binary>`.
    - **CI is compile-only by deliberate choice.** Never report a suite as passing because CI is green. Report the local command and its result, or report `unverified`.
 3. **Debugging & Blocker Escalation:**
@@ -48,9 +46,12 @@ Binding standard: [`testing-style-guide.md`](./testing-style-guide.md). Read it 
    - A test that exposes a production defect is working correctly.
    - Record it in `docs/tests/test-findings.md` with the test, symptom, evidence, and suspected `file:line`.
    - Do **not** patch production to make the test pass. Production fixes belong to `backend-engineer`.
-5. **Validation (`mutate`):**
-   - Mutation runs are batched per campaign, not per test.
-   - Run `cargo-mutants` over the changed files, record the result in `docs/tests/mutation_report.md`, revert every mutant.
+5. **Validation (`mutate` & Remote Offloading):**
+   - Mutation testing is the exclusive domain of the Test Engineer.
+   - **Prioritize Remote Build Server (`temp/server.txt`):** When remote server credentials exist in `temp/server.txt`, ALWAYS offload mutation campaigns to the 32-core server via `app/src-tauri/scripts/remote-mutate.py` or `./scripts/remote-exec.sh`. The remote server compiles 8 mutants in ~2 minutes with zero local lock contention or CPU load.
+   - **Local Fallback (Multi-Mutant Batching):** If remote is unreachable, never run sequential compile-and-revert loops of individual mutants on the primary tree. Instead, batch orthogonal, non-overlapping mutants across separate modules simultaneously and verify failures in a single test run.
+   - **Why Worktrees with Shared Target Fail:** Cargo locks `target/`; multiple worktrees sharing `target/` block each other and corrupt incremental compiler cache. Do not attempt concurrent worktree builds on a shared target directory.
+   - Record results in `docs/tests/mutation_report.md` and ensure all mutants are cleanly reverted.
    - A predicted mutant that survives means the test is not finished.
 
 ## Role Boundaries

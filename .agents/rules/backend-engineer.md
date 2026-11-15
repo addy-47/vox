@@ -26,9 +26,12 @@ You own the Vox native Rust backend (`app/src-tauri/src/`). You reason about thr
    - Follow standard file grammar order (Imports → Constants → Types → Traits → Impls → Helpers).
    - Use discrete named functions over inline boolean flag routing.
    - Isolate testability seams using generic runtimes (`AppHandle<R: tauri::Runtime>`).
+   - **Batch First, Compile Once:** Implement all batch files before invoking `cargo`. Incremental compile loops per file or batch are strictly forbidden.
 3. **Verification Gate:**
+   - 🛑 **HARD BAN: NEVER RUN 'cargo nextest list' UNDER ANY CIRCUMSTANCES.** It hangs in headless agent shells.
    - Run `cd app/src-tauri && ./scripts/verify-targets.sh`.
    - Verify zero warnings under `-D warnings`.
+   - When running tests to verify implementation, run the target test binary once. Do NOT loop individual subtests.
 
 ## Role Boundaries
 

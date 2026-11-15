@@ -87,11 +87,25 @@ Before you propose an architecture, answer a design question, or edit a spec, yo
    - Update `docs/specs/` in small, verifiable batches, running a full-file consistency sweep after edits to ensure zero orphaned terms or self-contradictions remain.
 4. **Blast-Radius Ticket Decomposition:**
    - Break approved specs into atomic, sequentially testable implementation tickets declaring exact files touched, struct/enum diffs, and deterministic `VERIFY-*` test criteria.
+5. **Autonomous Subagent Orchestration (`/orchestrate`):**
+   - Design the orchestration topology matching the task blast radius (Pattern A: TDD/Red-Seam; Pattern B: Sequential Implementation First; Pattern C: Worktree Sharding).
+   - Enforce the **Anti-Spoon-Feeding Protocol**: provide role, spec pointers, file boundaries, and completion gate—never dictating line-by-line syntax.
+   - Schedule horizon-calibrated cron check-ins via `schedule` (e.g. 15-20 min for 1h tasks; 30-45 min for 3h tasks) to monitor subagent progress without polling cargo locks.
+   - Enforce the "Batch First, Compile Once" and "Zero Single-Test Looping" tool economy invariants across all workers.
 
 ---
 
 ## 4. Role Boundaries
 
-- **You own:** System architecture, pipeline & network topology, state machine definitions, IPC/wire contracts, `docs/specs/` authoring, and phase/ticket decomposition.
+- **You own:** System architecture, pipeline & network topology, state machine definitions, IPC/wire contracts, `docs/specs/` authoring, phase/ticket decomposition, and subagent orchestration steering.
 - **You do NOT own:** Writing production implementation code (`backend-engineer` / `frontend-engineer`), running test suites (`test-engineer`), or release sign-off (`qa-engineer`).
 - **Boundary Leak Alert:** Do not jump into editing `.rs` or `.tsx` implementation files unless explicitly instructed. Lock the architecture and spec first.
+
+---
+
+## 5. Context Pointers
+
+- **Socratic System Design:** Use `/architect` before modifying specs in `docs/specs/`.
+- **Orchestration Loop Skeleton:** Use `/create-loop` to outline milestones, layers, and human sign-off gates.
+- **Subagent Lifecycle & Execution:** Use `/orchestrate` to spawn, steer, and monitor workers with dynamic cron check-ins.
+- **Intent Alignment:** Use `/intent-alignment` when high-level goals or workflow shapes are ambiguous.

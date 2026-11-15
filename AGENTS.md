@@ -22,7 +22,7 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
 | `docs/specs/` | Authoritative behavioral contracts — SSOT. Never contradict. |
 | `docs/plans/phase14/` | Active phase. Plans and `work_log.md` live here. |
 | `temp/.env` / `temp/server.txt` | API keys and remote GPU server creds. Not versioned. |
-| `~/.vox/vox.db` | Local Turso DB. Inspect via `tursodb ~/.vox/vox.db "<SQL>"`. |
+| `~/.vox/data/db/vox.db` | Local Turso DB. Inspect via `tursodb ~/.vox/data/db/vox.db "<SQL>"`. |
 
 **Remote GPU server:** creds in `temp/server.txt`. **Never kill running server processes.**
 
@@ -44,7 +44,13 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
    ```bash
    cargo nextest run -- --ignored
    ```
-> **Note for every agent:** Polling cargo compilation commands is forbidden , always let the system inform you . 'cargo nextest list' should never be run as it hangs .
+4. **Tool Economy & Compilation Invariants (Mandatory & Non-Negotiable):**
+   - 🛑 **HARD BAN: NEVER RUN 'cargo nextest list' UNDER ANY CIRCUMSTANCES.** It is an interactive command that hangs indefinitely in headless agent shells and halts execution.
+   - **Batch First, Compile Once, Test Once:** Write all code and file changes across an entire phase before invoking `cargo`. Incremental compilation loops per file or batch are strictly forbidden. Run `./scripts/verify-targets.sh` or `cargo test --no-run --release` once at phase completion.
+   - **No Single-Subtest Serial Looping:** Run the entire test binary once (`cargo test --test <binary> --release`). Never execute loops of individual `-E 'test(<name>)'` invocations across subtests.
+   - **Mutation Testing Offloading:** Owned exclusively by the Test Engineer. When `temp/server.txt` is available, prioritize offloading mutation campaigns to the remote 32-core server via `scripts/remote-mutate.py` or use local multi-mutant orthogonal batching. Sequential compile-and-revert loops of single mutants on the primary workspace are strictly forbidden.
+   - **Reviewer Compile Boundary:** Reviewers audit git diffs against specifications and style guides. Do not re-run full cross-target compiler builds that the Test Engineer already validated.
+   - **No Polling:** Polling cargo compilation commands is forbidden; always let the system inform you on task completion.
 
 ---
 
@@ -58,13 +64,13 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
 
 **Local Turso CLI:**
 ```bash
-tursodb ~/.vox/vox.db "SELECT name FROM sqlite_master WHERE type='table';"
+tursodb ~/.vox/data/db/vox.db "SELECT name FROM sqlite_master WHERE type='table';"
 ```
 
 ### 4.2 Skill & Rule Gating (Mandatory Autonomous Skill Exploitation)
 
 > 🛑 **Autonomous Skill & Rule Loading:** Vox provides 40+ specialized skills in `.agents/skills/` and `~/.gemini/config/skills/`. Agents MUST autonomously search, read, and enforce the matching skill and engineer rule files in `.agents/rules/` before acting in any role:
-> - **Architecture & System Design:** Read `/architect` and enforce `architectural-invariants.md`.
+> - **System Architect & Orchestration:** Read `/architect` (system design), `/create-loop` (loop skeleton & milestone definition), and `/orchestrate` (subagent lifecycle, delegation topologies, and proactive cron check-ins). Enforce `architectural-invariants.md`.
 > - **Writing / Modifying Tests:** Read `/create-test` and enforce `testing-style-guide.md`.
 > - **Code Implementation & Refactoring:** Read `/implement` and the layer's rule file (`backend-style-guide.md`, `android-style-guide.md`, etc.).
 > - **Adversarial Code & Test Review:** Read `/review`, `/review-ui`, and `testing-style-guide.md`.
@@ -91,45 +97,15 @@ If the failure is caused by an upstream or faulty test input, STOP immediately a
 
 **CSG-06 — No Silent Compromises:** Never conceal design flaws, ignore architectural conflicts, or invent requirements to force an implementation through. Surface material risks and seek clarification when necessary. Do not claim completion without validating the implementation and reporting unresolved issues.
 
+**CSG-07 — Tool & Compilation Economy:** Never execute incremental compilation or single-test polling loops. Plan and batch all modifications across a phase before invoking the compiler. Test the target binary in a single run. Conserve wall-clock time and cargo locks.
+
 **Core principle:** Think critically before implementing. Diagnose before patching. Challenge before agreeing. Design before hacking. Engineering integrity takes precedence over convenience and blind compliance.
 
-### 4.4 Subagent Orchestration & Execution Invariants (Non-Negotiable)
+### 4.4 Subagent Orchestration & Lifecycle Invariants (Non-Negotiable)
 
-1. **Strictly Sequential Lifecycle (Zero Parallel Spawning):**
-   Subagents MUST execute in a strict sequential dependency order. Never launch implementation, testing, or review subagents concurrently or in parallel. Every phase must pass its completion gate and compile cleanly before the next agent is spawned.
+Subagent lifecycle execution, delegation topologies, the anti-spoon-feeding protocol, proactive cron check-ins, and tool economy enforcement are governed by the [`/orchestrate`](.agents/skills/orchestrate/SKILL.md) skill.
 
-   System architects select one of two governing orchestration workflows based on the domain's blast radius and initial state:
-
-   - **Workflow Option A: Sequential Implementation First**
-     $$\text{Architecture / Spec} \longrightarrow \text{Atomic Implementation} \longrightarrow \text{Test Engineering} \longrightarrow \text{Adversarial Review}$$
-     *Best for:* Major foundational refactors, widespread interface replacements, or zero-backward-compatibility cleanups where the existing test suite cannot compile against legacy signatures until new production types land.
-     *Lifecycle:*
-     1. Architecture / Spec: System Architect locks specs, data schemas, and contracts.
-     2. Backend Engineer: Implements atomic production batches until clean compile.
-     3. Test Engineer: Authors black-box seam tests proving behavior against the new seam.
-     4. Review / QA: Adversarial audit, mutation testing, and final sign-off.
-
-   - **Workflow Option B: Red-Seam First / Test-Driven Development (TDD)**
-     $$\text{Architecture / Spec} \longrightarrow \text{Test Stubs (Red)} \longrightarrow \text{Atomic Implementation (Green)} \longrightarrow \text{Adversarial Review / Mutate}$$
-     *Best for:* Well-defined behavioral additions, state-machine transitions, concurrency barriers, or persistence contracts where public contracts can be stubbed upfront.
-     *Rationale:* Eliminates white-box implementation anchoring (`create-test` Phase 0) by writing assertions before production logic exists, preventing tests from being calibrated to developer shortcuts.
-     *Lifecycle:*
-     1. Architecture / Spec: System Architect locks specs and specifies exact black-box seam intent blocks.
-     2. Minimal Signatures: Backend Engineer writes *only* public struct, enum, and method stubs to make types compile.
-     3. Test Engineer (RED): Writes black-box seam subtests against the stubs. Runs `cargo nextest` to empirically prove tests fail (Red).
-     4. Backend Engineer (GREEN): Implements production code until all seam tests pass (Green). **Forbidden from touching `tests/**`**.
-     5. Review / QA: Adversarial audit, circuit breaker verification, and mutation proof.
-
-2. **Mandatory Persona & Skill Gating for Every Subagent:**
-   Every spawned subagent MUST autonomously read its assigned persona from `.agents/rules/` and load its respective skills before inspecting or editing files. Orchestrators must supply subagents with explicit boundaries, verbatim reviews, and clear batch criteria.
-
-3. **Adversarial Reviewer as Final Blocking Gate:**
-   The Review subagent MUST run strictly at the end, after all implementation and tests are complete. It must review BOTH production code AND test code against style guides and skills (per §4.2):
-   - Review production code for concurrency leaks, single-writer invariants, and memory bugs.
-   - Review tests for production wiring parity (no bypassing `spawn_router` with direct handler calls), zero bare sleeps, single seam binary discipline, and valid `ASSERTS:` claims.
-
-4. **Context Handoff & Failure Escalation:**
-   Parent orchestrators must supply subagents with explicit boundaries, verbatim reviews, and clear batch criteria. If a subagent encounters an upstream architectural defect or regression, it must stop and escalate rather than writing downstream mocks or bypassing gates.
+Every system architect and parent orchestrator MUST read and strictly enforce `/orchestrate` before spawning, delegating, or managing subagents across implementation phases. Subagents must never be spoon-fed line-by-line implementations; assign explicit boundaries, spec pointers, and verifiable completion gates. Reviewers must execute as clean-room independent subagents auditing git diffs.
 
 ---
 

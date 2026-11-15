@@ -248,7 +248,10 @@ CI is green. Report the local command and its result, or report `unverified`.
 ## 9. Mutation
 
 - `MUTANT` in the intent block is the seed. It must be a concrete one-line edit to production code.
-- Mutation runs are batched. Run mutation once per revamp campaign over the changed files and record the result.
+- Mutation runs are batched per campaign, not per test.
+- **Remote Build Server Priority (`temp/server.txt`):** When remote credentials exist, execute mutation runs on the 32-core server via `app/src-tauri/scripts/remote-mutate.py` or `./scripts/remote-exec.sh`. The remote server compiles 8 mutants in ~2 minutes with zero local cargo lock contention.
+- **Local Fallback (Orthogonal Batching):** If remote is unavailable, never run sequential 16-recompile loops of individual mutants on the primary working tree. Batch orthogonal, non-overlapping mutants across separate modules simultaneously and verify failures in a single test binary run.
+- **Why Worktrees Fail with Cargo:** Cargo acquires exclusive file locks on the target directory; multiple worktrees sharing `target/` block each other and corrupt incremental compiler cache.
 - A test whose predicted mutant survives is not done. Either the test is weak or the mutant was wrong; resolve before merge.
 - Production code is reverted after every mutation run. A mutant must never be committed.
 

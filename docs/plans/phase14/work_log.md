@@ -25,9 +25,26 @@
   - Backend Engineer resolved findings in `c37958ff6`. Removed test backdoor and hot-path sleep. Restored atomic FIFO fallback.
   - Test Engineer calibrated natural token budget and async test synchronization in `a6b03dd96`.
   - Independent Reviewer Subagent (`34be956d-5dac-4f75-95e9-1c62ccade310`) completed clean-room audit and issued formal **PASS**.
+- **Phase 6: Lead Review Final Cleanups & Test Harness Hardening (`076692823`)**:
+  - Removed mock backdoor `is_mock_default` from `guardrails.rs`; included dynamic dispatch index in `ScriptedLlmWorker` fallback query.
+  - Replaced un-sorted `serde_json::to_string` hash with `hash_canonical_json` using recursive sorted keys.
+  - Moved `prompt_tokens` calculation before `commit_tool_step` in `steps.rs`, included `thinking_text` tokens in `completion_tokens`, and reset `is_compacted_this_turn = false` after reading for step audit.
+  - Handled disk spillover write failure in `truncation.rs` to return `spillover_path = None`.
+  - Added bounded poll assertion for `is_compacted = 1` in Subtest 6 of `harness_loop_test.rs`.
+  - Resolved `llm_to_tts_test` intent divergence by setting `supports_tools: false` in `SeamRig::new` to assert direct `AudioIntent::TurnResponse` per `harness-spec.md §153`.
+  - Resolved channel intake race in `router.rs` by draining `try_recv()` before evaluating stream cancellation flag.
+  - Added `Drop` for `AudioSceneRig` shutting down pipeline/VAD and joining router/AEC/VAD threads.
+  - Eliminated AEC race in `EchoScene::feed_mixed` by pumping playback reference before pushing capture samples.
 - **Verification**:
-  - Test runner: `cargo nextest run --release --test-threads=1` passed (51/51 tests green).
+  - Test runner: `harness_loop_test`, `database_persistence_boundary_test`, `audio_capture_aec_test`, and `llm_to_tts_test` passed 100% green in release mode (62/62 tests green, 0 flakes across 30+ repetitions).
   - Compile gate: `./scripts/verify-targets.sh` passed with 0 warnings and 0 errors across desktop and Android cross-target.
+- **Retrospective, Orchestration Skill & Remote Test Tooling**:
+  - Authored `/orchestrate` skill in `.agents/skills/orchestrate/` and global `~/.gemini/config/skills/orchestrate/` (governs subagent lifecycle, anti-spoon-feeding, and proactive cron check-ins).
+  - Extracted Section 4.4 out of `AGENTS.md` into `/orchestrate`, replacing it with a concise context pointer.
+  - Assigned mutation testing ownership exclusively to the Test Engineer (`.agents/rules/test-engineer.md`, `testing-style-guide.md`).
+  - Implemented remote 32-core test infra scripts: `app/src-tauri/scripts/remote-exec.sh` (fast rsync + remote runner) and `app/src-tauri/scripts/remote-mutate.py` (automated remote mutation testing tool).
+  - Hardened `AGENTS.md §3` with mandatory tool economy invariants, BLOCK LETTER ban on `cargo nextest list`, and remote mutation offloading rules.
+  - Added `CSG-07` tool economy rule to `AGENTS.md §4.3` and updated engineer personas (`system-architect.md`, `test-engineer.md`, `backend-engineer.md`, `testing-style-guide.md`, `create-loop`, `implement`).
 
 ---
 
