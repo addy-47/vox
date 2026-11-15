@@ -99,10 +99,13 @@ flowchart TD
   - **Nominal ($< 65\%$)**: Healthy context; turn proceeds directly.
   - **Soft ($65\% \le \text{Utilization} < 85\%$)**: Context elevated; arms a 20-second quiet debounce timer upon turn completion. If the user remains silent for 20 seconds, background compaction executes.
   - **Critical ($\ge 85\%$)**: Context saturated; triggers inline compaction before generating the response.
-- **RULE-HARN-06 (Compaction Degradation Fallback)**: If inline compaction fails, times out, or returns invalid data:
-  1. The system MUST NOT retry in a loop or halt the voice turn.
-  2. The system MUST execute a FIFO sliding window shift, dropping the oldest historical turn pairs until context drops below 65%.
-  3. The active user query MUST always be preserved.
+- **RULE-HARN-06 (Compaction Degradation Fallback & Active Turn Preservation)**:
+  1. When mid-loop compaction triggers during an active turn on Step $K > 0$, `apply_session_context` MUST summarize only turns *prior* to the current turn's active query. The in-flight turn's trailing slice (`[Role::User, Role::Assistant(tool_calls), Role::Tool, ...]`) MUST be preserved intact in working memory. Active-turn steps MUST NEVER be erased or re-run from scratch.
+  2. If inline compaction fails, times out, or returns invalid data:
+     - The system MUST NOT retry in a loop or halt the voice turn.
+     - The system MUST execute an atomic-turn-unit FIFO sliding window shift, dropping complete historical turns from the beginning of history until context drops below 65%.
+     - Slicing between a `Role::Assistant(tool_calls)` and its matching `Role::Tool` messages is strictly forbidden to prevent provider HTTP 400 Bad Request errors.
+     - The active turn's user query and in-flight tool steps MUST always be preserved.
 
 ```mermaid
 flowchart TD
@@ -184,6 +187,28 @@ flowchart TD
     - Active tool execution tasks and child futures MUST be aborted via `CancellationToken`.
     - User turn rollback (`rollback_last_user_turn`) is strictly restricted to Step 0 interruptions where zero assistant speech and zero tool executions have occurred (`last.role == Role::User`).
     - Once Step 1 tools have commenced execution or spoken a preamble, `commit_tool_step` has run (`last.role == Role::Tool`), and rollback is strictly forbidden. Preceding tool observations remain permanently preserved in history.
+- **RULE-HARN-13 (Zero Unbounded Observations & Safe Truncation)**:
+  - No tool execution outcome may inject content exceeding `max_observation_tokens` into conversation history.
+  - Slicing MUST reserve marker overhead and snap to nearest newline `\n` within 200 bytes of the cut point, falling back to UTF-8 character-boundary snapping for single-line or minified payloads. Unaligned byte slicing is strictly forbidden.
+  - All oversized outputs MUST write full content to `paths::session_tool_outputs_dir(session_id).join(format!("{}.txt", sanitized_call_id))` and return a head/tail preview containing the spillover marker.
+- **RULE-HARN-14 (Two-Strike Monotonic Guardrail & Step-Boundary Error Cascades)**:
+  - The coordinator MUST maintain a monotonic per-turn strike counter (`strike_count: u8`). Once Strike 1 is assigned, it remains locked at $\ge 1$ for the duration of the turn.
+  - Repetitive loops evaluate across the in-memory sliding window ($\le 1\text{ KB}$):
+    - Identical Call Loop: same tool with identical argument AND result hashes across steps.
+    - Ping-Pong Loop: $A \to B \to A \to B$ alternation across steps.
+    - Error Cascade: consecutive erroring steps across step boundaries (not intra-batch parallel calls on Step 0).
+  - Strike 1 MUST inject an authoritative system steering warning into the observation.
+  - Strike 2 MUST strip tools (`allow_tools = false`) and force a final spoken summary pass (`AudioIntent::TurnResponse`).
+- **RULE-HARN-15 (Tier 4 Disk Cache Isolation & TTL)**:
+  - Tool spillover files MUST reside exclusively under `paths::session_tool_outputs_dir(session_id)`.
+  - Wiped on session deletion; startup sweep purges orphaned session folders, files with `mtime > 7 days`, and enforces a 100MB LRU directory ceiling.
+- **RULE-HARN-16 (Transparent Compaction Over Silent Drops)**:
+  - The coordinator MUST evaluate token budget before every reentrant pass. If utilization reaches $\ge 85\%$, inline compaction MUST trigger transparently with user-visible activity events.
+  - Silent FIFO turn drops are forbidden while an LLM provider is available.
+- **RULE-HARN-17 (Granular Step Provenance SSOT)**:
+  - Every ReAct step MUST persist its latency, `prompt_tokens`, `completion_tokens`, compaction status (`is_compacted`), and `guardrail_strike` to `session_steps` in Turso DB.
+  - Every tool invocation MUST persist `truncated` and `spillover_path` in `session_tool_calls`.
+  - Structured logs (`[StepAudit]`, `[TruncationAudit]`, `[GuardrailAudit]`) MUST be emitted at step and tool completion.
 
 ---
 

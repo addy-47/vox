@@ -263,6 +263,10 @@ Relational record of iterative ReAct steps within multi-step conversational turn
 - `preamble_text` (TEXT, NULLABLE): Introductory spoken preamble preceding tool execution.
 - `tool_count` (INTEGER, NOT NULL DEFAULT 0): Count of tool calls executed in this step.
 - `duration_ms` (INTEGER, NULLABLE): Aggregate step duration in milliseconds.
+- `prompt_tokens` (INTEGER, NULLABLE): Input prompt token count for this cognitive step.
+- `completion_tokens` (INTEGER, NULLABLE): Output completion token count for this cognitive step.
+- `guardrail_strike` (INTEGER, NOT NULL DEFAULT 0): Guardrail strike count (0, 1, or 2) triggered in this step.
+- `is_compacted` (INTEGER, NOT NULL DEFAULT 0): Boolean indicator whether mid-loop memory compaction executed on this step.
 - `created_at` (INTEGER, NOT NULL): Millisecond epoch timestamp.
 *Indexes*: `(session_id, turn_id, step_index)`, `(created_at DESC)`.
 
@@ -278,6 +282,8 @@ Audit ledger recording individual tool execution parameters, outcomes, and step 
 - `result` (TEXT, NULLABLE): Serialized JSON/text output returned by tool.
 - `is_error` (BOOLEAN, NOT NULL DEFAULT FALSE): Failure indicator flag.
 - `duration_ms` (INTEGER, NULLABLE): Tool execution latency in milliseconds.
+- `truncated` (INTEGER, NOT NULL DEFAULT 0): Boolean indicator whether observation exceeded budget and was truncated.
+- `spillover_path` (TEXT, NULLABLE): Absolute filesystem path to unabridged tool observation spillover file.
 - `created_at` (INTEGER, NOT NULL): Millisecond epoch timestamp of invocation.
 *Indexes*: `(session_id, turn_id)`, `(step_id, step_index)`, `(created_at DESC)`.
 *Invariants*:

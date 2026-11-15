@@ -98,6 +98,7 @@ Vox organizes all on-disk artifacts under the root directory (`$VOX_HOME`, defau
 │   ├── catalog/        # Remote provider model catalog cache
 │   ├── updates/        # Update check manifests
 │   ├── temp/           # Transient audio resample buffers
+│   ├── tool_outputs/   # Scoped tool observation disk spillover cache (<session_id>/<call_id>.txt)
 │   ├── assets/         # Materialized desktop notification icons
 │   └── tts/            # Transient audio preview cache (25MB LRU boundary)
 │
@@ -139,6 +140,11 @@ Vox organizes all on-disk artifacts under the root directory (`$VOX_HOME`, defau
 - **RULE-STORAGE-10 (Sidecar Binary Isolation)**: All downloaded sidecar executables MUST reside in `$VOX_HOME/bin/`. They MUST have POSIX permissions `0755` on Unix. On Windows, they MUST have the `.exe` extension. Deleting `$VOX_HOME/bin/` MUST NOT corrupt any user databases, settings, or model weights.
 - **RULE-STORAGE-11 (Sidecar IPC Sockets)**: Sidecar Unix Domain Sockets MUST reside in `~/.vox/run/` with permissions `0700`. Sidecar socket files MUST be swept and unlinked on application startup and clean exit.
 - **RULE-STORAGE-12 (Desktop-Only Sidecars)**: The `bin/` directory and sidecar sockets MUST NOT be created or accessed on Android targets. Android relies strictly on in-app native runtimes or remote network services.
+- **RULE-STORAGE-13 (Tier 4 Tool Observation Cache Lifecycle)**:
+  - Scoped tool observation spillover files MUST reside exclusively in `cache/tool_outputs/<session_id>/<sanitized_call_id>.txt`, resolved through `crate::utils::paths::session_tool_outputs_dir(session_id)`. Direct string construction of `~/.vox/cache` is forbidden (`RULE-STORAGE-01`).
+  - Model-supplied `call_id` strings MUST be sanitized (`[a-zA-Z0-9_-]`) prior to filesystem path construction to prevent directory traversal attacks.
+  - When a session is deleted, its cache directory `cache/tool_outputs/<session_id>/` MUST be purged immediately.
+  - On application boot, `run_startup_sweeps` MUST sweep `tool_outputs/`, purging directories for deleted/nonexistent sessions, deleting spillover files with `mtime > 7 days`, and enforcing a 100MB LRU directory ceiling.
 
 ### 5.2 Field-Level Configuration Schema Mapping
 The configuration is decomposed into three files according to domain volatility, security tier, and reload semantics:
