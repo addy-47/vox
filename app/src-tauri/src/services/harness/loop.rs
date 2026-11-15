@@ -1,9 +1,6 @@
-use std::{
-    sync::{
-        atomic::{AtomicBool, Ordering::Relaxed},
-        Arc,
-    },
-    time::Duration,
+use std::sync::{
+    atomic::{AtomicBool, Ordering::Relaxed},
+    Arc,
 };
 
 use parking_lot::Mutex;
@@ -34,7 +31,6 @@ use crate::{
 };
 
 pub const MAX_TOOL_STEPS: usize = 20;
-const PERSISTENCE_FLUSH_GRACE_PERIOD: Duration = Duration::from_millis(25);
 
 pub struct TurnLoopContext<'a> {
     pub harness_arc: &'a Arc<Mutex<Option<Harness>>>,
@@ -234,12 +230,7 @@ async fn execute_loop_iterations(
                 }
                 match action {
                     // === STEP 7: Finalize & Terminal Commit ===
-                    LoopAction::Terminal(outcome) => {
-                        if ctx.req.app_state.persist_tx.lock().is_some() {
-                            tokio::time::sleep(PERSISTENCE_FLUSH_GRACE_PERIOD).await;
-                        }
-                        return outcome;
-                    }
+                    LoopAction::Terminal(outcome) => return outcome,
                     LoopAction::Continue => {
                         iteration += 1;
                         log::info!(
@@ -315,8 +306,7 @@ async fn check_loop_budget(
                     .app_state
                     .turn_metrics
                     .record_context_budget(total_tokens, budget.max_context_tokens());
-                let can_compact = (status == ContextStatus::Critical
-                    || (ctx.req.turn_id == 1106 && iteration == 1))
+                let can_compact = status == ContextStatus::Critical
                     && harness
                         .compaction
                         .as_ref()

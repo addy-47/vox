@@ -247,15 +247,12 @@ pub async fn step3_execute_compaction(
 
     let Some(provider) = req.provider.as_ref() else {
         log::warn!(
-            "[Harness::Compaction] Critical context threshold on turn {} without LLM provider; applying session context fallback.",
+            "[Harness::Compaction] Critical context threshold on turn {} without LLM provider; FIFO fallback.",
             req.turn_id
         );
         let mut guard = harness_arc.lock();
         if let Some(ref mut harness) = *guard {
-            harness.apply_session_context(
-                "<session_context>Compacted summary of prior conversational history</session_context>",
-                &req.query,
-            );
+            harness.fallback_fifo_shift();
         }
         return;
     };

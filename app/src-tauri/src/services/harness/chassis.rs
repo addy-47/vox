@@ -295,6 +295,7 @@ impl Harness {
     }
 
     pub fn fallback_fifo_shift(&mut self) {
+        self.is_compacted_this_turn = true;
         if let Some(ref budget) = self.budget {
             budget.execute_fifo_shift(&mut self.history);
         }

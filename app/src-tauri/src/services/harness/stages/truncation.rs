@@ -3,6 +3,9 @@ use crate::{
     services::memory::ml::estimate_tokens,
 };
 
+const ESTIMATED_CHARS_PER_TOKEN: usize = 4;
+const NEWLINE_SEARCH_WINDOW_BYTES: usize = 200;
+
 /// Truncation engine for observation budgeting and Tier 4 disk spillover.
 #[derive(Debug, Clone, Default)]
 pub struct TruncationStage;
@@ -65,7 +68,7 @@ impl TruncationStage {
             TruncationPolicy::TailHeavy { tail_ratio } => ((1.0 - tail_ratio).max(0.0), tail_ratio),
         };
 
-        let char_budget = max_tokens * 4;
+        let char_budget = max_tokens * ESTIMATED_CHARS_PER_TOKEN;
         let marker = format!(
             "\n\n[... Output truncated: showing {} of {} tokens. Full output saved to {}. Use read_file to view specific sections ...]\n\n",
             max_tokens, total_tokens, spillover_file.display()
@@ -81,9 +84,9 @@ impl TruncationStage {
         let head_target_bytes = ((content_char_budget as f32) * head_ratio) as usize;
         let tail_target_bytes = content_char_budget.saturating_sub(head_target_bytes);
 
-        // Head cut point: look for newline within 200 bytes of target, else snap to char boundary
+        // Head cut point: look for newline within search window of target, else snap to char boundary
         let head_search_end = head_target_bytes.min(raw_output.len());
-        let head_search_start = head_search_end.saturating_sub(200);
+        let head_search_start = head_search_end.saturating_sub(NEWLINE_SEARCH_WINDOW_BYTES);
         let head_valid_start = raw_output.floor_char_boundary(head_search_start);
         let head_valid_end = raw_output.floor_char_boundary(head_search_end);
 
@@ -93,10 +96,10 @@ impl TruncationStage {
             head_valid_end
         };
 
-        // Tail cut point: look for newline within 200 bytes of target, else snap to char boundary
+        // Tail cut point: look for newline within search window of target, else snap to char boundary
         let tail_target_start = raw_output.len().saturating_sub(tail_target_bytes);
         let tail_search_start = tail_target_start.max(head_cut);
-        let tail_search_end = tail_search_start.saturating_add(200).min(raw_output.len());
+        let tail_search_end = tail_search_start.saturating_add(NEWLINE_SEARCH_WINDOW_BYTES).min(raw_output.len());
         let tail_valid_start = raw_output.ceil_char_boundary(tail_search_start);
         let tail_valid_end = raw_output.floor_char_boundary(tail_search_end);
 
