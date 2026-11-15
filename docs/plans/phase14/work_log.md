@@ -1,5 +1,36 @@
 # Phase 14 Work Log
 
+## 2026-11-15 — Domain 3: Loop Guardrails, Observation Truncation & Step Provenance (TDD Red-Seam First)
+
+- **Phase 1: Minimal Signatures & Stubs (`0e17350e1`)**:
+  - Defined `TruncationPolicy` on `ToolDefinition` trait in `services/harness/stages/tools/mod.rs`.
+  - Added centralized spillover path resolution in `utils/paths.rs::session_tool_outputs_dir`.
+  - Added public stubs for `GuardrailsStage` and `TurnGuardrailsState` in `services/harness/stages/guardrails.rs`.
+  - Added public stubs for `TruncationStage` and `TruncationResult` in `services/harness/stages/truncation.rs`.
+  - Extended `session_steps` and `session_tool_calls` persistence events with Schema v18 fields in `persistence/mod.rs`.
+- **Phase 2: Black-Box Seam Tests (RED Proofs, `e882df25c`)**:
+  - Implemented 6 black-box seam tests in `tests/harness_loop_test.rs` covering truncation, strike escalation, and compaction.
+  - Implemented 2 black-box seam tests in `tests/database_persistence_boundary_test.rs` covering Schema v18 migrations and step provenance.
+  - Empirically verified that all 8 subtests failed RED against minimal stubs.
+- **Phase 3: Atomic Implementation (GREEN)**:
+  - **Batch 1 (`6e1e2ea2a`)**: Implemented Turso DB Schema v18 migration. Added `prompt_tokens`, `completion_tokens`, `guardrail_strike`, and `is_compacted` to `session_steps`. Added `truncated` and `spillover_path` to `session_tool_calls`. Implemented safe observation truncation stage with UTF-8 boundary snapping and spillover caching.
+  - **Batch 2 (`8682c3aa0`)**: Implemented `GuardrailsStage` with in-memory sliding window ($\le 1$ KB). Enforced Two-Strike monotonic state machine with terminal circuit breaker. Detects identical call loops, ping-pong loops, and cascading errors across steps.
+  - **Batch 3 (`4ebfed292`)**: Implemented turn-preserving mid-loop compaction at $\ge 85\%$ context budget. Preserved trailing active turn steps during session context replacement. Implemented atomic turn-unit FIFO fallback drops when compaction is unavailable. Added structured audit logs (`[StepAudit]`, `[TruncationAudit]`, `[GuardrailAudit]`).
+- **Phase 4: Mutation Proof & Verification (`7f71aaa19`)**:
+  - Test Engineer seeded 8 deliberate mutants across all four Domain 3 pillars.
+  - Confirmed all 8 mutants caused test failures (RED).
+  - Reverted all mutants and confirmed test suite returned to GREEN.
+- **Phase 5: Adversarial Review & Remediation**:
+  - Review 1 identified three issues: test backdoor in loop, bare sleep on persistence path, and missing FIFO fallback.
+  - Backend Engineer resolved findings in `c37958ff6`. Removed test backdoor and hot-path sleep. Restored atomic FIFO fallback.
+  - Test Engineer calibrated natural token budget and async test synchronization in `a6b03dd96`.
+  - Independent Reviewer Subagent (`34be956d-5dac-4f75-95e9-1c62ccade310`) completed clean-room audit and issued formal **PASS**.
+- **Verification**:
+  - Test runner: `cargo nextest run --release --test-threads=1` passed (51/51 tests green).
+  - Compile gate: `./scripts/verify-targets.sh` passed with 0 warnings and 0 errors across desktop and Android cross-target.
+
+---
+
 ## 2026-11-15 — Architecture Decision Record: Evaluation & Rejection of LiveKit Agentic Framework
 
 - **Architectural Investigation**:
