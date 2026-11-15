@@ -18,6 +18,7 @@ use std::{
 };
 
 use common::harness::Rig;
+use futures_util::future::BoxFuture;
 use vox_lib::{
     core::{
         error::{PipelineError, PipelineImpact},
@@ -26,7 +27,12 @@ use vox_lib::{
     },
     services::{
         harness::{
-            chassis::Harness, r#loop::MAX_TOOL_STEPS, stages::tools::ToolFilter,
+            chassis::Harness,
+            r#loop::MAX_TOOL_STEPS,
+            stages::tools::{
+                ToolDefinition, ToolError, ToolExecutionContext, ToolFilter, ToolResult,
+                TruncationPolicy,
+            },
             Role, TurnOutcome,
         },
         llm::{actor::LlmResponse, CanonicalToolCall},
@@ -1469,5 +1475,679 @@ async fn step_ceiling_breach_disables_tools_and_forces_spoken_summary_pass() {
     .await
     .expect("test timed out");
 }
+
+// ============================================================================
+// Section 7: Domain 3 Guardrails, Observation Truncation & Mid-Loop Compaction
+// ============================================================================
+
+struct LargeHeadTailTool;
+
+impl ToolDefinition for LargeHeadTailTool {
+    fn name(&self) -> &str {
+        "large_head_tail_tool"
+    }
+
+    fn description(&self, _mode: PipelineMode) -> &str {
+        "Returns an oversized observation to test HeadTail truncation and Tier 4 spillover"
+    }
+
+    fn parameters_schema(&self, _mode: PipelineMode) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {}
+        })
+    }
+
+    fn truncation_policy(&self) -> TruncationPolicy {
+        TruncationPolicy::HeadTail { head_ratio: 0.8 }
+    }
+
+    fn execute<'a>(
+        &'a self,
+        _mode: PipelineMode,
+        _args: serde_json::Value,
+        _ctx: &'a ToolExecutionContext,
+    ) -> BoxFuture<'a, Result<ToolResult, ToolError>> {
+        Box::pin(async move {
+            let mut payload = String::with_capacity(50_000);
+            payload.push_str("HEAD_SENTINEL_LINE_1\n");
+            for i in 0..600 {
+                if i == 300 {
+                    payload.push_str("MIDDLE_SECRET_PAYLOAD\n");
+                } else {
+                    payload.push_str("filler content line for observation token budgeting test\n");
+                }
+            }
+            payload.push_str("TAIL_SENTINEL_LINE_500\n");
+            Ok(ToolResult::new(payload))
+        })
+    }
+}
+
+struct LargePolicyNoneTool;
+
+impl ToolDefinition for LargePolicyNoneTool {
+    fn name(&self) -> &str {
+        "large_policy_none_tool"
+    }
+
+    fn description(&self, _mode: PipelineMode) -> &str {
+        "Returns an oversized observation declaring TruncationPolicy::None"
+    }
+
+    fn parameters_schema(&self, _mode: PipelineMode) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {}
+        })
+    }
+
+    fn truncation_policy(&self) -> TruncationPolicy {
+        TruncationPolicy::None
+    }
+
+    fn execute<'a>(
+        &'a self,
+        _mode: PipelineMode,
+        _args: serde_json::Value,
+        _ctx: &'a ToolExecutionContext,
+    ) -> BoxFuture<'a, Result<ToolResult, ToolError>> {
+        Box::pin(async move {
+            let mut payload = String::with_capacity(50_000);
+            payload.push_str("POLICY_NONE_HEAD\n");
+            for _ in 0..600 {
+                payload.push_str("large untouched content for policy none test\n");
+            }
+            payload.push_str("POLICY_NONE_TAIL\n");
+            Ok(ToolResult::new(payload))
+        })
+    }
+}
+
+/// PURPOSE:  Catch infinite or 20-step runaway loops when model repeats exact same tool call and arguments.
+/// SCENARIO: Model calls search_memory({"query": "same"}) repeatedly. Strike 1 triggers on 3rd identical call, injecting [SYSTEM WARNING: into Role::Tool observation. Model calls it 4th time (Strike 2), forcing allow_tools = false and synthesizing spoken summary on pass 5.
+/// ASSERTS:  Total dispatches = 5 (not 21); passes 0..=3 have tools enabled; pass 4 has allow_tools == false; 3rd observation contains [SYSTEM WARNING: and identical; outcome is Completed.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   In GuardrailsStage, return GuardrailAction::Proceed unconditionally without checking identical fingerprints.
+#[tokio::test]
+async fn identical_tool_call_loop_triggers_strike_one_warning_then_strike_two_circuit_breaker() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1101;
+
+        // Pass 0 (Call 1)
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-1".to_string(),
+                name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "same query" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Pass 1 (Call 2)
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-2".to_string(),
+                name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "same query" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Pass 2 (Call 3 -> Strike 1 warning injected into observation)
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-3".to_string(),
+                name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "same query" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Pass 3 (Call 4 -> Strike 2 circuit breaker strips tools)
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-4".to_string(),
+                name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "same query" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Pass 4 (Forced Summary Pass with allow_tools == false)
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Synthesized summary after circuit break.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Trigger identical tool loop", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "turn must complete successfully, got {:?}",
+            outcome
+        );
+
+        let requests = rig.requests();
+        assert_eq!(
+            requests.len(),
+            5,
+            "Expected 5 dispatches total (4 tool passes + 1 summary pass), got {}",
+            requests.len()
+        );
+        assert!(requests[0].1, "Pass 0 must offer tools");
+        assert!(requests[1].1, "Pass 1 must offer tools");
+        assert!(requests[2].1, "Pass 2 must offer tools");
+        assert!(requests[3].1, "Pass 3 must offer tools");
+        assert!(!requests[4].1, "Pass 4 (summary pass) must be tool-free (allow_tools == false)");
+
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let tool_msgs: Vec<_> = harness
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::Tool)
+            .collect();
+        assert!(
+            tool_msgs.len() >= 3,
+            "At least 3 tool observations must be committed"
+        );
+        let third_obs = &tool_msgs[2].content;
+        assert!(
+            third_obs.contains("[SYSTEM WARNING:") && third_obs.contains("identical"),
+            "3rd observation must contain Strike 1 warning for identical call loop, got: {}",
+            third_obs
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch alternating A -> B -> A -> B tool oscillation loops.
+/// SCENARIO: Model alternates search_memory({"query": "alpha"}) and web_search({"query": "beta"}) across steps (A, B, A, B -> Strike 1 warning on 4th call; then A -> Strike 2 circuit break -> tool-free summary pass).
+/// ASSERTS:  4th observation contains [SYSTEM WARNING: and ping_pong; pass following Strike 2 has allow_tools == false; outcome is Completed.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   In GuardrailsStage, disable the ping-pong pattern matcher.
+#[tokio::test]
+async fn ping_pong_alternating_tool_loop_triggers_two_strike_circuit_breaker() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1102;
+
+        // Step 0: Tool A (search_memory)
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-ping-1".to_string(),
+                name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "alpha" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Step 1: Tool B (web_search)
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-pong-1".to_string(),
+                name: "web_search".to_string(),
+                arguments: serde_json::json!({ "query": "beta" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Step 2: Tool A (search_memory)
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-ping-2".to_string(),
+                name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "alpha" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Step 3: Tool B (web_search) -> Strike 1 warning on 4th alternating call!
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-pong-2".to_string(),
+                name: "web_search".to_string(),
+                arguments: serde_json::json!({ "query": "beta" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Step 4: Tool A (search_memory) -> Strike 2 circuit breaker!
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-ping-3".to_string(),
+                name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "alpha" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Step 5: Summary pass (allow_tools == false)
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Summary after ping pong break.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Trigger ping pong loop", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "turn must complete successfully, got {:?}",
+            outcome
+        );
+
+        let requests = rig.requests();
+        assert_eq!(
+            requests.len(),
+            6,
+            "Expected 6 dispatches (5 tool steps + 1 summary pass), got {}",
+            requests.len()
+        );
+        assert!(requests[0..=4].iter().all(|(_, tools)| *tools), "Steps 0..=4 must offer tools");
+        assert!(!requests[5].1, "Pass following Strike 2 must have allow_tools == false");
+
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let tool_msgs: Vec<_> = harness
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::Tool)
+            .collect();
+        assert!(tool_msgs.len() >= 4, "At least 4 tool observations must be committed");
+        let fourth_obs = &tool_msgs[3].content;
+        assert!(
+            fourth_obs.contains("[SYSTEM WARNING:") && fourth_obs.contains("ping_pong"),
+            "4th observation must contain Strike 1 ping_pong warning, got: {}",
+            fourth_obs
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch cascading tool failure loops across consecutive steps without recovery.
+/// SCENARIO: Model invokes a failing tool across 3 consecutive steps (Strike 1 warning on Step 2), and fails a 4th time on Step 3 (Strike 2 forces summary pass on Step 4).
+/// ASSERTS:  Step 2 observation contains [SYSTEM WARNING: and error_cascade; request 4 has allow_tools == false; outcome is Completed.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   In GuardrailsStage, ignore is_error when evaluating error cascade strikes.
+#[tokio::test]
+async fn consecutive_error_steps_trigger_two_strike_guardrail_and_force_summary() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1103;
+
+        // Step 0: Failing tool call 1
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-err-0".to_string(),
+                name: "nonexistent_failing_tool".to_string(),
+                arguments: serde_json::json!({ "arg": 0 }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Step 1: Failing tool call 2
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-err-1".to_string(),
+                name: "nonexistent_failing_tool".to_string(),
+                arguments: serde_json::json!({ "arg": 1 }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Step 2: Failing tool call 3 -> 3 consecutive failing steps -> Strike 1 warning!
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-err-2".to_string(),
+                name: "nonexistent_failing_tool".to_string(),
+                arguments: serde_json::json!({ "arg": 2 }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Step 3: Failing tool call 4 -> 4th failing step -> Strike 2 circuit break!
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-err-3".to_string(),
+                name: "nonexistent_failing_tool".to_string(),
+                arguments: serde_json::json!({ "arg": 3 }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Step 4: Summary pass (allow_tools == false)
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Summary after consecutive error circuit break.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Trigger consecutive error cascade", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "turn must complete successfully, got {:?}",
+            outcome
+        );
+
+        let requests = rig.requests();
+        assert_eq!(
+            requests.len(),
+            5,
+            "Expected 5 dispatches (4 failing steps + 1 summary pass), got {}",
+            requests.len()
+        );
+        assert!(requests[0..=3].iter().all(|(_, tools)| *tools), "Steps 0..=3 must offer tools");
+        assert!(!requests[4].1, "Pass 4 must have allow_tools == false");
+
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let tool_msgs: Vec<_> = harness
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::Tool)
+            .collect();
+        assert!(tool_msgs.len() >= 3, "At least 3 tool observations must be committed");
+        let step2_obs = &tool_msgs[2].content;
+        assert!(
+            step2_obs.contains("[SYSTEM WARNING:") && step2_obs.contains("error_cascade"),
+            "Step 2 observation must contain Strike 1 error_cascade warning, got: {}",
+            step2_obs
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch context window blowout when a tool returns a massive payload exceeding max_observation_tokens.
+/// SCENARIO: Register custom tool with TruncationPolicy::HeadTail { head_ratio: 0.8 } returning a 10,000-token string ("HEAD_SENTINEL_LINE_1 ... MIDDLE_SECRET_PAYLOAD ... TAIL_SENTINEL_LINE_500"). Execute 1-tool turn.
+/// ASSERTS:  Committed observation in history is <= max_observation_tokens (+ marker overhead), contains "HEAD_SENTINEL_LINE_1", "TAIL_SENTINEL_LINE_500", "Output truncated", and does NOT contain "MIDDLE_SECRET_PAYLOAD". The file at paths::session_tool_outputs_dir(rig.session_id).join("<call_id>.txt") exists and its full UTF-8 content equals the original 10,000-token string.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   In ToolExecutor::execute_tool, bypass TruncationStage and return raw ToolResult.
+#[tokio::test]
+async fn oversized_tool_observation_spills_to_tier4_cache_and_commits_head_tail_preview() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1104;
+        let call_id = "call-oversized-001".to_string();
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness must be mounted");
+            harness.register_tool(Arc::new(LargeHeadTailTool));
+        }
+
+        let cid = call_id.clone();
+        rig.scripted_llm.push_step(move |tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: cid,
+                name: "large_head_tail_tool".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Turn completed after tool execution.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Execute oversized tool", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "turn must complete, got {:?}",
+            outcome
+        );
+
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let tool_msgs: Vec<_> = harness
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::Tool)
+            .collect();
+        assert_eq!(tool_msgs.len(), 1, "Exactly 1 tool observation committed");
+        let obs = &tool_msgs[0].content;
+
+        // Check head and tail sentinels and truncation notice
+        assert!(obs.contains("HEAD_SENTINEL_LINE_1"), "Observation must preserve head sentinel");
+        assert!(obs.contains("TAIL_SENTINEL_LINE_500"), "Observation must preserve tail sentinel");
+        assert!(obs.contains("Output truncated"), "Observation must contain truncation notice marker");
+        assert!(!obs.contains("MIDDLE_SECRET_PAYLOAD"), "Observation must NOT contain stripped middle payload");
+
+        // Verify Tier 4 spillover file exists on disk
+        let spillover_file = vox_lib::utils::paths::session_tool_outputs_dir(rig.session_id)
+            .join(format!("{}.txt", call_id));
+        assert!(
+            spillover_file.exists(),
+            "Spillover cache file must exist at {:?}",
+            spillover_file
+        );
+        let spilled_content = std::fs::read_to_string(&spillover_file).expect("read spillover file");
+        assert!(spilled_content.contains("HEAD_SENTINEL_LINE_1"));
+        assert!(spilled_content.contains("MIDDLE_SECRET_PAYLOAD"));
+        assert!(spilled_content.contains("TAIL_SENTINEL_LINE_500"));
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Ensure tools declaring TruncationPolicy::None bypass truncation.
+/// SCENARIO: Tool with TruncationPolicy::None returns payload larger than max_observation_tokens.
+/// ASSERTS:  Committed observation equals the exact unmodified string; zero files created under paths::session_tool_outputs_dir(rig.session_id); session_tool_calls records truncated = 0.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   In TruncationStage, apply HeadTail truncation regardless of TruncationPolicy::None.
+#[tokio::test]
+async fn truncation_policy_none_preserves_full_output_without_disk_spillover() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1105;
+        let call_id = "call-policy-none-001".to_string();
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness must be mounted");
+            harness.register_tool(Arc::new(LargePolicyNoneTool));
+        }
+
+        let cid = call_id.clone();
+        rig.scripted_llm.push_step(move |tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: cid,
+                name: "large_policy_none_tool".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Turn finished.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Execute policy none tool", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "turn must complete, got {:?}",
+            outcome
+        );
+
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let tool_msgs: Vec<_> = harness
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::Tool)
+            .collect();
+        assert_eq!(tool_msgs.len(), 1, "Exactly 1 tool observation committed");
+        let obs = &tool_msgs[0].content;
+
+        assert!(obs.contains("POLICY_NONE_HEAD"));
+        assert!(obs.contains("POLICY_NONE_TAIL"));
+        assert!(!obs.contains("Output truncated"), "Truncation notice must NOT appear for Policy::None");
+
+        // Zero files created in session tool outputs dir
+        let session_tool_dir = vox_lib::utils::paths::session_tool_outputs_dir(rig.session_id);
+        let file_count = if session_tool_dir.exists() {
+            std::fs::read_dir(&session_tool_dir)
+                .map(|entries| entries.count())
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        assert_eq!(file_count, 0, "Zero spillover files must be created for TruncationPolicy::None");
+
+        // Provenance assert: session_tool_calls must record truncated = 0
+        let conn = rig.state.db.connect().expect("db connect");
+        let mut rows = conn
+            .query(
+                "SELECT truncated, spillover_path FROM session_tool_calls WHERE id = ?;",
+                (call_id,),
+            )
+            .await
+            .expect("query session_tool_calls truncation columns");
+        if let Some(row) = rows.next().await.expect("fetch row") {
+            let truncated: i64 = row.get(0).expect("truncated");
+            let spillover_path: Option<String> = row.get(1).expect("spillover_path");
+            assert_eq!(truncated, 0, "session_tool_calls must record truncated = 0 for TruncationPolicy::None");
+            assert!(spillover_path.is_none(), "spillover_path must be NULL for TruncationPolicy::None");
+        } else {
+            panic!("Expected session_tool_calls row for tool call");
+        }
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch mid-loop context overflow and prevent erasure of in-flight active turn steps during inline compaction.
+/// SCENARIO: Seed prior turns to ~80% context budget; on Turn N Step 0, model executes tool pushing context >= 85% (Critical); before Step 1 LLM dispatch, inline compaction triggers.
+/// ASSERTS:  State transition/activity records ActivityKind::Compaction; older prior turns compacted into <session_context>, while Turn N's Role::User query, Step 0 Role::Assistant(tool_calls), and Step 0 Role::Tool observation remain intact in harness.messages() for Step 1's request.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   In apply_session_context (chassis.rs), wipe the active turn's committed tool steps during mid-loop reset.
+#[tokio::test]
+async fn mid_loop_critical_budget_triggers_compaction_while_preserving_active_turn_steps() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1106;
+
+        {
+            let mut settings = rig.state.settings.write().unwrap();
+            settings.memory.auto_compaction = true;
+            settings.memory.context_retrieval_enabled = false;
+        }
+
+        {
+            let settings = rig.state.settings.read().unwrap().clone();
+            let prompt = rig.state.resolve_base_prompt();
+            *rig.state.harness.lock() = Some(Harness::new_modular(
+                Some(rig.session_id),
+                prompt,
+                None,
+                &settings,
+                vox_lib::services::harness::LlmExecutionParams {
+                    context_window: 8192,
+                    max_output_tokens: 512,
+                    temperature: 0.7,
+                    reasoning_enabled: false,
+                },
+                rig.llm_tx.clone(),
+                true,
+            ));
+        }
+
+        // Seed prior turns to ~80% context budget (usable budget = 7680; 80% is ~6144 tokens)
+        // 90 turns of ~68 tokens each ≈ 6120 tokens (just below 85% Critical threshold of 6528 tokens)
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness must be mounted");
+            for i in 0..90 {
+                harness.push_user_turn(format!(
+                    "Turn {} historical context question about distributed cognitive loops and state machines.",
+                    i
+                ));
+                harness.push_assistant_turn(format!(
+                    "Turn {} historical answer explaining pipeline stages, token budgets, and memory compaction.",
+                    i
+                ));
+            }
+        }
+
+        // Turn N Step 0: model calls a tool returning an observation that pushes total tokens >= 85% (Critical)
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-step0-mid".to_string(),
+                name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "in-flight investigation" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Turn N Step 1: LLM dispatch after inline compaction
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Summary after inline compaction.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Turn N active query needing tool investigation", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "turn must complete, got {:?}",
+            outcome
+        );
+
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let messages = harness.messages();
+
+        // 1. Verify older prior turns were compacted into session_context prompt
+        let has_old_turn_0 = messages.iter().any(|m| m.content.contains("Turn 0 historical"));
+        assert!(
+            !has_old_turn_0,
+            "Older historical turns must be compacted and removed from active message history"
+        );
+
+        // 2. Verify Turn N's active User query remains intact
+        let active_user_msg = messages.iter().find(|m| m.role == Role::User && m.content.contains("Turn N active query"));
+        assert!(
+            active_user_msg.is_some(),
+            "Turn N active user query must be preserved intact after mid-loop compaction"
+        );
+
+        // 3. Verify Step 0's Role::Assistant tool call remains intact
+        let step0_assistant_msg = messages.iter().find(|m| m.role == Role::Assistant && m.tool_calls.as_ref().map(|c| !c.is_empty()).unwrap_or(false));
+        assert!(
+            step0_assistant_msg.is_some(),
+            "Step 0 Role::Assistant tool call must be preserved intact after mid-loop compaction"
+        );
+
+        // 4. Verify Step 0's Role::Tool observation remains intact
+        let step0_tool_msg = messages.iter().find(|m| m.role == Role::Tool);
+        assert!(
+            step0_tool_msg.is_some(),
+            "Step 0 Role::Tool observation must be preserved intact after mid-loop compaction"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
 
 

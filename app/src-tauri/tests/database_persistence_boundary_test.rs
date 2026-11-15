@@ -986,6 +986,8 @@ async fn tool_call_event_self_heals_a_missing_session() {
                 result: "Session title updated".to_string(),
                 is_error: false,
                 duration_ms: 45,
+                truncated: false,
+                spillover_path: None,
                 created_at: 1700000000100,
             })
             .expect("Failed to send ToolCallExecuted");
@@ -1068,6 +1070,8 @@ async fn tool_call_is_not_persisted_in_private_mode() {
                 result: "ok".to_string(),
                 is_error: false,
                 duration_ms: 10,
+                truncated: false,
+                spillover_path: None,
                 created_at: 1700000000000,
             })
             .expect("Failed to send public ToolCallExecuted");
@@ -1118,6 +1122,8 @@ async fn tool_call_is_not_persisted_in_private_mode() {
                 result: "None".to_string(),
                 is_error: false,
                 duration_ms: 20,
+                truncated: false,
+                spillover_path: None,
                 created_at: 1700000000200,
             })
             .expect("Failed to send private ToolCallExecuted");
@@ -1456,6 +1462,10 @@ async fn multi_step_turn_persists_session_steps_and_foreign_key_linked_tool_call
                 preamble_text: Some("Checking notes.".to_string()),
                 tool_count: 2,
                 duration_ms: Some(120),
+                prompt_tokens: None,
+                completion_tokens: None,
+                guardrail_strike: 0,
+                is_compacted: false,
                 created_at: now + 10,
             })
             .expect("StepCompleted 0");
@@ -1472,6 +1482,8 @@ async fn multi_step_turn_persists_session_steps_and_foreign_key_linked_tool_call
                 result: "Found note".to_string(),
                 is_error: false,
                 duration_ms: 50,
+                truncated: false,
+                spillover_path: None,
                 created_at: now + 20,
             })
             .expect("ToolCallExecuted 0a");
@@ -1488,6 +1500,8 @@ async fn multi_step_turn_persists_session_steps_and_foreign_key_linked_tool_call
                 result: "Web result".to_string(),
                 is_error: false,
                 duration_ms: 60,
+                truncated: false,
+                spillover_path: None,
                 created_at: now + 30,
             })
             .expect("ToolCallExecuted 0b");
@@ -1502,6 +1516,10 @@ async fn multi_step_turn_persists_session_steps_and_foreign_key_linked_tool_call
                 preamble_text: None,
                 tool_count: 1,
                 duration_ms: Some(40),
+                prompt_tokens: None,
+                completion_tokens: None,
+                guardrail_strike: 0,
+                is_compacted: false,
                 created_at: now + 100,
             })
             .expect("StepCompleted 1");
@@ -1518,6 +1536,8 @@ async fn multi_step_turn_persists_session_steps_and_foreign_key_linked_tool_call
                 result: "Title updated".to_string(),
                 is_error: false,
                 duration_ms: 35,
+                truncated: false,
+                spillover_path: None,
                 created_at: now + 110,
             })
             .expect("ToolCallExecuted 1");
@@ -1696,4 +1716,223 @@ async fn session_hard_delete_cascades_to_session_steps_and_session_tool_calls() 
     .await
     .expect("session_hard_delete_cascades_to_session_steps_and_session_tool_calls timed out");
 }
+
+/// PURPOSE:  Catch dropped v18 provenance columns across persistence worker boundary.
+/// SCENARIO: Execute turn through PersistenceWorker with StepCompleted (prompt_tokens = Some(420), completion_tokens = Some(85), guardrail_strike = 1, is_compacted = true) and ToolCallExecuted (truncated = true, spillover_path = Some("/tmp/spill.txt")).
+/// ASSERTS:  Querying session_steps returns (420, 85, 1, 1) for (prompt_tokens, completion_tokens, guardrail_strike, is_compacted). Querying session_tool_calls returns (1, "/tmp/spill.txt") for (truncated, spillover_path).
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   In persistence/steps.rs or tool_calls.rs, hardcode 0 or NULL for the v18 provenance columns.
+#[tokio::test]
+async fn schema_v18_persists_step_tokens_strikes_compaction_and_tool_spillover_metadata() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _paths = TempPathsGuard::new();
+        vox_lib::utils::paths::init();
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_schema_v18.db");
+
+        let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
+        let conn = db.connect().expect("Failed to vend connection");
+        run_migrations(&conn)
+            .await
+            .expect("Failed to execute schema migrations");
+
+        let session_id = 18001i64;
+        create_session_with_id(&conn, session_id, None)
+            .await
+            .expect("Failed to create session");
+
+        let is_healthy = Arc::new(AtomicBool::new(true));
+        let rate = Arc::new(AtomicU32::new(0));
+        let private_mode = Arc::new(AtomicBool::new(false));
+
+        let persist_tx = spawn_persistence_worker(
+            Arc::new(db),
+            is_healthy,
+            rate,
+            private_mode,
+        );
+
+        let now = 1700000000000u64;
+        let step_id = "step-v18-prov-001".to_string();
+        let tool_call_id = "tc-v18-prov-001".to_string();
+
+        persist_tx
+            .send(PersistenceEvent::StepCompleted {
+                id: step_id.clone(),
+                session_id,
+                turn_id: 1,
+                step_index: 0,
+                preamble_text: Some("Analyzing query".to_string()),
+                tool_count: 1,
+                duration_ms: Some(120),
+                prompt_tokens: Some(420),
+                completion_tokens: Some(85),
+                guardrail_strike: 1,
+                is_compacted: true,
+                created_at: now,
+            })
+            .expect("Failed to send StepCompleted");
+
+        persist_tx
+            .send(PersistenceEvent::ToolCallExecuted {
+                id: tool_call_id.clone(),
+                session_id,
+                turn_id: 1,
+                step_id: Some(step_id.clone()),
+                step_index: 0,
+                tool_name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "auth" }),
+                result: "found auth data".to_string(),
+                is_error: false,
+                duration_ms: 50,
+                truncated: true,
+                spillover_path: Some("/tmp/spill.txt".to_string()),
+                created_at: now + 50,
+            })
+            .expect("Failed to send ToolCallExecuted");
+
+        let _ = persist_tx.send(PersistenceEvent::Shutdown);
+
+        // Poll database for step and tool call provenance columns
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut step_verified = false;
+        let mut tool_verified = false;
+
+        while std::time::Instant::now() < deadline {
+            if !step_verified {
+                let mut rows = conn
+                    .query(
+                        "SELECT prompt_tokens, completion_tokens, guardrail_strike, is_compacted FROM session_steps WHERE id = ?;",
+                        (step_id.clone(),),
+                    )
+                    .await
+                    .expect("query session_steps provenance columns");
+
+                if let Ok(Some(row)) = rows.next().await {
+                    let prompt_tok: Option<i64> = row.get(0).expect("prompt_tokens");
+                    let comp_tok: Option<i64> = row.get(1).expect("completion_tokens");
+                    let strike: i64 = row.get(2).expect("guardrail_strike");
+                    let compacted: i64 = row.get(3).expect("is_compacted");
+
+                    assert_eq!(prompt_tok, Some(420), "prompt_tokens must be 420");
+                    assert_eq!(comp_tok, Some(85), "completion_tokens must be 85");
+                    assert_eq!(strike, 1, "guardrail_strike must be 1");
+                    assert_eq!(compacted, 1, "is_compacted must be 1 (true)");
+                    step_verified = true;
+                }
+            }
+
+            if !tool_verified {
+                let mut tc_rows = conn
+                    .query(
+                        "SELECT truncated, spillover_path FROM session_tool_calls WHERE id = ?;",
+                        (tool_call_id.clone(),),
+                    )
+                    .await
+                    .expect("query session_tool_calls truncation columns");
+
+                if let Ok(Some(row)) = tc_rows.next().await {
+                    let truncated: i64 = row.get(0).expect("truncated");
+                    let spillover_path: Option<String> = row.get(1).expect("spillover_path");
+
+                    assert_eq!(truncated, 1, "truncated must be 1 (true)");
+                    assert_eq!(spillover_path, Some("/tmp/spill.txt".to_string()), "spillover_path must match");
+                    tool_verified = true;
+                }
+            }
+
+            if step_verified && tool_verified {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        assert!(step_verified, "session_steps provenance columns must be verified");
+        assert!(tool_verified, "session_tool_calls truncation columns must be verified");
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch disk space leaks in tool output cache when sessions are deleted or orphaned on disk.
+/// SCENARIO: Create spillover files under paths::session_tool_outputs_dir(session_a) and paths::session_tool_outputs_dir(orphan_b); call delete_session(&conn, session_a, true) and run_startup_sweeps(&conn).
+/// ASSERTS:  Both directories no longer exist on disk.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   In delete_session (sessions.rs), omit the remove_dir_all call.
+#[tokio::test]
+async fn session_deletion_and_startup_sweep_purge_tier4_tool_output_cache_directories() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _paths = TempPathsGuard::new();
+        vox_lib::utils::paths::init();
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_cache_purge.db");
+
+        let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
+        let conn = db.connect().expect("Failed to vend connection");
+        run_migrations(&conn)
+            .await
+            .expect("Failed to execute schema migrations");
+
+        let session_a = 28001i64;
+        let orphan_b = 28002i64;
+
+        create_session_with_id(&conn, session_a, None)
+            .await
+            .expect("Failed to create session_a");
+        // orphan_b is deliberately NOT created in db to simulate orphaned session folder
+
+        let dir_a = vox_lib::utils::paths::session_tool_outputs_dir(session_a);
+        let dir_b = vox_lib::utils::paths::session_tool_outputs_dir(orphan_b);
+
+        std::fs::create_dir_all(&dir_a).expect("create dir_a");
+        std::fs::write(dir_a.join("call_a.txt"), "spillover output for session_a")
+            .expect("write file a");
+
+        std::fs::create_dir_all(&dir_b).expect("create dir_b");
+        std::fs::write(dir_b.join("call_b.txt"), "spillover output for orphan_b")
+            .expect("write file b");
+
+        assert!(dir_a.exists(), "dir_a must exist on disk before deletion");
+        assert!(dir_b.exists(), "dir_b must exist on disk before startup sweep");
+
+        // 1. Delete session_a
+        delete_session(&conn, session_a, true)
+            .await
+            .expect("Failed to hard delete session_a");
+
+        assert!(
+            !dir_a.exists(),
+            "session_tool_outputs_dir for session_a must be purged upon delete_session"
+        );
+
+        // 2. Spawn persistence worker to run startup sweeps on boot
+        let is_healthy = Arc::new(AtomicBool::new(true));
+        let rate = Arc::new(AtomicU32::new(0));
+        let private_mode = Arc::new(AtomicBool::new(false));
+
+        let persist_tx = spawn_persistence_worker(
+            Arc::new(db),
+            is_healthy,
+            rate,
+            private_mode,
+        );
+
+        let _ = persist_tx.send(PersistenceEvent::Shutdown);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline && dir_b.exists() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        assert!(
+            !dir_b.exists(),
+            "orphaned tool outputs directory orphan_b must be purged by startup sweeps"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
 
