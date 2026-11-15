@@ -216,7 +216,7 @@ async fn execute_loop_iterations(
                 .await;
         match stream_res {
             Ok(pass_outcome) => {
-                let action = handle_pass_outcome(
+                let (action, circuit_broken) = handle_pass_outcome(
                     ctx,
                     pass_outcome,
                     cancel_atomic,
@@ -224,6 +224,9 @@ async fn execute_loop_iterations(
                     iteration,
                 )
                 .await;
+                if circuit_broken {
+                    allow_tools = false;
+                }
                 match action {
                     // === STEP 7: Finalize & Terminal Commit ===
                     LoopAction::Terminal(outcome) => return outcome,
@@ -312,7 +315,7 @@ async fn handle_pass_outcome(
     cancel_atomic: &Arc<AtomicBool>,
     allow_tools: bool,
     iteration: usize,
-) -> LoopAction {
+) -> (LoopAction, bool) {
     let turn_id = ctx.req.turn_id;
     match pass_outcome {
         StreamPassOutcome::Completed {
@@ -325,20 +328,20 @@ async fn handle_pass_outcome(
                 assistant_text.len()
             );
             if cancel_atomic.load(Relaxed) {
-                LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, assistant_text)))
+                (LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, assistant_text))), false)
             } else {
-                LoopAction::Terminal(step7_commit_completed(
+                (LoopAction::Terminal(step7_commit_completed(
                     ctx.harness_arc,
                     turn_id,
                     assistant_text,
-                ))
+                )), false)
             }
         }
         StreamPassOutcome::Cancelled { partial_text } => {
-            LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, partial_text)))
+            (LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, partial_text))), false)
         }
         StreamPassOutcome::Error(err) => {
-            LoopAction::Terminal(step7_handle_error(ctx.harness_arc, turn_id, err, None))
+            (LoopAction::Terminal(step7_handle_error(ctx.harness_arc, turn_id, err, None)), false)
         }
         StreamPassOutcome::ToolCallsReceived {
             preamble_text,
@@ -350,17 +353,17 @@ async fn handle_pass_outcome(
                     "[Harness::Loop] Discarding {} tool calls during final tool-free pass; committing text.",
                     calls.len()
                 );
-                return LoopAction::Terminal(step7_commit_completed(
+                return (LoopAction::Terminal(step7_commit_completed(
                     ctx.harness_arc,
                     turn_id,
                     preamble_text,
-                ));
+                )), false);
             }
 
-            let (cancelled, suspended_question) =
+            let (cancelled, suspended_question, circuit_broken) =
                 step6_execute_tool_batch(ctx, calls, &preamble_text, iteration).await;
             if cancelled {
-                LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, String::new())))
+                (LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, String::new()))), circuit_broken)
             } else if let Some(question) = suspended_question {
                 if let Some(ref tts_tx) = ctx.req.tts_tx {
                     let normalized = TextNormalizer::normalize_for_speech(&question);
@@ -389,9 +392,9 @@ async fn handle_pass_outcome(
                         e
                     );
                 }
-                LoopAction::Terminal(step7_commit_completed(ctx.harness_arc, turn_id, question))
+                (LoopAction::Terminal(step7_commit_completed(ctx.harness_arc, turn_id, question)), circuit_broken)
             } else {
-                LoopAction::Continue
+                (LoopAction::Continue, circuit_broken)
             }
         }
     }

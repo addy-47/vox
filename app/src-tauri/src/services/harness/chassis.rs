@@ -19,6 +19,7 @@ use crate::{
             stages::{
                 budget::{ContextBudgetStage, ContextStatus},
                 compaction::{CompactionStage, QuietCompactionWatcher},
+                guardrails::{GuardrailsStage, TurnGuardrailsState},
                 history::ConversationHistoryStage,
                 prompt::PromptBuilderStage,
                 streaming::StreamRoutingStage,
@@ -51,6 +52,8 @@ pub struct Harness {
     pub(crate) web_search_enabled: bool,
     pub(crate) has_played_filler: bool,
     pub max_steps: Option<usize>,
+    pub(crate) guardrails: GuardrailsStage,
+    pub(crate) guardrails_state: TurnGuardrailsState,
 }
 
 /// Dynamic per-model execution parameters resolved from database models table.
@@ -120,6 +123,8 @@ impl Harness {
             web_search_enabled: settings.interaction.web_search_enabled,
             has_played_filler: false,
             max_steps: None,
+            guardrails: GuardrailsStage::default(),
+            guardrails_state: TurnGuardrailsState::default(),
         }
     }
 
@@ -158,6 +163,8 @@ impl Harness {
             web_search_enabled: settings.interaction.web_search_enabled,
             has_played_filler: false,
             max_steps: None,
+            guardrails: GuardrailsStage::default(),
+            guardrails_state: TurnGuardrailsState::default(),
         }
     }
 
@@ -228,6 +235,7 @@ impl Harness {
     /// Records a user turn and applies the production intake and critical-compaction decision.
     pub fn intake_recorded_turn(&mut self, query: String) -> bool {
         self.has_played_filler = false;
+        self.guardrails_state = TurnGuardrailsState::default();
         self.history.push_user_turn(query);
         let assembled_system = self.prompt.assemble();
         self.history.sync_system_prompt(&assembled_system);

@@ -23,6 +23,7 @@ use crate::{
             r#loop::TurnLoopContext,
             stages::{
                 compaction::{CompactionParams, CompactionStage},
+                guardrails::GuardrailAction,
                 streaming::{
                     normalizer::TextNormalizer, StreamPassOutcome, StreamRoutingHandles,
                     StreamRoutingStage,
@@ -434,7 +435,7 @@ pub async fn step6_execute_tool_batch(
     calls: Vec<CanonicalToolCall>,
     preamble_text: &str,
     step_index: usize,
-) -> (bool, Option<String>) {
+) -> (bool, Option<String>, bool) {
     let turn_id = ctx.req.turn_id;
     let step_start = std::time::Instant::now();
     ctx.stream_handles
@@ -492,13 +493,38 @@ pub async fn step6_execute_tool_batch(
     .with_step(step_id.clone(), step_index as u32)
     .with_observation_budget(max_observation_tokens);
 
-    let (outcomes, suspended_question) = ToolExecutor::execute_batch(
+    let (mut outcomes, suspended_question) = ToolExecutor::execute_batch(
         ctx.tool_registry,
         PipelineMode::Modular,
         calls.clone(),
         &tool_ctx,
     )
     .await;
+
+    // Evaluate loop guardrails across completed outcomes
+    let (guardrail_action, strike_count) = {
+        let mut guard = ctx.harness_arc.lock();
+        if let Some(ref mut harness) = *guard {
+            let action = harness.guardrails.evaluate_batch(
+                turn_id,
+                step_index as u32,
+                &mut harness.guardrails_state,
+                &outcomes,
+            );
+            let strike = harness.guardrails_state.strike_count;
+            (action, strike)
+        } else {
+            (GuardrailAction::Proceed, 0)
+        }
+    };
+
+    let circuit_broken = matches!(guardrail_action, GuardrailAction::Strike2CircuitBreak);
+
+    if let GuardrailAction::Strike1Warning { ref warning_msg } = guardrail_action {
+        if let Some(last_outcome) = outcomes.last_mut() {
+            last_outcome.result.content.push_str(warning_msg);
+        }
+    }
 
     // Flip title_set flag on successful set_title execution
     for outcome in &outcomes {
@@ -544,7 +570,7 @@ pub async fn step6_execute_tool_batch(
             duration_ms: Some(step_duration_ms),
             prompt_tokens: None,
             completion_tokens: None,
-            guardrail_strike: 0,
+            guardrail_strike: strike_count as u32,
             is_compacted: false,
             created_at: now,
         });
@@ -569,7 +595,7 @@ pub async fn step6_execute_tool_batch(
         }
     }
 
-    (ctx.req.cancel.is_cancelled(), suspended_question)
+    (ctx.req.cancel.is_cancelled(), suspended_question, circuit_broken)
 }
 
 fn make_sessions_changed_callback(
