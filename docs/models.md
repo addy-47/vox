@@ -1,7 +1,7 @@
 ---
 title: "Vox Model Inventory & Specifications"
 audience: "Internal — ML/model-config contributors, backend engineers, agents"
-last_updated: 2026-09-03
+last_updated: 2026-11-14
 owners: "ml-research-engineer role"
 related_docs:
   - "docs/backend.md — Engines, threading, lifecycle"
@@ -31,8 +31,10 @@ related_docs:
 
 | Role | Model | ID | Params | Quant | Footprint | Engine | Path | Manifest |
 | :--- | :--- | :--- | :---: | :---: | :---: | :--- | :--- | :---: |
-| **VAD** (default) | Earshot VAD | `earshot` | Embedded | — | < 1 MB | Rust-native | Embedded (no file) | ❌ |
+| **VAD** (default) | Silero VAD | `silero_vad` | — | INT8 | ~15 MB | sherpa-onnx ONNX | `~/.vox/models/vad/silero_vad.onnx` | ✅ |
+| **VAD** (fallback) | Earshot VAD | `earshot` | Embedded | — | < 1 MB | Rust-native | Embedded (no file) | ❌ |
 | **VAD** (legacy) | TenVAD | `ten_vad` | — | INT8 | ~15 MB | sherpa-onnx ONNX | `~/.vox/models/vad/ten_vad.onnx` | ✅ |
+| **VAD** (turn detector) | Smart Turn v3 | `smart_turn` | Acoustic EOU | INT8 | ~8 MB | ONNX Runtime | `~/.vox/models/vad/smart_turn.onnx` | ✅ |
 | **STT** (primary) | Nvidia Nemotron-3.5 | `nvidia_nemotron` | ~0.6B | INT8 | ~750 MB (RAM: ~1.05 GB) | sherpa-onnx 1.13.6 ONNX | `~/.vox/models/stt/nemotron-3.5/` | ✅ |
 | **STT** (alternative) | Qwen3-ASR-0.6B | `qwen3_asr` | 0.6B | INT8 | ~980 MB (RAM: ~1.91 GB) | sherpa-onnx 1.13.6 ONNX | `~/.vox/models/stt/qwen3-asr/` | ✅ |
 | **STT** (cloud) | Google Chirp 3 | `chirp_3` | Cloud | — | 0 MB | HTTP | `stt.cloud` (`google`) | N/A |
@@ -41,11 +43,14 @@ related_docs:
 | **LLM** (alternative) | Gemma3 4B | `gemma3:4b` | 4B | Q4_K_M | ~2.5 GB | llama.cpp GGUF | `~/.vox/models/llm/gemma3/` | ✅ |
 | **LLM** (server) | Ollama / LM Studio | `ollama` / `lm_studio` | — | — | 0 MB (local) | HTTP (reqwest) | `http://localhost:11434` | N/A |
 | **LLM** (cloud) | OpenAI / Gemini / Anthropic / Nvidia | provider-config | — | — | 0 MB (local) | HTTP (reqwest) | Remote API (`integrate.api.nvidia.com/v1` default) | N/A |
-| **TTS** (default) | Microsoft Edge TTS | `edge_tts` | Remote | — | **0 MB** | Pure Rust (`tokio-tungstenite`) | Remote WebSocket | N/A |
-| **TTS** (local) | Supertonic 3 | `supertonic` | 99M | INT8 | ~144 MB | sherpa-onnx ONNX | `~/.vox/models/tts/supertonic-3/` | ✅ |
+| **TTS** (default) | Supertonic 3 | `supertonic` | 99M | INT8 | ~144 MB | sherpa-onnx ONNX | `~/.vox/models/tts/supertonic-3/` | ✅ |
 | **TTS** (local) | Kokoro Multi-Lang | `kokoro` | 82M | FP32 | ~120 MB | sherpa-onnx ONNX | `~/.vox/models/tts/kokoro/` | ✅ |
+| **TTS** (local) | Zipvoice | `zipvoice` | — | — | — | sherpa-onnx ONNX | `~/.vox/models/tts/zipvoice/` | ✅ |
 | **TTS** (local clone) | Chatterbox Local | `chatterbox` | 340M | Q4 GGML | ~1.1 GB | chatterbox-rs GGML | `~/.vox/models/tts/chatterbox/` | ✅ |
 | **TTS** (remote) | Chatterbox Remote | `chatterbox_remote` | 340M | Q4 GGML | 0 MB (local) | reqwest HTTP | Remote GPU server | ✅ |
+| **TTS** (remote) | Microsoft Edge TTS | `edge_tts` | Remote | — | **0 MB** | Pure Rust (`tokio-tungstenite`) | Remote WebSocket | N/A |
+| **TTS** (cloud) | Google Cloud TTS | `google_tts` | Cloud | — | 0 MB (local) | HTTP | Google Cloud | N/A |
+| **TTS** (cloud) | Azure Speech | `azure_tts` | Cloud | — | 0 MB (local) | HTTP | Azure | N/A |
 
 ### 1.2 Memory Subsystem Models
 
@@ -85,14 +90,16 @@ Which models and memory features are available depends on the user's hardware ti
 
 ### 3.1 VAD
 
-| Aspect | Earshot (default) | TenVAD (legacy) |
-|--------|-------------------|-----------------|
-| **Algorithm** | Energy-based with embedded NN weights | Silero-style ONNX DNN |
-| **Latency** | ~1ms / 256-sample frame | ~15ms / frame |
-| **Threshold** | 0.5 (hot-reloadable via `update_threshold()`) | 0.45 (requires detector reinit) |
-| **Config** | None needed | `min_silence_duration: 0.5s`, `min_speech_duration: 0.25s` |
-| **Dispatch** | `VadBackend::Earshot` — enum dispatch, no vtable | `VadBackend::Ten` — enum dispatch |
-| **Threading** | Zero allocation, runs on VAD OS thread | 1 thread (sherpa-onnx) |
+| Aspect | Silero VAD (default) | Earshot (fallback) | TenVAD (legacy) |
+|--------|----------------------|--------------------|-----------------|
+| **Algorithm** | Silero-style ONNX DNN | Energy-based with embedded NN weights | Silero-style ONNX DNN |
+| **Latency** | ~1ms / 256-sample frame | ~1ms / 256-sample frame | ~15ms / frame |
+| **Threshold** | 0.5 (hot-reloadable) | 0.5 | 0.45 (requires detector reinit) |
+| **Config** | `min_silence_duration`, `min_speech_duration` | None needed | `min_silence_duration: 0.5s`, `min_speech_duration: 0.25s` |
+| **Dispatch** | `VadBackend::Silero` — enum dispatch | `VadBackend::Earshot` — enum dispatch, no vtable | `VadBackend::Ten` — enum dispatch |
+| **Threading** | 1 thread (sherpa-onnx) | Zero allocation, VAD OS thread | 1 thread (sherpa-onnx) |
+
+Earshot is the pure-Rust fallback used when the Silero model file is absent. Smart Turn v3 (`smart_turn.onnx`) is an acoustic end-of-utterance classifier layered on top of VAD for turn-taking (see §1.1).
 
 ### 3.2 STT
 
@@ -140,17 +147,17 @@ fn transcribe(audio: &[f32]) -> String {
 
 ### 3.4 TTS
 
-| Aspect | Edge TTS (default) | Supertonic 3 (local) | Kokoro (local) | Chatterbox (local clone) | Chatterbox Remote |
-|--------|--------------------|----------------------|----------------|--------------------------|-------------------|
-| **Architecture** | Microsoft Bing ReadAloud | Flow-matching transformer | Kokoro multi-lang | Transformer (GGML) | Same as Chatterbox |
-| **Engine** | Pure Rust WebSocket (`tokio-tungstenite`) | sherpa-onnx ONNX | sherpa-onnx ONNX | chatterbox-rs GGML | reqwest HTTP |
-| **Params** | Remote API | 99M | 82M | 340M Q4 | 340M (server-side) |
-| **Output** | Native 24kHz f32 MP3-decoded PCM | 44.1kHz → 24kHz (downsampled) | 24kHz | Native 24kHz | 24kHz |
-| **Voice** | ~300+ Edge Neural Voices (default: `en-US-AriaNeural`) | 10 built-in (5M/5F) | 50+ multi-lang | 5s reference → cloned | Cloned via remote |
-| **Languages** | 100+ global languages & dialects | 31 | 50+ | Multilingual | Multilingual |
-| **Quality Steps** | N/A (Streaming MP3) | 2–12 (configurable) | N/A | Fixed | Fixed |
-| **Speed** | 0.7×–2.0× (prosody rate) | Configurable | Configurable | Fixed | Fixed |
-| **RTF / Latency** | **0.30× RTF** (~3.3× real-time) | 1.76× RTF | ~1.2× RTF | Variable | Variable |
+| Aspect | Supertonic 3 (default) | Kokoro (local) | Edge TTS | Chatterbox (local clone) | Chatterbox Remote |
+|--------|------------------------|----------------|----------|--------------------------|-------------------|
+| **Architecture** | Flow-matching transformer | Kokoro multi-lang | Microsoft Bing ReadAloud | Transformer (GGML) | Same as Chatterbox |
+| **Engine** | sherpa-onnx ONNX | sherpa-onnx ONNX | Pure Rust WebSocket (`tokio-tungstenite`) | chatterbox-rs GGML | reqwest HTTP |
+| **Params** | 99M | 82M | Remote API | 340M Q4 | 340M (server-side) |
+| **Output** | 44.1kHz → 24kHz (downsampled) | 24kHz | Native 24kHz f32 MP3-decoded PCM | Native 24kHz | 24kHz |
+| **Voice** | 10 built-in (5M/5F) | 50+ multi-lang | ~300+ Edge Neural Voices | 5s reference → cloned | Cloned via remote |
+| **Languages** | 31 | 50+ | 100+ global | Multilingual | Multilingual |
+| **Quality Steps** | 2–12 (configurable) | N/A | N/A (Streaming MP3) | Fixed | Fixed |
+| **Speed** | Configurable | Configurable | 0.7×–2.0× (prosody rate) | Fixed | Fixed |
+| **RTF / Latency** | 1.76× RTF | ~1.2× RTF | **0.30× RTF** (~3.3× real-time) | Variable | Variable |
 
 **Anti-Aliasing Low-Pass Filter (Supertonic 3):** The vocoder outputs 44.1kHz, downsampled to 24kHz for TTS output. A 2nd-order Butterworth LPF (cutoff: 11000Hz) is applied before downsampling to prevent aliasing artifacts near Nyquist (22.05kHz). Implemented as a biquad filter applied sample-by-sample in the resampling loop.
 
@@ -324,7 +331,7 @@ VAD and STT are **not** cooled on auto-sleep — they stay resident so the mic k
 
 ```text
 Total Active Pipeline Budget: ~3.5 GB (on 8GB baseline — design target)
-├── VAD:                  < 0.01 GB  (Earshot VAD)
+├── VAD:                  < 0.01 GB  (Silero VAD; Earshot fallback)
 ├── STT:                  ~2.50 GB  (Nemotron-3.5 INT8)
 ├── LLM:                  ~0.75 GB  (Llama 3.2 1B Q4_K_M)
 ├── TTS:                  ~0.14 GB  (Supertonic 3)  or  ~1.1 GB (Chatterbox)
@@ -342,4 +349,4 @@ The three idle-sweep memory models (Embedding, NLI, Edge Classifier) are **not c
 
 ---
 
-**Last Updated:** 2026-08-31
+**Last Updated:** 2026-11-14

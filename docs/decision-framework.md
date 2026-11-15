@@ -227,7 +227,61 @@ A direct comparison of SQL `vector_distance_cos()` vs Rust `cosine_similarity()`
 
 ---
 
-## 6. Final Guiding Principles
+## 6. Pipeline & Agent Frameworks
+
+### Decision #11: Why Not LiveKit (or WebRTC Voice Frameworks)?
+
+LiveKit is a popular open-source WebRTC infrastructure and voice agent framework (`livekit-agents`). Video tutorials frequently claim that "building a voice agent is simple with LiveKit." Vox evaluated this paradigm and rejected it.
+
+**Why creators say it is simple:**
+LiveKit Agents simplifies building **cloud-hosted voice bots for web apps and phone calls**. In that paradigm, a 50-line Python script connects to a cloud WebRTC room and delegates all heavy lifting to third-party cloud APIs (Deepgram STT → OpenAI LLM → ElevenLabs TTS). It is simple because it offloads inference, state, and infrastructure to external cloud services.
+
+**Why LiveKit fails for Vox:**
+
+1. **Fundamental Architectural Mismatch (Cloud Conference Bot vs. Native Ambient Assistant):**
+   - LiveKit models an agent as an active participant joining a WebRTC audio/video room via a Selective Forwarding Unit (SFU) server.
+   - Vox is a native, offline-first personal OS assistant running directly on the user's desktop and mobile hardware.
+   - Adopting LiveKit would require bundling a Go-based SFU server (`livekit-server`) or mandating a cloud subscription, plus looping audio packets through a virtual WebRTC network stack on `localhost` instead of opening the soundcard directly via `cpal`.
+
+2. **No Rust Agent Framework Exists:**
+   - While LiveKit maintains `livekit/rust-sdks`, this repository provides only low-level WebRTC transport crates (`livekit`, `livekit-api`) and FFI plumbing for libwebrtc.
+   - The high-level Voice AI Agent framework (`livekit-agents`) exists **only in Python and Node.js**.
+   - Using LiveKit Agents would force Vox to bundle a Python 3.11 runtime or Node.js runtime inside the Tauri desktop/mobile app, exploding binary size, consuming 500MB+ idle RAM, and breaking cross-compilation on Android.
+
+3. **Inability to Support Offline Tier 1 (8GB Baseline & Privacy):**
+   - Vox's core invariant is Tier 1A/1B: full offline local inference on an 8GB laptop (Silero VAD, Sherpa-ONNX STT, llama.cpp GGUF, Kokoro TTS).
+   - LiveKit Agents is designed for streaming cloud APIs. Running local GGUF/ONNX models inside a Python server worker introduces Python GIL lockups, memory bloat, and poor thread coordination.
+
+4. **Loss of Local OS Control & Native Tools:**
+   - LiveKit agents run as isolated server workers. They cannot read local desktop files, execute bash scripts in the user's terminal, capture active desktop windows, or inject keystrokes into native apps (`dictation-spec.md`) without building a custom remote agent protocol anyway.
+   - Vox tools execute natively inside the Rust host process with direct OS authority.
+
+5. **Harness & Context Engineering Deficiencies:**
+   - **Thinking Token Isolation:** Advanced reasoning models (DeepSeek R1, Claude 3.7) emit internal `<think>` reasoning tokens. LiveKit streams these raw tokens straight to TTS unless manually intercepted. Vox's 3-Stream Demuxer quarantines thinking tokens at the ingress boundary.
+   - **Preamble Speech & Barrier Scheduling:** Vox speaks conversational preambles concurrently while executing multi-tool batches with parallel/exclusive barrier scheduling (`RULE-HARN-10A/11A`). LiveKit pauses speech during function calls.
+   - **KV-Cache Preservation:** Vox enforces a strict fixed prompt prefix order (Persona → Personal Memory `<user_identity>` → Historical Summary `<session_context>` → Structured Tools) to guarantee prompt cache hits across turns. LiveKit leaves context formatting ad-hoc.
+   - **Relational Trajectory SSOT:** Vox persists full execution trajectories in Turso MVCC (`sessions` → `turns` → `session_steps` → `session_tool_calls`) with SQL vector search pushdown.
+
+**Comparison Matrix:**
+
+| Dimension | LiveKit Agents Framework | Vox Native Architecture |
+|---|---|---|
+| **Primary Domain** | Cloud telephony, web conferencing bots, SIP call centers | Native personal OS assistant, ambient offline companion |
+| **Runtime Language** | Python (`livekit-agents`) / Node.js (`@livekit/agents`) | Pure Rust (`app/src-tauri/`) + C++ inference engines |
+| **Audio Transport** | WebRTC tracks via SFU server (`livekit-server`) | Direct OS soundcard hardware buffers (`cpal`) |
+| **Rust Agent Support** | ❌ None (Only low-level transport SDK) | ✅ Fully native Rust agent harness (`harness-spec.md`) |
+| **Offline Capability** | ❌ None (Requires SFU + cloud APIs) | ✅ Tier 1A/1B 100% offline (Sherpa-ONNX, GGUF, Kokoro) |
+| **Local OS Control** | ❌ None (Isolated server worker) | ✅ Full OS integration (terminal, files, keystrokes, clipboard) |
+| **Memory Footprint** | ~500MB–1GB (Python + libwebrtc + dependencies) | ~50MB runtime overhead (fits 8GB laptop baseline) |
+| **Cognitive Harness** | Basic linear streaming loop (VAD → STT → LLM → TTS) | 3-stream demuxer, thinking isolation, concurrent tool preambles |
+| **KV-Cache Stability** | Ad-hoc message history (`llm.ChatContext`) | Enforced fixed prefix order for persistent prompt caching |
+| **Remote Audio** | WebRTC room with server signaling | Point-to-point Noise_XX authenticated LAN WebSockets |
+
+**Memorable Rule:** > LiveKit is built to put AI into phone calls and web conferences. Vox is built to put an ambient AI into your operating system.
+
+---
+
+## 7. Final Guiding Principles
 
 When evaluating any future technology for Vox, ask five questions:
 
@@ -251,4 +305,4 @@ The architecture therefore prioritizes predictable latency, low memory overhead,
 
 ---
 
-**Last Updated:** 2026-07-25
+**Last Updated:** 2026-11-25

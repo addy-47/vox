@@ -1,7 +1,7 @@
 ---
 title: "Vox Packaging & Distribution Architecture"
 audience: "Internal — release engineering, DevOps, contributors"
-last_updated: 2026-08-21
+last_updated: 2026-11-14
 owners: "system-architect role"
 related_docs:
   - "docs/backend.md — Native runtime & build targets"
@@ -202,6 +202,7 @@ pnpm tauri build
 * Windows → `.exe`
 * Linux → `.AppImage`, `.deb`
 * macOS → `.dmg` (future)
+* Android → `.apk` (debug) / `.aab` (release)
 
 ---
 
@@ -385,7 +386,42 @@ pnpm tauri build
 
 ---
 
-## 12. Final Principle
+## 12. Android Target
+
+Vox ships an **Android** build (`aarch64-linux-android`, arm64-v8a, API 24+) via Tauri 2's Android support. The Android target is a first-class compile gate alongside desktop.
+
+### Toolchain
+- NDK r29 (auto-discovered from `$ANDROID_HOME/ndk`; override via `NDK_HOME`).
+- Source `app/src-tauri/scripts/android-env.sh` before any cargo/tauri Android command — it exports `ANDROID_NDK`, linker, `CC/CXX/AR`, `BINDGEN_EXTRA_CLANG_ARGS`, and persists them into `$CARGO_HOME/config.toml` (required for Gradle-driven builds, whose env allowlist omits bindgen args).
+- `ANDROID_API` defaults to 24 (override supported).
+
+### Build commands
+```bash
+source app/src-tauri/scripts/android-env.sh
+cd app && pnpm tauri android build --debug --apk   # debug APK
+cd app && pnpm tauri android build                 # release AAB/APK
+```
+
+### Compile gate
+```bash
+cd app/src-tauri && ./scripts/verify-targets.sh       # desktop + Android clippy
+cd app/src-tauri && ./scripts/verify-targets.sh link  # + Android release link (~20min cold)
+```
+
+### Android-specific constraints
+- `cfg(target_os = "android")` dependencies: `ort` with `nnapi` feature (ONNX Runtime NNAPI EP; exact feature match required by `ort-sys`), `jni 0.21`, `ndk-context`.
+- Desktop-only crates (`tauri` tray-icon, `arboard`, `enigo`, `gtk`, etc.) are gated behind `cfg(not(any(target_os = "android", target_os = "ios")))` or `cfg(target_os = "linux")` (Linux excludes Android).
+- `enigo` has no Android backend; dictation OS-wide input is excluded on Android (Batch 4 exclusion).
+- `reqwest` uses `default-features = false` with `rustls-tls` (no openssl-sys/native-tls).
+- `tauri-plugin-barcode-scanner` (ML Kit camera) for barcode scanning on device.
+- Multicast lock (`MulticastLockManager.kt`) for mDNS discovery on Wi-Fi.
+- `MainActivity.kt` uses `TauriActivity.onCreate` (no `PluginManager.onActivityCreate`).
+- Outputs: APK (debug) / AAB (release) under `app/src-tauri/gen/android/`.
+
+### Model distribution on Android
+Models download at first run into the app sandbox / shared storage (`~/.vox/models` mapped to app data dir). VAD falls back to Earshot when Silero model absent; Smart Turn degrades gracefully (Tier 1A).
+
+## 13. Final Principle
 
 > Packaging is the **final integration layer of the system**.
 
@@ -403,4 +439,4 @@ Vox — instant, real-time voice system
 
 ---
 
-**Last Updated:** 2026-06-09
+**Last Updated:** 2026-11-14

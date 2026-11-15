@@ -1,5 +1,16 @@
 # Phase 14 Work Log
 
+## 2026-11-15 — Architecture Decision Record: Evaluation & Rejection of LiveKit Agentic Framework
+
+- **Architectural Investigation**:
+  - Evaluated LiveKit and the LiveKit Agents framework (`livekit-agents` in Python/Node.js) against Vox's architectural invariants, hardware tiers, and operating system integration requirements.
+  - Investigated GitHub repositories (`livekit/agents`, `livekit/rust-sdks`) and crates.io: confirmed that no Rust version of LiveKit Agents exists (Rust SDK provides only low-level WebRTC transport and libwebrtc FFI bindings).
+  - Documented comparative control across four vectors: Providers, Cognitive Harness, Local OS Tools, and Context Engineering / KV-Cache Stability.
+- **Documentation**:
+  - Authored **Decision #11: Why Not LiveKit (or WebRTC Voice Frameworks)?** in `docs/decision-framework.md`, establishing the authoritative architectural rationale for rejecting WebRTC-based cloud agent frameworks in favor of Vox's native desktop runtime.
+
+---
+
 ## 2026-11-14 — Domain 2: ReAct Step Loop, Concurrency Barriers & Immediate Step Commits (TDD Red-Seam First)
 
 - **Phase 1: Minimal Signatures & Stubs**:
