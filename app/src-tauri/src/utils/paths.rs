@@ -354,6 +354,14 @@ pub fn cache_dir() -> PathBuf {
     get().cache.clone()
 }
 
+pub fn tool_outputs_dir() -> PathBuf {
+    cache_dir().join("tool_outputs")
+}
+
+pub fn session_tool_outputs_dir(session_id: i64) -> PathBuf {
+    tool_outputs_dir().join(session_id.to_string())
+}
+
 pub fn data_dir() -> PathBuf {
     get().data.clone()
 }

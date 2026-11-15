@@ -29,6 +29,17 @@ pub enum ToolExecutionMode {
     Exclusive,
 }
 
+/// Truncation policy declaring how oversized observations should be sliced and spilled.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TruncationPolicy {
+    /// Never truncate (used by metadata tools like set_title).
+    None,
+    /// Preserves head and tail slices based on head_ratio (e.g. 0.8 for search_memory and web_search).
+    HeadTail { head_ratio: f32 },
+    /// Preserves tail-heavy slice (e.g. 0.8 for terminal commands and test logs).
+    TailHeavy { tail_ratio: f32 },
+}
+
 /// Control flow directive returned by cognitive tools to alter ReAct loop iteration.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ToolControlAction {
@@ -131,6 +142,8 @@ impl ToolExecutionContext {
 pub struct ToolResult {
     pub content: String,
     pub control: ToolControlAction,
+    pub truncated: bool,
+    pub spillover_path: Option<String>,
 }
 
 impl ToolResult {
@@ -139,6 +152,8 @@ impl ToolResult {
         Self {
             content: content.into(),
             control: ToolControlAction::Continue,
+            truncated: false,
+            spillover_path: None,
         }
     }
 
@@ -147,6 +162,8 @@ impl ToolResult {
         Self {
             content: content.into(),
             control,
+            truncated: false,
+            spillover_path: None,
         }
     }
 }
@@ -194,6 +211,11 @@ pub trait ToolDefinition: Send + Sync {
     /// Whether this tool manages its own internal timeout promotion (e.g. bash auto-backgrounding).
     fn handles_own_timeout(&self) -> bool {
         false
+    }
+
+    /// Declares the observation truncation policy for this tool. Defaults to HeadTail (0.8).
+    fn truncation_policy(&self) -> TruncationPolicy {
+        TruncationPolicy::HeadTail { head_ratio: 0.8 }
     }
 
     /// Executes the tool asynchronously, returning a structured observation or error.

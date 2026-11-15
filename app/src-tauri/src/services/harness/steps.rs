@@ -542,6 +542,10 @@ pub async fn step6_execute_tool_batch(
             preamble_text: Some(preamble_text.to_string()),
             tool_count: outcomes.len() as u32,
             duration_ms: Some(step_duration_ms),
+            prompt_tokens: None,
+            completion_tokens: None,
+            guardrail_strike: 0,
+            is_compacted: false,
             created_at: now,
         });
 
@@ -558,6 +562,8 @@ pub async fn step6_execute_tool_batch(
                 result: outcome.result.content.clone(),
                 is_error: outcome.is_error,
                 duration_ms: outcome.duration_ms,
+                truncated: outcome.truncated,
+                spillover_path: outcome.spillover_path.clone(),
                 created_at: now,
             });
         }

@@ -94,6 +94,10 @@ pub enum PersistenceEvent {
         preamble_text: Option<String>,
         tool_count: u32,
         duration_ms: Option<u64>,
+        prompt_tokens: Option<u32>,
+        completion_tokens: Option<u32>,
+        guardrail_strike: u32,
+        is_compacted: bool,
         created_at: u64,
     },
     ToolCallExecuted {
@@ -107,6 +111,8 @@ pub enum PersistenceEvent {
         result: String,
         is_error: bool,
         duration_ms: u64,
+        truncated: bool,
+        spillover_path: Option<String>,
         created_at: u64,
     },
     UpdateSessionMetadata {

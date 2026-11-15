@@ -18,6 +18,10 @@ pub async fn persist_step(
         preamble_text,
         tool_count,
         duration_ms,
+        prompt_tokens: _,
+        completion_tokens: _,
+        guardrail_strike: _,
+        is_compacted: _,
         created_at,
     } = event
     else {

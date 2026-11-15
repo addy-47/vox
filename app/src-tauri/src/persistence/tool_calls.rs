@@ -15,6 +15,8 @@ pub async fn persist_tool_call(conn: &Connection, event: &PersistenceEvent) -> R
         result,
         is_error,
         duration_ms,
+        truncated: _,
+        spillover_path: _,
         created_at,
     } = event
     else {

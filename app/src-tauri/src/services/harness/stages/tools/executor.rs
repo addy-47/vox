@@ -24,6 +24,8 @@ pub struct ToolExecutionOutcome {
     pub result: ToolResult,
     pub is_error: bool,
     pub duration_ms: u64,
+    pub truncated: bool,
+    pub spillover_path: Option<String>,
 }
 
 /// Runtime executor for invoking cognitive tools under isolation and persistence guarantees.
@@ -55,6 +57,8 @@ impl ToolExecutor {
                     result: ToolResult::new(err_msg),
                     is_error: true,
                     duration_ms,
+                    truncated: false,
+                    spillover_path: None,
                 };
             }
         };
@@ -80,6 +84,8 @@ impl ToolExecutor {
                 result: ToolResult::new(err_msg),
                 is_error: true,
                 duration_ms,
+                truncated: false,
+                spillover_path: None,
             };
         }
 
@@ -104,6 +110,8 @@ impl ToolExecutor {
             result,
             is_error,
             duration_ms,
+            truncated: false,
+            spillover_path: None,
         }
     }
 
@@ -195,6 +203,8 @@ impl ToolExecutor {
                         result: ToolResult::new(reason),
                         is_error: true,
                         duration_ms: 0,
+                        truncated: false,
+                        spillover_path: None,
                     });
                 }
             }
