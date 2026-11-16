@@ -29,6 +29,7 @@ Every subagent brief or delegation prompt MUST provide **only the 4 Essential An
 1. **Role & Skill Gating**:
    - Explicit persona to load from `.agents/rules/<persona>.md`.
    - Explicit skill to exploit (e.g. `/implement`, `/create-test`, `/review`, `/rca`).
+   - **Persistent Persona Invariant**: Re-use the existing persistent subagent for each role (single Backend Engineer, single Test Engineer) across all batches of a phase via `send_message`. Never spawn duplicate subagents per micro-task.
 2. **Authoritative Context Pointers**:
    - Direct pointer to the authoritative specification (`docs/specs/<spec>.md`).
    - Direct pointer to the implementation plan (`docs/plans/<phase>/<plan>.md`).
@@ -38,6 +39,13 @@ Every subagent brief or delegation prompt MUST provide **only the 4 Essential An
 4. **Binary Observable Completion Gate**:
    - The exact terminal command or test binary that defines done (e.g., `cargo test --test <binary> --release passes with 0 failures`).
    - Mandatory instruction: "Commit changes upon passing gate, report outcome, and stop."
+
+### 2.1 Upstream Verification Handoff (Preventing Redundant Re-Compiles)
+
+When the orchestrator hands off work between lifecycle roles (e.g., Backend Engineer $\to$ Test Engineer $\to$ Reviewer), it MUST explicitly summarize and relay upstream verification state:
+- **Relay Commit Hash & Verified Status**: State the exact commit hash and what the upstream agent already validated (e.g. `"Backend Engineer verified verify-targets.sh desktop clean (0 warnings) and passed unit tests at commit abc1234"`).
+- **Forbid Redundant Re-Runs**: Explicitly instruct the downstream agent: `"Upstream compilation and baseline tests are already verified at commit abc1234. Do NOT re-run full compiler checks or test suites before writing your code or tests."`
+- **Pass File Manifest**: Provide the exact list of modified files so the downstream agent immediately knows the blast radius without blind searching.
 
 ---
 
