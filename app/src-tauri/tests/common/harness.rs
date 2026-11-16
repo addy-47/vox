@@ -1534,6 +1534,19 @@ impl HarnessRig {
         vox_lib::utils::paths::init();
         let (app, state) = get_test_app_and_state().await;
 
+        let session_id = 10001i64;
+        let now = 1700000000000i64;
+        {
+            let conn = state.db.connect().expect("db connect");
+            conn.execute(
+                "INSERT OR IGNORE INTO sessions (id, created_at, updated_at, project_id) VALUES (?, ?, ?, 'default');",
+                (session_id, now, now),
+            )
+            .await
+            .expect("seed session");
+        }
+        state.conversation_id.store(session_id as u64, std::sync::atomic::Ordering::Relaxed);
+
         let real_persist_tx = vox_lib::persistence::worker::spawn_persistence_worker(
             Arc::clone(&state.db),
             state.telemetry.is_db_healthy.clone(),
@@ -1561,19 +1574,6 @@ impl HarnessRig {
                 }
             })
             .expect("spawn persist forwarder");
-
-        let session_id = 10001i64;
-        let now = 1700000000000i64;
-        {
-            let conn = state.db.connect().expect("db connect");
-            conn.execute(
-                "INSERT OR IGNORE INTO sessions (id, created_at, updated_at, project_id) VALUES (?, ?, ?, 'default');",
-                (session_id, now, now),
-            )
-            .await
-            .expect("seed session");
-        }
-        state.conversation_id.store(session_id as u64, std::sync::atomic::Ordering::Relaxed);
 
         {
             let mut settings = state.settings.write().unwrap();

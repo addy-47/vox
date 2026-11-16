@@ -1931,13 +1931,8 @@ async fn oversized_tool_observation_spills_to_tier4_cache_and_commits_head_tail_
         // Verify Tier 4 spillover file exists on disk
         let spillover_file = vox_lib::utils::paths::session_tool_outputs_dir(rig.session_id)
             .join(format!("{}.txt", call_id));
-        let mut exists = spillover_file.exists();
-        if !exists {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            exists = spillover_file.exists();
-        }
         assert!(
-            exists,
+            spillover_file.exists(),
             "Spillover cache file must exist at {:?}",
             spillover_file
         );
@@ -2892,6 +2887,16 @@ async fn active_working_fast_tool_waits_at_step_boundary_until_user_speech_final
             rig.dispatch_count(), 2,
             "coordinator must resume and dispatch Step 1 once speech hold is released"
         );
+
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().unwrap();
+        let messages = harness.messages();
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.role == Role::User && m.content == "Late arriving speech"),
+            "steering instruction 'Late arriving speech' must be present in history as Role::User"
+        );
     })
     .await
     .expect("test timed out");
@@ -3118,6 +3123,17 @@ fn lint_arch_enforces_rule_harn_01_and_forbids_actor_commands_in_loop_and_steps(
     assert!(
         script_content.contains("TtsCommand") && script_content.contains("LlmCommand") && script_content.contains("PersistenceEvent"),
         "lint-arch.sh must forbid raw actor commands in loop.rs and steps.rs"
+    );
+
+    let output = std::process::Command::new("bash")
+        .arg(&script_path)
+        .current_dir(manifest_dir)
+        .output()
+        .expect("failed to execute scripts/lint-arch.sh");
+    assert!(
+        output.status.success(),
+        "lint-arch.sh failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 

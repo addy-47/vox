@@ -174,6 +174,8 @@ pub fn on_transcript_final<R: tauri::Runtime>(
 
     if is_held {
         let trimmed = text.trim();
+        state.pipeline_accumulator.lock().clear();
+        transition(InteractionState::Working, None, ctx, app, state);
         if trimmed.is_empty() {
             log::info!("[Pipeline::Transcript] Empty transcript during speech-held turn; releasing hold and returning to Working");
             {
@@ -182,8 +184,6 @@ pub fn on_transcript_final<R: tauri::Runtime>(
                     harness.inbox().release_speech_hold();
                 }
             }
-            state.pipeline_accumulator.lock().clear();
-            transition(InteractionState::Working, None, ctx, app, state);
             return;
         } else {
             log::info!("[Pipeline::Transcript] Steering transcript during speech-held turn: '{}'", trimmed);
@@ -211,8 +211,6 @@ pub fn on_transcript_final<R: tauri::Runtime>(
                     ));
                 }
             }
-            state.pipeline_accumulator.lock().clear();
-            transition(InteractionState::Working, None, ctx, app, state);
             return;
         }
     }

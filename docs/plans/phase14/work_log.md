@@ -1022,6 +1022,38 @@
 - `docs/plans/phase14/domain-4-plan.md` (10-test TDD plan with Phase 2b False-Green table)
 - `docs/plans/phase14/domain-4-checklist.md` (10-test checklist with 3-batch breakdown)
 
+---
+
+## 2026-11-16 — Domain 4: Two-Phase Mid-Work Interruption, Step Steering & Architectural Clean Boundaries (Implementation, Mutation Proof & Final Sign-Off)
+
+**Task:** Execute Batches 1, 2, 3 implementation of Domain 4, verify 10 black-box seam tests, execute remote mutation campaign on 32-core server, and apply Lead Audit remediations.
+
+### Key Milestones Delivered
+1. **Batch 1 (4-Tier Cognitive Boundary & Promoted Tools Sibling)**:
+   - Promoted `services/harness/stages/tools/` to `services/harness/tools/`.
+   - Stripped `loop.rs` and `steps.rs` of raw actor commands (`TtsCommand`, `LlmCommand`, `PersistenceEvent`), encapsulating sends inside Tier 4 stage dispatchers.
+   - Enforced 4-tier boundaries statically in `scripts/lint-arch.sh` (0 violations).
+2. **Batch 2 (Two-Step Esc UX & Stop Turn Routing)**:
+   - Added `VoxEvent::StopTurn` routing in `assistant/mod.rs` to `session::on_stop_turn`.
+   - Wired two-step disengage UX in `Home.tsx` and `HomeControls.tsx` with edge drawer guards.
+   - Exposed `stop_turn` Tauri IPC command in `ipc/pipeline.rs`.
+3. **Batch 3 (StepInbox & Three-Scenario Steering Engine)**:
+   - Implemented `StepInbox` with `wait_if_speech_held(&cancel)` hold latch and `QueuedMessageDelivery::{Immediate, TurnBoundary}`.
+   - Wired Scenarios A, B, and C in `interrupt.rs`, `speech.rs`, `transcript.rs`, and `text.rs`.
+   - Implemented turn-scoped `uncommitted_user_turn_id` and `rollback_user_turn` to prevent multi-loop races and prompt duplication.
+4. **Lead Audit Remediation**:
+   - Fixed ordering race in `transcript.rs`: `transition(Working)` now precedes `release_speech_hold()` and `push()`.
+   - Hardened Scenario C against STT decoding re-triggers in `interrupt.rs` and `ptt.rs`.
+   - Added `Working` text steering in `text.rs` via direct `harness.inbox()` push.
+   - Hardened Subtest 9 to execute `scripts/lint-arch.sh` directly.
+   - Fixed session pre-registration in `tests/common/harness.rs` before starting the persistence worker, eliminating the startup sweep purge race.
+5. **Mutation Campaign & Final Verification**:
+   - Ran remote mutation testing campaign on 32-core server (`hypr4@100.67.98.126`).
+   - 10 / 10 deliberate mutants killed (**100.0% kill rate**). Recorded in `docs/plans/phase14/mutation_report.md`.
+   - Clean-room Adversarial Review sign-off: 🟢 **APPROVED (PASS)**.
+   - All 39 tests passing GREEN (`cargo test --test harness_loop_test --release`: 39/39 passed in 21.93s).
+
+
 
 
 

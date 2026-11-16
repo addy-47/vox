@@ -9,6 +9,7 @@ export const HOME_CONTROLS_COPY = {
   engage: {
     ariaLabel: "Engage Vox",
     stopAriaLabel: "Stop Vox",
+    stopTurnAriaLabel: "Stop current turn (Esc)",
   },
   passive: {
     pauseAriaLabel: "Pause Vox",

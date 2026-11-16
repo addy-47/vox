@@ -217,6 +217,26 @@ pub fn on_ptt_cancel<R: tauri::Runtime>(
         return;
     }
 
+    let is_speech_held = state
+        .harness
+        .lock()
+        .as_ref()
+        .map(|h| h.inbox().is_speech_held())
+        .unwrap_or(false);
+
+    if is_speech_held {
+        if let Some(ref harness) = *state.harness.lock() {
+            harness.inbox().release_speech_hold();
+        }
+        state.pipeline_accumulator.lock().clear();
+        transition(InteractionState::Working, None, ctx, app, state);
+        log::info!(
+            "[Pipeline::Ptt] PTT cancelled during speech-held turn {}; released hold -> Working",
+            state.pipeline.peek_turn_id()
+        );
+        return;
+    }
+
     state.pipeline_accumulator.lock().clear();
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
     state.pipeline.turn_token().cancel();

@@ -178,7 +178,7 @@ export const HomeControls = memo(({
           {/* Stop Turn or Disengage */}
           <div className="relative flex flex-col items-center">
             {isActiveTurn && stopTurn ? (
-              <Tooltip label={tooltip ?? "Stop current turn (Esc)"} side="top">
+              <Tooltip label={tooltip ?? HOME_CONTROLS_COPY.engage.stopTurnAriaLabel} side="top">
                 <button
                   onClick={isBlocked ? undefined : stopTurn}
                   tabIndex={isBlocked ? -1 : 0}
@@ -188,7 +188,7 @@ export const HomeControls = memo(({
                   )}
                   disabled={isBlocked}
                   aria-disabled={guardProps["aria-disabled"]}
-                  aria-label="Stop current turn (Esc)"
+                  aria-label={HOME_CONTROLS_COPY.engage.stopTurnAriaLabel}
                 >
                   <Square size={22} className="fill-current" />
                 </button>

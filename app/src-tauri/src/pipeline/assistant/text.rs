@@ -60,9 +60,44 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
     }
 
     let current_state = state.pipeline.state();
+
+    let is_speech_held = state
+        .harness
+        .lock()
+        .as_ref()
+        .map(|h| h.inbox().is_speech_held())
+        .unwrap_or(false);
+
+    if current_state == InteractionState::Working || is_speech_held {
+        let active_turn_id = state.pipeline.peek_turn_id();
+        log::info!(
+            "[Pipeline::Text] Turn {}: User typed steering message during Working: '{}'",
+            active_turn_id,
+            query
+        );
+        let payload = TranscriptPayload {
+            turn_id: active_turn_id,
+            text: query.clone(),
+            owner: Some(ctx.owner),
+        };
+        let _ = emit_ipc_to(
+            app,
+            target_window(ctx.owner),
+            IpcEvent::TranscriptFinal(payload),
+        );
+        let now = crate::services::harness::current_timestamp_ms();
+        if let Some(ref harness) = *state.harness.lock() {
+            harness.inbox().push(crate::services::harness::stages::inbox::InboxMessage::new(
+                query,
+                crate::services::harness::stages::inbox::QueuedMessageDelivery::Immediate,
+                now,
+            ));
+        }
+        return;
+    }
+
     let active_turn_id = if current_state == InteractionState::Thinking
         || current_state == InteractionState::Speaking
-        || current_state == InteractionState::Working
     {
         super::interrupt::on_interrupt(app, state, ctx)
     } else if current_state == InteractionState::Ready {

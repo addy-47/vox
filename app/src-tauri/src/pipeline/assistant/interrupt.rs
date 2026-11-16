@@ -48,26 +48,33 @@ pub fn on_interrupt<R: tauri::Runtime>(
 
     let interrupted_turn_id = state.pipeline.peek_turn_id();
 
-    match prior_state {
-        InteractionState::Working => {
-            // Scenario C (Working):
-            // Mute playback & clear AEC render queue (done above).
-            // Do NOT cancel turn_token, keep turn_open = true, keep turn_id unchanged.
-            // Engage speech hold on harness inbox.
-            {
-                let guard = state.harness.lock();
-                if let Some(ref harness) = *guard {
-                    harness.inbox().engage_speech_hold();
-                }
+    let is_speech_held = state
+        .harness
+        .lock()
+        .as_ref()
+        .map(|h| h.inbox().is_speech_held())
+        .unwrap_or(false);
+
+    if is_speech_held || prior_state == InteractionState::Working {
+        // Scenario C (Working / Speech-Held Turn):
+        // Mute playback & clear AEC render queue (done above).
+        // Do NOT cancel turn_token, keep turn_open = true, keep turn_id unchanged.
+        // Engage speech hold on harness inbox.
+        {
+            let guard = state.harness.lock();
+            if let Some(ref harness) = *guard {
+                harness.inbox().engage_speech_hold();
             }
-            state.pipeline_accumulator.lock().clear();
-            transition(InteractionState::Listening, None, ctx, app, state);
-            log::info!(
-                "[Pipeline::Interrupt] Scenario C: Working turn {} speech hold engaged -> Listening",
-                interrupted_turn_id
-            );
-            interrupted_turn_id
         }
+        state.pipeline_accumulator.lock().clear();
+        transition(InteractionState::Listening, None, ctx, app, state);
+        log::info!(
+            "[Pipeline::Interrupt] Scenario C: Working turn {} speech hold engaged -> Listening",
+            interrupted_turn_id
+        );
+        interrupted_turn_id
+    } else {
+        match prior_state {
         InteractionState::Thinking => {
             // Cancel turn token & guards for Thinking
             state.pipeline.cancel_flag.store(true, Ordering::SeqCst);
@@ -141,5 +148,6 @@ pub fn on_interrupt<R: tauri::Runtime>(
             state.turn_metrics.start_turn(new_turn_id);
             new_turn_id
         }
+    }
     }
 }

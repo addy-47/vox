@@ -295,6 +295,16 @@ export const Home = memo(() => {
       }
       // Two-step Esc: if text bar is open, close it; else if active turn, abort turn to Ready; else if Ready, disengage session to Idle.
       if (e.key === "Escape") {
+        if (e.defaultPrevented) return;
+        const isDrawerOrModalOpen =
+          isPanelOpen("sessions") ||
+          isPanelOpen("notifications") ||
+          isPanelOpen("help") ||
+          Boolean(homeDrawerSession) ||
+          isSearchMode;
+        if (isDrawerOrModalOpen) {
+          return;
+        }
         if (isTextModeOpen) {
           e.preventDefault();
           setTextModeOpen(false);
@@ -340,7 +350,7 @@ export const Home = memo(() => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [toggleMicMute, togglePlaybackMute, isPaused, pause, resume, isEngaged, engage, disengage, setTextModeOpen, interactionMode, isSleeping, interactionState, handlePttStart, handlePttStop, handlePttCancel, pttStatus, isTextModeOpen, isRemoteBlocked]);
+  }, [toggleMicMute, togglePlaybackMute, isPaused, pause, resume, isEngaged, engage, disengage, setTextModeOpen, interactionMode, isSleeping, interactionState, handlePttStart, handlePttStop, handlePttCancel, pttStatus, isTextModeOpen, isRemoteBlocked, isPanelOpen, homeDrawerSession, isSearchMode]);
 
   const sessionError = useSessionStore((s) => s.sessionError);
   const clearSessionError = useSessionStore((s) => s.setSessionError);
