@@ -39,7 +39,7 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
    ```bash
    RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1 --no-fail-fast
    ```
-   > ⏱️ Full suite baseline: ~45.5s (excluding cold compile). Set a timeout or cron — never leave a run unmonitored.
+   > ⏱️ Full suite baseline: ~245.5s (excluding cold compile). Set a timeout or cron — never leave a run unmonitored.
 3. **External-dependency tests (`#[ignore]`):** Run only with explicit user approval:
    ```bash
    cargo nextest run -- --ignored
