@@ -85,8 +85,15 @@ flowchart TD
 
 ## 4. Behavior Rules & Lifecycle Invariants
 
-### 4.1 Orchestrator Authority & Session Lifecycle
-- **RULE-HARN-01 (Single Cognitive Orchestrator)**: Exactly one Harness orchestrator MUST own turn sequencing, prompt assembly, context budgeting, and tool execution. External pipeline layers MUST interact exclusively via the turn execution gateway.
+### 4.1 Orchestrator Authority & Layering Invariants
+- **RULE-HARN-01 (Single Cognitive Orchestrator & 4-Tier Layering Contract)**:
+  - Exactly one Harness orchestrator MUST own turn sequencing, prompt assembly, context budgeting, and tool execution. External pipeline layers MUST interact exclusively via the turn execution gateway (`Harness::execute_turn` in `loop.rs`).
+  - Cognitive execution adheres strictly to a 4-tier unidirectional boundary:
+    1. **Tier 1 (Upstream Consumers)**: External pipeline handlers (`speech.rs`, `transcript.rs`, `text.rs`) interact exclusively through `Harness::execute_turn`.
+    2. **Tier 2 (Coordinator — `loop.rs`)**: Exclusively coordinates turn state transitions and ReAct loop iterations. Direct formatting or dispatching of raw actor commands (`TtsCommand`, `LlmCommand`, `PersistenceEvent`) is strictly forbidden.
+    3. **Tier 3 (Step Sequencing — `steps.rs`)**: Sequences discrete turn phases. Delegates strictly to `stages/` and `tools/`. Direct actor channel sending from `steps.rs` is strictly forbidden.
+    4. **Tier 4 (Stages & Tools — `stages/` and `tools/`)**: Sibling modules under `services/harness/`. They encapsulate domain algorithms and exclusively own all downstream actor and persistence message dispatch.
+  - This layering invariant is deterministically enforced by `./scripts/lint-arch.sh`.
 - **RULE-HARN-02 (1:1 Session Mapping)**: The Harness lifecycle MUST map 1:1 to user session engagement:
   - Mounted when a session starts; loads persona prompt, personal memory, and uncompacted historical turns.
   - Deconstructed when a session ends; flushes pending metrics, cancels background timers, and retains zero conversational memory in RAM during idle state.
@@ -209,6 +216,18 @@ flowchart TD
   - Every ReAct step MUST persist its latency, `prompt_tokens`, `completion_tokens`, compaction status (`is_compacted`), and `guardrail_strike` to `session_steps` in Turso DB.
   - Every tool invocation MUST persist `truncated` and `spillover_path` in `session_tool_calls`.
   - Structured logs (`[StepAudit]`, `[TruncationAudit]`, `[GuardrailAudit]`) MUST be emitted at step and tool completion.
+- **RULE-HARN-18 (Two-Phase Mid-Work Interruption, Step Steering & Disengage UX)**:
+  - **Two-Step Disengage UX**:
+    1. Step 1 (Active Turn Abort): When the user presses `Esc` or clicks the Stop button during an active turn (`Thinking`, `Working`, `Speaking`, `Listening`), the active turn aborts immediately to `InteractionState::Ready` via `stop_turn`. Active work cancels; sound card playback mutes; session remains engaged; models stay warm in RAM.
+    2. Step 2 (Session Disengage): When the user presses `Esc` or clicks the Disengage button while in `InteractionState::Ready`, the session disengages cleanly to `InteractionState::Idle` via `end_session`. Audio capture stops and models cool down.
+  - **Three-Scenario Steering Protocol**:
+    1. Scenario A (Pre-Working Thinking — Step 0): In-flight LLM stream cancels immediately; proposed tool calls are discarded; premature Step 0 user turn rolls back from history (`rollback_last_user_turn`); new speech merges into prompt; model re-prompts in `Thinking`.
+    2. Scenario B (Mid-Turn Thinking — Step $K \ge 1$): In-flight LLM stream cancels immediately; uncommitted tool calls are discarded; committed tool steps remain in history; new speech commits as `Role::User`; model re-prompts in `Thinking`.
+    3. Scenario C (Active Working): Sound card mutes immediately; in-flight tools complete current step; speech buffers into `StepInbox`; step boundary commits tool results and user message; loop advances to Step $K+1$.
+  - **`StepInbox` Delivery SSOT**:
+    - Messages buffer with `QueuedMessageDelivery::{Immediate, TurnBoundary}` in `stages/inbox.rs`.
+    - `Immediate` messages drain at step boundaries into `ConversationHistoryStage`.
+    - `TurnBoundary` messages drain upon terminal turn completion to trigger the next conversational turn.
 
 ---
 

@@ -41,11 +41,14 @@ stateDiagram-v2
     Listening --> Thinking: Speech End / PTT Release
     Thinking --> Working: Intermediate Phase (Tool / Compaction)
     Working --> Working: Next Intermediate Step
+    Working --> Listening: Mid-Work Speech Hold
     Working --> Speaking: Response Audio Starts
     Thinking --> Speaking: Response Audio Starts
     Speaking --> Listening: User Barge-In
-    Speaking --> Ready: Audio Playback Complete
-    Thinking --> Ready: Empty Speech / Turn Abort
+    Speaking --> Ready: Audio Playback Complete / Stop Turn
+    Thinking --> Ready: Empty Speech / Turn Abort / Stop Turn
+    Working --> Ready: Stop Turn
+    Listening --> Ready: Stop Turn
     Ready --> Paused: Pause Session / 7m Inactivity
     Paused --> Sleeping: 5m Sustained Inactivity
     Paused --> Ready: Resume Session
@@ -91,13 +94,29 @@ stateDiagram-v2
   4. The accumulator MUST be cleared.
   5. The state MUST transition immediately to `Listening`.
   6. If partial assistant text was already generated before the interruption, it MUST be saved to history as an interrupted turn. If no text was generated, the turn MUST be rolled back cleanly.
-- **RULE-EVT-08A (Mid-Thought Continuation Protocol)**: When user speech starts while the assistant is in `Thinking` or `Working` before final response audio playback begins:
-  1. Audio playback and active language model generation for turn $N$ MUST be cancelled.
-  2. A new turn token MUST be generated, and state MUST transition to `Listening`.
-  3. Any recognized user transcript from turn $N$ MUST be preserved as a continuation prefix in the pipeline accumulator.
-  4. If turn $N$'s speech-to-text final completes late while already in `Listening`, it MUST be appended to the continuation prefix rather than dropped.
-  5. Upon completion of turn $N+1$ transcription, the stashed prefix and the new transcript MUST be concatenated into a single combined user query (`<prefix> <new_text>`).
+- **RULE-EVT-08A (Pre-Working Thinking Continuation — Scenario A)**: When user speech starts while the assistant is in `Thinking` on Step 0 before any tool execution has completed (`!has_committed_steps_this_turn`):
+  1. Audio playback and active language model generation for turn $N$ MUST be cancelled immediately.
+  2. The premature Step 0 user turn MUST be rolled back synchronously from history (`rollback_last_user_turn`).
+  3. Any recognized user transcript from turn $N$ MUST be preserved as a continuation prefix in the pipeline accumulator (`stash_for_continuation`).
+  4. A new turn token MUST be generated, and state MUST transition to `Listening`.
+  5. Upon completion of turn $N+1$ transcription, the stashed prefix and the new transcript MUST be concatenated into a single combined user query (`<prefix> <new_text>`) and dispatched in `Thinking`.
   6. If turn $N+1$ yields an empty transcript (e.g. breath or pause gap), the stashed prefix MUST be promoted and dispatched as the final query rather than aborting to `Ready`.
+- **RULE-EVT-08B (Mid-Turn Thinking Steering — Scenario B)**: When user speech starts while the assistant is in `Thinking` on Step $K \ge 1$ after at least one tool step has already committed to history (`has_committed_steps_this_turn == true`):
+  1. Audio playback and active Step $K$ language model generation for turn $N$ MUST be cancelled immediately.
+  2. All committed tool steps from preceding iterations ($0 \dots K-1$) MUST remain permanently preserved in history (`RULE-HARN-12`). User turn rollback is strictly forbidden.
+  3. The pipeline accumulator MUST be cleared via `acc.clear()`. Calling `stash_for_continuation` is strictly forbidden to prevent prepending Step 0's query to the steering message.
+  4. A new turn token MUST be generated, and state MUST transition to `Listening`.
+  5. Upon completion of transcription, the new transcript MUST be committed as a standalone `Role::User(new_speech)` message after preceding tool results, and the cognitive loop re-dispatched in `Thinking`.
+  6. If turn $N+1$ yields an empty transcript, state MUST reset to `Ready` while keeping all committed tool steps intact in history.
+- **RULE-EVT-08C (Active Working Non-Destructive Steering & Step-Boundary Hold — Scenario C)**: When user speech starts while the assistant is in `Working` (tools executing in background):
+  1. Audio playback MUST mute immediately and the AEC render queue MUST be cleared.
+  2. Active tool execution tasks MUST NOT be aborted (`turn_token` MUST NOT be cancelled; `turn_open` MUST remain `true`; `turn_id` MUST remain unchanged).
+  3. The assistant MUST engage the step-boundary hold on `StepInbox` (`harness.inbox.engage_speech_hold()`).
+  4. State MUST transition from `Working` to `Listening` while tools continue running to completion.
+  5. If tools finish execution before user speech completes, the step boundary MUST await speech resolution via `wait_if_speech_held`.
+  6. When transcription completes:
+     - **Non-Empty Text**: The transcript MUST be pushed into `StepInbox` as `InboxMessage` with `QueuedMessageDelivery::Immediate`. This releases the hold, wakes the step boundary, and the coordinator injects `Role::User(text)` into history, transitioning to `Thinking` for Step $K+1$. Spawning a second concurrent `execute_turn` task is strictly forbidden.
+     - **Empty Text (Cough / False VAD)**: The speech hold MUST be released (`harness.inbox.release_speech_hold()`), state transitions back to `Working` (or `Thinking`), and the held loop resumes Step $K+1$ with zero lost work. Transitioning to `Ready` on empty speech during `Working` is strictly forbidden.
 - **RULE-EVT-09 (Working State Invariant)**: When an intermediate operation (compaction, memory search, or tool execution) executes during a turn:
   1. The system MUST transition from `Thinking` to `Working`.
   2. The cognitive layer MAY play an interim filler phrase (e.g., *"Let me look that up"*).
@@ -107,6 +126,17 @@ stateDiagram-v2
   - `Degraded`: The turn continues with reduced fidelity; state does not change.
   - `TurnAborted`: The active turn fails cleanly; state resets directly to `Ready`.
   - `SessionHalted`: Unrecoverable error; state transitions to `Error`.
+- **RULE-EVT-11 (Two-Phase Disengage & StopTurn Protocol)**:
+  1. **Turn Abort (`StopTurn`)**: When `VoxEvent::StopTurn` is received during an active turn (`Listening`, `Thinking`, `Working`, `Speaking`):
+     - Sound card playback MUST mute immediately and the AEC render queue MUST be cleared.
+     - The active turn token MUST be cancelled (`turn_token().cancel()`), `cancel_flag` set to `true`, and turn guards reset.
+     - The accumulator and `StepInbox` MUST be cleared synchronously on the `vox-router` thread.
+     - If Step 0 had zero committed tool steps and zero spoken response, the unanswered user query MUST be rolled back synchronously from history.
+     - The pipeline MUST transition cleanly to `InteractionState::Ready`. The session harness remains mounted, audio capture remains active, and model weights remain warm in RAM.
+  2. **Session Disengage (`EndSession`)**: When `VoxEvent::EndSession` is received while in `InteractionState::Ready`:
+     - The session context and harness MUST be unmounted.
+     - Audio capture hardware MUST be stopped if dictation is idle.
+     - Model weights cool down and state transitions cleanly to `InteractionState::Idle`.
 
 ### 4.4 Error Recovery & Failover Architecture
 
@@ -139,12 +169,16 @@ Vox operates across three primary domain topologies:
 | **`SessionStart`** | `Idle` | Mounts session, warms local models, transitions to `Ready`. Audio capture starts. | Mounts session, opens provider WebSocket, transitions to `Ready`. | N/A (Dictation is ambient; controlled by settings). |
 | **`PauseSession`** | Active session | Cancels active playback, keeps audio capture warm. Transitions to `Paused`. | Halts microphone passthrough, keeps connection alive. Transitions to `Paused`. | N/A |
 | **`ResumeSession`** | `Paused`, `Sleeping`, or `Error` | If `Paused`: instant re-arm to `Ready`. If `Sleeping`: re-warms models in background. | Re-enables microphone passthrough; reconnects WebSocket if dropped. Transitions to `Ready`. | N/A |
+| **`StopTurn`** | `Listening`, `Thinking`, `Working`, or `Speaking` | **Turn Abort**: Mutes audio, cancels turn token, clears accumulator and `StepInbox`, rolls back Step 0 query if unanswered, transitions cleanly to `Ready`. Retains warm models and engaged session. | Mutes playback, sends interrupt command to server, cancels active turn, transitions to `Ready`. | Cancels active dictation turn, resets to `Ready`. |
 | **`EndSession`** | Any active state | Unmounts session, clears state. Tears down audio capture if dictation is idle. Transitions to `Idle`. | Disconnects WebSocket, tears down audio capture if dictation is idle. Transitions to `Idle`. | N/A |
 | **`SpeechStart` / `PttStart`** | `Ready` | Allocates new turn ID, transitions to `Listening`. Begins audio capture. | Allocates new turn ID, transitions to `Listening`. Begins streaming audio. | Allocates turn ID, transitions to `Listening`. Begins audio capture. |
-| **`SpeechStart` / `PttStart`** | `Thinking` or `Working` | **Continuation**: Cancels in-flight LLM pass, stashes user transcript in accumulator, allocates new turn ID, transitions to `Listening`. | **Barge-In**: Mutes playback, sends interrupt command to server, allocates new turn ID, transitions to `Listening`. | If `Thinking`: captures turn $N+1$ without aborting turn $N$ transcription. |
+| **`SpeechStart` / `PttStart`** | `Thinking` (Step 0) | **Scenario A Continuation**: Mutes playback, cancels in-flight LLM stream, synchronously rolls back Step 0 user turn, stashes transcript in continuation prefix, allocates new turn ID, transitions to `Listening`. | **Barge-In**: Mutes playback, sends interrupt command to server, allocates new turn ID, transitions to `Listening`. | If `Thinking`: captures turn $N+1$ without aborting turn $N$ transcription. |
+| **`SpeechStart` / `PttStart`** | `Thinking` (Step $K \ge 1$) | **Scenario B Steering**: Mutes playback, cancels in-flight Step $K$ LLM stream, retains committed tool steps, clears accumulator, allocates new turn ID, transitions to `Listening`. | **Barge-In**: Mutes playback, sends interrupt command to server, allocates new turn ID, transitions to `Listening`. | If `Thinking`: captures turn $N+1$ without aborting turn $N$ transcription. |
+| **`SpeechStart` / `PttStart`** | `Working` | **Scenario C Steering**: Mutes playback, clears AEC render queue, keeps in-flight tools running, engages speech hold on `StepInbox`, keeps `turn_id` unchanged, transitions to `Listening`. | **Barge-In**: Mutes playback, sends interrupt command to server, allocates new turn ID, transitions to `Listening`. | N/A |
 | **`SpeechStart` / `PttStart`** | `Speaking` | **Barge-In**: Mutes playback immediately, clears accumulator, cancels active turn, allocates new turn ID, transitions to `Listening`. | **Barge-In**: Mutes playback, sends interrupt command to server, allocates new turn ID, transitions to `Listening`. | N/A (Dictation produces no audio output). |
 | **`SpeechEnd` / `PttStop`** | `Listening` | Transitions to `Thinking`. Dispatches captured audio to speech-to-text. | Transitions to `Thinking`. Signals speech completion to remote provider. | Transitions to `Thinking`. Dispatches audio to speech-to-text. |
-| **`TranscriptFinal`** | `Thinking` | If words recognized: merges continuation prefix if present, starts language model. If empty: promotes prefix if present, else resets to `Ready` with notification. | If words recognized: awaits remote audio. If empty: resets to `Ready`. | Transliterates if configured, dispatches text to desktop paste engine, resets to `Ready`. |
+| **`TranscriptFinal`** | `Thinking` (Standard / Scenario A / Scenario B) | If words recognized: merges continuation prefix (Scenario A) or commits new query on top of tool history (Scenario B), starts language model. If empty: promotes prefix if present, else resets to `Ready` with notification. | If words recognized: awaits remote audio. If empty: resets to `Ready`. | Transliterates if configured, dispatches text to desktop paste engine, resets to `Ready`. |
+| **`TranscriptFinal`** | `Thinking` or `Working` (Scenario C Speech-Held Turn) | If words recognized: pushes `InboxMessage` with `Immediate` to `StepInbox` (releasing hold and waking step boundary), transitions to `Working`, and returns without spawning new turn. If empty: releases hold via `release_speech_hold()`, transitions back to `Working`, and returns (zero lost work). | Dispatches interim text frame directly to provider. | N/A |
 | **`TranscriptFinal`** | `Listening` | If turn matches previous segment: appends text into accumulator continuation prefix without state change. | Dispatches interim text frame directly to provider. | Dispatches text to desktop paste engine for completed turn $N$. |
 | **`TextInput`** | `Ready` or `Paused` | Auto-resumes if paused, sets query in dialogue history, transitions to `Thinking`, generates response. | Auto-resumes if paused, sends text frame directly to WebSocket, transitions to `Thinking`. | Dropped (Dictation accepts voice input only). |
 | **`PlaybackStarted`** | `Thinking` or `Working` | If interim filler: remains `Working`. If final response: transitions to `Speaking`. | Transitions to `Speaking`. | N/A (Dictation produces no audio output). |

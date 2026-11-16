@@ -903,4 +903,82 @@
 - `f7b90a3d6`: `feat(harness): implement Domain 2 ReAct step loop, wave barriers, and immediate step commits`
 - `4e089cf4d`: `fix(harness): account for tool arguments in token budget and dispatch audio on SuspendForUser`
 
+## 2026-11-16 — Domain 4: System Architecture, Ground-Truth Trace & Implementation Planning
+
+**Task:** Design and formalize Domain 4 (Two-Phase Mid-Work Interruption, Step Steering & Architectural Clean Boundaries) for Vox Harness v2.
+
+### Architectural Deliverables & Contracts
+1. **Ground-Truth Execution Trace (`domain-4-interruption.md`)**:
+   - Reconstructed end-to-end execution paths under `/trace` across 4 phases: Ingress, Cancellation, Cognitive Interruption, and Layer Boundary Leaks.
+   - Grounded every step in verified code citations across `Home.tsx`, `HomeControls.tsx`, `pipelineService.ts`, `interrupt.rs`, `speech.rs`, `transcript.rs`, `loop.rs`, and `steps.rs`.
+   - Identified 4 critical defects: unguided `pause()` on Esc, destructive tool killing during `Working`, leaky actor command dispatching in `steps.rs`/`loop.rs`, and nested `stages/tools/` layout.
+
+2. **The 4-Tier Layering Contract (`RULE-HARN-01`)**:
+   - Promoted `stages/tools/` to sibling `services/harness/tools/`.
+   - Extracted direct actor channel dispatch out of `steps.rs` and `loop.rs` into Tier 4 stage dispatchers (`stages/speech.rs`, `stages/dispatch.rs`, `stages/persistence.rs`).
+   - Added deterministic static checking to `scripts/lint-arch.sh` to forbid `TtsCommand`, `LlmCommand`, and `PersistenceEvent` in `loop.rs` and `steps.rs`.
+
+3. **Two-Step `Esc` & Disengage UX (`RULE-HARN-18`)**:
+   - Step 1: Active turn (`Thinking`, `Working`, `Speaking`, `Listening`) aborts cleanly to `Ready` via discrete `stop_turn` IPC command. Audio mutes, active work cancels, session stays engaged, models stay warm.
+   - Step 2: `Ready` state disengages cleanly to `Idle` via `end_session`.
+   - UI controls in `HomeControls.tsx`: Stop icon during active turn; Close/Disengage icon in `Ready`.
+
+4. **Three-Scenario Steering Engine & Forward-Compatible `StepInbox`**:
+   - Scenario A (Pre-Working Thinking): In-flight stream cancels, Step 0 user turn rolls back, user speech merges into prompt.
+   - Scenario B (Mid-Turn Thinking): In-flight stream cancels, preceding tool steps preserved, new speech commits as `Role::User`.
+   - Scenario C (Active Working): Sound card mutes, in-flight tools complete current step, speech buffers in `StepInbox`, injected at step boundary into Step $K+1$.
+   - Implemented `QueuedMessageDelivery::{Immediate, TurnBoundary}` in `stages/inbox.rs`.
+
+5. **Implementation Plan & Granular Checklist (`domain-4-plan.md`, `domain-4-checklist.md`)**:
+   - Outlined Pattern A (Red-Seam First / TDD) execution across 5 phases.
+   - Authored Phase 2b False-Green Mutation Table with 8 deliberate mutants, asserted behaviors, and expected test failures.
+   - Formulated detailed task checklist and updated authoritative specs (`harness-spec.md`, `ipc-spec.md`).
+
+### Files Created / Updated
+- `docs/plans/phase14/domain-4-interruption.md` (Enriched Trace/Spec Hybrid)
+- `docs/plans/phase14/domain-4-plan.md` (Pattern A TDD Plan with Phase 2b Mutation Table)
+- `docs/plans/phase14/domain-4-checklist.md` (Granular Implementation Checklist)
+- `docs/specs/harness-spec.md` (Added `RULE-HARN-18`)
+- `docs/specs/ipc-spec.md` (Added `stop_turn` IPC command contract)
+
+## 2026-11-16 — Domain 4: Lead Architectural Audit & Concurrency Defect Remediation
+
+**Task:** Remediate 6 P0/P1 defects identified in lead audit of Domain 4 architecture, trace, and implementation plan.
+
+### Key Remediations Applied
+1. **Speech-Hold Synchronization Latch (`StepInbox`) (P0 Defect 1 Fix)**:
+   - Added `speech_hold_active: AtomicBool` and `notify: tokio::sync::Notify` to `StepInbox`.
+   - `on_speech_start` in `Working` engages speech hold via `inbox.engage_speech_hold()`.
+   - Step boundary in `steps.rs::step6_await_and_drain_inbox` awaits `inbox.wait_if_speech_held(&cancel).await`, eliminating the fast-tool race condition where `loop.rs` previously drained an empty inbox while the user was still speaking.
+2. **Double-Loop Race Prevention & Empty Speech Recovery (P0 Defect 2 Fix)**:
+   - In `interrupt.rs`, when speech starts in `Working`, `turn_token` is kept open, `turn_open` remains `true`, and `turn_id` is unchanged.
+   - In `transcript.rs::on_transcript_final`, checked for speech-held turns in `StepInbox`:
+     - If text is non-empty: pushes to `StepInbox` with `Immediate` and returns without calling `spawn_harness_turn_task`.
+     - If text is empty (cough / false VAD): releases hold via `inbox.release_speech_hold()`, transitions back to `Working`, and returns with zero lost work (no split-brain or abort to `Ready`).
+3. **History Invariant & Prompt De-duplication in Scenario B (P0 Defect 3 Fix)**:
+   - Added `pub(crate) has_committed_steps_this_turn: bool` to `Harness` (reset on `intake_recorded_turn`, set on `commit_tool_step`).
+   - In Scenario B (`has_committed_steps_this_turn == true`), `interrupt.rs` calls `acc.clear()` instead of `stash_for_continuation()`, preventing Step 0's query from being prepended to the steering message.
+   - Preserves all committed tool steps in history while recording new speech as a standalone `Role::User` message.
+4. **Synchronous Router Thread Cleanup (P0 Defect 4 Fix)**:
+   - In `on_stop_turn` and `on_interrupt`, performs history rollback and `inbox.clear()` synchronously under `state.harness.lock()` on the `vox-router` thread.
+   - Prevents async `TurnOutcome::Cancelled` tasks from racing subsequent state transitions or user turns.
+5. **Pure 4-Tier Boundary & Thin `loop.rs` (P0 Defect 5 Fix)**:
+   - Slimmed `loop.rs` to pure ~150-line coordinator importing ONLY `steps.rs`, `chassis.rs`, and `mod.rs`. Zero imports from `stages::*` or `tools::*`.
+   - Moved budget evaluation to `steps::step3_check_and_run_loop_budget`.
+   - Moved suspended question audio to `steps::step7_commit_suspended_question`.
+   - Moved inbox drain to `steps::step6_await_and_drain_inbox`.
+   - Encapsulated actor commands in dedicated Tier 4 stage dispatchers (`stages/speech.rs`, `stages/dispatch.rs`, `stages/persistence.rs`).
+   - Updated `scripts/lint-arch.sh` to enforce all 3 invariants statically.
+6. **Events Spec Alignment & 10-Test Mutation Matrix (P1 Defect 6 Fix)**:
+   - Updated `docs/specs/events-spec.md` with `RULE-EVT-08A` (Scenario A), `RULE-EVT-08B` (Scenario B), `RULE-EVT-08C` (Scenario C), and `RULE-EVT-11` (`StopTurn`).
+   - Expanded Phase 2b False-Green Mutation Table and checklist from 8 to 10 black-box seam tests, adding fast-tool hold and empty-speech recovery subtests.
+
+### Files Updated
+- `docs/specs/events-spec.md` (Added `RULE-EVT-08A/B/C`, `RULE-EVT-11`, updated interaction matrix)
+- `docs/plans/phase14/domain-4-interruption.md` (Full trace & architecture with speech-hold latch)
+- `docs/plans/phase14/domain-4-plan.md` (10-test TDD plan with Phase 2b False-Green table)
+- `docs/plans/phase14/domain-4-checklist.md` (10-test checklist with 3-batch breakdown)
+
+
+
 

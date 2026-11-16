@@ -135,6 +135,7 @@ sequenceDiagram
 | `pause_session` | None | `void` | Pauses active assistant session; flushes audio buffers while keeping hardware warm. |
 | `resume_session` | None | `void` | Resumes paused assistant session; re-arms VAD without device reinitialization. |
 | `end_session` | None | `void` | Finalizes assistant session, records completion metrics, and tears down hardware if dictation is idle. |
+| `stop_turn` | None | `void` | Aborts active conversational turn (`Thinking`, `Working`, `Speaking`, `Listening`), cancels in-flight LLM/tool/playback futures, and returns pipeline to `Ready`. Retains engaged session and warm models. |
 | `ptt_start` | None | `void` | Opens push-to-talk recording window. |
 | `ptt_stop` | None | `void` | Closes push-to-talk recording window and begins speech validation. |
 | `ptt_cancel` | None | `void` | Cancels push-to-talk recording window and drops audio frames. |
