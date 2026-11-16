@@ -21,6 +21,7 @@ use crate::{
                 compaction::{CompactionStage, QuietCompactionWatcher},
                 guardrails::{GuardrailsStage, TurnGuardrailsState},
                 history::ConversationHistoryStage,
+                inbox::StepInbox,
                 prompt::PromptBuilderStage,
                 streaming::StreamRoutingStage,
                 tools::{ToolDefinition, ToolFilter, ToolRegistry},
@@ -55,6 +56,9 @@ pub struct Harness {
     pub(crate) guardrails: GuardrailsStage,
     pub(crate) guardrails_state: TurnGuardrailsState,
     pub(crate) is_compacted_this_turn: bool,
+    pub(crate) inbox: Arc<StepInbox>,
+    pub(crate) has_committed_steps_this_turn: bool,
+    pub(crate) uncommitted_user_turn_id: Option<u32>,
 }
 
 /// Dynamic per-model execution parameters resolved from database models table.
@@ -127,6 +131,9 @@ impl Harness {
             guardrails: GuardrailsStage,
             guardrails_state: TurnGuardrailsState::default(),
             is_compacted_this_turn: false,
+            inbox: Arc::new(StepInbox::new()),
+            has_committed_steps_this_turn: false,
+            uncommitted_user_turn_id: None,
         }
     }
 
@@ -168,6 +175,9 @@ impl Harness {
             guardrails: GuardrailsStage,
             guardrails_state: TurnGuardrailsState::default(),
             is_compacted_this_turn: false,
+            inbox: Arc::new(StepInbox::new()),
+            has_committed_steps_this_turn: false,
+            uncommitted_user_turn_id: None,
         }
     }
 
@@ -459,6 +469,23 @@ impl Harness {
             "[Harness::Chassis] History rebuilt with session context. Active turn preserved. Total messages: {}",
             self.history.messages().len()
         );
+    }
+
+    pub fn inbox(&self) -> &Arc<StepInbox> {
+        &self.inbox
+    }
+
+    pub fn has_committed_steps_this_turn(&self) -> bool {
+        self.has_committed_steps_this_turn
+    }
+
+    pub fn rollback_user_turn(&mut self, turn_id: u32) -> Option<ChatMessage> {
+        if self.uncommitted_user_turn_id == Some(turn_id) {
+            self.uncommitted_user_turn_id = None;
+            self.history.rollback_last_user_turn()
+        } else {
+            None
+        }
     }
 
     pub async fn execute_turn(

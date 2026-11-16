@@ -149,6 +149,15 @@ pub async fn end_session<R: tauri::Runtime>(
     Ok(())
 }
 
+/// Aborts the active turn to Ready state without ending the session.
+#[tauri::command]
+pub async fn stop_turn<R: tauri::Runtime>(
+    _app: AppHandle<R>,
+    _state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
+    Ok(())
+}
+
 /// Pauses the active voice assistant pipeline.
 #[tauri::command]
 pub async fn pause_session<R: tauri::Runtime>(

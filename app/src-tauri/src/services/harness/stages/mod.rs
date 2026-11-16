@@ -2,6 +2,7 @@ pub mod budget;
 pub mod compaction;
 pub mod guardrails;
 pub mod history;
+pub mod inbox;
 pub mod prompt;
 pub mod streaming;
 pub mod tools;
@@ -14,6 +15,7 @@ pub use guardrails::{
     ToolCallFingerprint, TurnGuardrailsState,
 };
 pub use history::ConversationHistoryStage;
+pub use inbox::{InboxMessage, QueuedMessageDelivery, StepInbox};
 pub use prompt::PromptBuilderStage;
 pub use streaming::{ClauseChunker, StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage};
 pub use tools::{

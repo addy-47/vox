@@ -46,6 +46,7 @@ pub enum VoxEvent {
     PauseSession,
     ResumeSession,
     EndSession,
+    StopTurn,
     PttStart {
         owner: InteractionOwner,
     },
