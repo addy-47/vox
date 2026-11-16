@@ -153,8 +153,18 @@ pub async fn end_session<R: tauri::Runtime>(
 #[tauri::command]
 pub async fn stop_turn<R: tauri::Runtime>(
     _app: AppHandle<R>,
-    _state: State<'_, Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
+    let event_tx = state
+        .event_tx
+        .lock()
+        .clone()
+        .ok_or_else(|| VoxIpcError::Engine("Event router is not active".into()))?;
+
+    event_tx
+        .send(VoxEvent::StopTurn)
+        .map_err(|e| VoxIpcError::Engine(format!("Failed to send StopTurn: {}", e)))?;
+
     Ok(())
 }
 

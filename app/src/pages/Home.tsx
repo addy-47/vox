@@ -26,6 +26,7 @@ import { AlertCircle } from "lucide-react";
 
 import { ChapterScrubber, type Chapter } from "@/shared/ui/ChapterScrubber";
 import { HomeControls } from "@/shared/components/home/HomeControls";
+import { stopTurn } from "@/services/pipelineService";
 
 import { useSessionStore } from "@/store/sessionStore";
 import { useRemoteStore } from "@/store/remoteStore";
@@ -292,12 +293,28 @@ export const Home = memo(() => {
         if (isEngaged) setTextModeOpen(true);
         return;
       }
-      // Escape while the text bar is open belongs to the text bar (it closes it);
-      // pausing here as well would fire two actions from one key.
-      if (e.key === "Escape" && !isTextModeOpen && (interactionState === "Speaking" || interactionState === "Thinking")) {
-        e.preventDefault();
-        void pause();
-        return;
+      // Two-step Esc: if text bar is open, close it; else if active turn, abort turn to Ready; else if Ready, disengage session to Idle.
+      if (e.key === "Escape") {
+        if (isTextModeOpen) {
+          e.preventDefault();
+          setTextModeOpen(false);
+          return;
+        }
+        const isActiveTurn =
+          interactionState === "Thinking" ||
+          interactionState === "Working" ||
+          interactionState === "Speaking" ||
+          interactionState === "Listening";
+        if (isActiveTurn) {
+          e.preventDefault();
+          void stopTurn();
+          return;
+        }
+        if (interactionState === "Ready") {
+          e.preventDefault();
+          void disengage();
+          return;
+        }
       }
       if (e.key === " " && !spaceOnButton && !e.ctrlKey && !e.metaKey && interactionMode === "PTT" && isEngaged && !isPaused && !isSleeping && interactionState !== "Error") {
         e.preventDefault();
@@ -635,12 +652,14 @@ export const Home = memo(() => {
               pttStatus={pttStatus}
               isLaunching={isLaunching}
               isThinking={isThinking}
+              interactionState={interactionState}
               pause={pause}
               resume={resume}
               handlePttStart={handlePttStart}
               handlePttStop={handlePttStop}
               setTextModeOpen={setTextModeOpen}
               disengage={disengage}
+              stopTurn={() => void stopTurn()}
               engage={engage}
               cancelLaunch={cancelLaunch}
             />

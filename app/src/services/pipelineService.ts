@@ -61,6 +61,10 @@ export function endSession(): Promise<void> {
   return invoke("end_session");
 }
 
+export function stopTurn(): Promise<void> {
+  return invoke("stop_turn");
+}
+
 export function pauseSession(): Promise<void> {
   return invoke("pause_session");
 }

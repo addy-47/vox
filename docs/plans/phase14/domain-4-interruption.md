@@ -306,14 +306,18 @@ flowchart TD
     SCEN_C --> ACT_C["1. Keep in-flight tools running to step completion.<br/>2. Engage speech hold on StepInbox.<br/>3. Transition pipeline to Listening.<br/>4. If tools finish before speech ends: Await wait_if_speech_held.<br/>5. On TranscriptFinal: Buffer speech into StepInbox.<br/>6. Step boundary commits tool results + user message.<br/>7. Advance to Step K+1 in Thinking."]
 ```
 
-### 6.1 `Harness` Provenance Flag
+### 6.1 `Harness` Provenance Flags & Idempotent Rollback Guard
 `Harness` carries:
 ```rust
 pub(crate) has_committed_steps_this_turn: bool,
+pub(crate) uncommitted_user_turn_id: Option<u32>,
 ```
-- Reset to `false` in `intake_recorded_turn`.
-- Set to `true` in `commit_tool_step`.
-- Provides 100% deterministic knowledge of whether the active turn is in Step 0 (Scenario A) or Step $K \ge 1$ (Scenario B) without guessing.
+- `has_committed_steps_this_turn`: reset to `false` in `intake_recorded_turn`, set to `true` in `commit_tool_step`. Provides 100% deterministic knowledge of whether the active turn is in Step 0 (Scenario A) or Step $K \ge 1$ (Scenario B) without guessing.
+- `uncommitted_user_turn_id`: set to `Some(req.turn_id)` in `intake_recorded_turn`, cleared to `None` in `commit_tool_step`, `step7_commit_completed`, and `rollback_user_turn(turn_id)`.
+- **Idempotent Turn Rollback (`rollback_user_turn(turn_id)`)**:
+  Both `on_interrupt` (Scenario A) / `on_stop_turn` (on the `vox-router` thread) and `step7_handle_cancelled` (on the async Tokio task) call `harness.rollback_user_turn(turn_id)`. Because the first caller clears `uncommitted_user_turn_id` to `None`, if Turn $N+1$ starts 2ms later and pushes a new `Role::User` before Turn $N$'s async task finishes cancelling, Turn $N$'s `step7_handle_cancelled` is guaranteed to be a no-op rather than popping Turn $N+1$'s user message.
+- **Single-Writer State Transitions (`RULE-EVT-01`)**:
+  In `transcript.rs::spawn_harness_turn_task`, when `Harness::execute_turn` returns `TurnOutcome::Cancelled`, it MUST NOT call `transition(InteractionState::Ready, ...)` directly from the background Tokio task. `on_interrupt` (`Listening`) and `on_stop_turn` (`Ready`) already own the synchronous state transition on the `vox-router` thread.
 
 ### 6.2 Scenario A: Pre-Working Thinking (Step 0 LLM Pass)
 - **Context**: Model is generating its initial response. Zero tools have executed (`has_committed_steps_this_turn == false`).

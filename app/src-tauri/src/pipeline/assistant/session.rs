@@ -557,6 +557,44 @@ pub fn on_resume<R: Runtime>(app: &AppHandle<R>, state: &AppState, _ctx: &Routin
     log::info!("[Pipeline::Session] Session resumed -> Ready");
 }
 
+/// Aborts the active turn and transitions the pipeline to Ready without unmounting the harness or ending the session.
+pub fn on_stop_turn<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext) {
+    let current_state = state.pipeline.state();
+    if current_state == InteractionState::Idle || current_state == InteractionState::Ready {
+        log::debug!("[Pipeline::Session] StopTurn called while Idle or Ready; no-op");
+        return;
+    }
+
+    if let Ok(guard) = state.engine.try_lock() {
+        if let Some(ref engine) = *guard {
+            engine.playback_engine.cancel();
+            if let Some(ref aec_tx) = engine.aec_tx {
+                let _ = aec_tx.send(crate::services::audio::aec::AecCommand::ClearRenderQueue);
+            }
+        }
+    }
+
+    state.pipeline.cancel_flag.store(true, Ordering::SeqCst);
+    state.pipeline.turn_token().cancel();
+    state.pipeline.reset_turn_guards();
+    state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
+
+    state.pipeline_accumulator.lock().clear();
+    let active_turn_id = state.pipeline.peek_turn_id();
+    {
+        let mut guard = state.harness.lock();
+        if let Some(ref mut harness) = *guard {
+            harness.inbox().clear();
+            if !harness.has_committed_steps_this_turn() {
+                harness.rollback_user_turn(active_turn_id);
+            }
+        }
+    }
+
+    transition(InteractionState::Ready, None, ctx, app, state);
+    log::info!("[Pipeline::Session] Turn stopped -> Ready");
+}
+
 /// Ends active conversation session, persists final metadata, and triggers background compaction.
 pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext) {
     let current_state = state.pipeline.state();

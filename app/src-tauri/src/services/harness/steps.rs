@@ -23,6 +23,7 @@ use crate::{
                 budget::{ContextBudgetStage, ContextStatus},
                 compaction::{CompactionParams, CompactionStage},
                 guardrails::GuardrailAction,
+                inbox::InboxMessage,
             },
             tools::{ToolExecutionContext, ToolExecutor, ToolFilter, ToolRegistry},
             TurnExecutionRequest, TurnOutcome,
@@ -137,12 +138,22 @@ pub fn step1_intake(
     }
 
     let start_intake = std::time::Instant::now();
-    let can_compact = harness.intake_recorded_turn(req.query.clone());
+    let can_compact = harness.intake_recorded_turn(req.turn_id, req.query.clone());
     log::info!(
         "[Harness::Intake] Turn {} intake & budget evaluated in {}ms (can_compact: {})",
         turn_id,
         start_intake.elapsed().as_millis(),
         can_compact
+    );
+
+    req.app_state.pipeline.set_turn_open(true);
+    req.app_state.pipeline.clear_drained_while_open();
+    transition(
+        InteractionState::Thinking,
+        None,
+        &req.routing_ctx,
+        &*req.emitter,
+        &req.app_state,
     );
 
     IntakeResult::Proceed {
@@ -583,6 +594,23 @@ pub async fn step6_execute_tool_batch(
     .with_step(step_id.clone(), step_index as u32)
     .with_observation_budget(max_observation_tokens);
 
+    let non_terminal = if let Some(first_call) = calls.first() {
+        NonTerminalPhase::tool(&first_call.name, &first_call.id, None)
+    } else {
+        NonTerminalPhase::compaction(None)
+    };
+    let nt_ctx = NonTerminalContext {
+        query: &ctx.req.query,
+        turn_id,
+        routing_ctx: &ctx.req.routing_ctx,
+        emitter: &ctx.req.emitter,
+        app_state: &ctx.req.app_state,
+        tts_tx: ctx.req.tts_tx.as_ref(),
+        pending_synthesis_jobs: &ctx.req.pending_synthesis_jobs,
+        play_filler: false,
+    };
+    enter_non_terminal_phase(&non_terminal, &nt_ctx);
+
     let (mut outcomes, suspended_question) = ToolExecutor::execute_batch(
         &ctx.tool_registry,
         PipelineMode::Modular,
@@ -663,7 +691,7 @@ pub async fn step6_execute_tool_batch(
     {
         let mut guard = ctx.harness_arc.lock();
         if let Some(ref mut harness) = *guard {
-            harness.history.commit_tool_step(
+            harness.commit_tool_step(
                 preamble_text.to_string(),
                 calls,
                 tool_results,
@@ -715,6 +743,45 @@ pub async fn step6_execute_tool_batch(
     );
 
     (ctx.req.cancel.is_cancelled(), suspended_question, circuit_broken)
+}
+
+/// Awaits any active speech-hold on StepInbox and drains immediate steering messages into history at the step boundary.
+pub async fn step6_await_and_drain_inbox(
+    ctx: &TurnLoopContext<'_>,
+) -> Result<Vec<InboxMessage>, TurnOutcome> {
+    let inbox = {
+        let guard = ctx.harness_arc.lock();
+        guard.as_ref().map(|h| Arc::clone(&h.inbox))
+    };
+
+    if let Some(inbox) = inbox {
+        inbox.wait_if_speech_held(&ctx.req.cancel).await;
+        if ctx.req.cancel.is_cancelled() {
+            return Err(step7_handle_cancelled(ctx.cancelled_ctx(String::new())));
+        }
+
+        let immediate = inbox.drain_immediate();
+        if !immediate.is_empty() {
+            let mut guard = ctx.harness_arc.lock();
+            if let Some(ref mut harness) = *guard {
+                for msg in &immediate {
+                    harness.history.push_user_turn(msg.text.clone());
+                }
+            }
+        }
+
+        transition(
+            InteractionState::Thinking,
+            None,
+            &ctx.req.routing_ctx,
+            &*ctx.req.emitter,
+            &ctx.req.app_state,
+        );
+
+        Ok(immediate)
+    } else {
+        Ok(Vec::new())
+    }
 }
 
 fn make_sessions_changed_callback(
@@ -813,7 +880,7 @@ pub fn step7_handle_cancelled(ctx: CancelledTurnContext<'_>) -> TurnOutcome {
             ctx.partial_text,
         );
     } else if let Some(ref mut harness) = *guard {
-        harness.history.rollback_last_user_turn();
+        harness.rollback_user_turn(ctx.turn_id);
     }
 
     ctx.app_state
@@ -836,7 +903,7 @@ pub fn step7_handle_error(
 
     let mut guard = harness_arc.lock();
     if let Some(ref mut harness) = *guard {
-        harness.history.rollback_last_user_turn();
+        harness.rollback_user_turn(turn_id);
     }
 
     if let Some(tx) = event_tx {
@@ -865,6 +932,7 @@ pub fn step7_commit_completed(
 
     let mut guard = harness_arc.lock();
     if let Some(ref mut harness) = *guard {
+        harness.uncommitted_user_turn_id = None;
         harness
             .history
             .push_assistant_turn(assistant_response.clone());

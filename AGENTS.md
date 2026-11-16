@@ -50,7 +50,7 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
    - **No Single-Subtest Serial Looping:** Run the entire test binary once (`cargo test --test <binary> --release`). Never execute loops of individual `-E 'test(<name>)'` invocations across subtests.
    - **Mutation Testing Offloading:** Owned exclusively by the Test Engineer. When `temp/server.txt` is available, prioritize offloading mutation campaigns to the remote 32-core server via `scripts/remote-mutate.py` or use local multi-mutant orthogonal batching. Sequential compile-and-revert loops of single mutants on the primary workspace are strictly forbidden.
    - **Reviewer Compile Boundary:** Reviewers audit git diffs against specifications and style guides. Do not re-run full cross-target compiler builds that the Test Engineer already validated.
-   - **No Polling:** Polling cargo compilation commands is forbidden; always let the system inform you on task completion.
+   - **No Rapid Polling:** Rapid Polling of cargo compilation commands is forbidden; set a minimum of 2 min cron between checks using `/schedule` tool.
 
 ---
 

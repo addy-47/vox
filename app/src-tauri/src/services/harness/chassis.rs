@@ -28,7 +28,7 @@ use crate::{
             tools::{ToolDefinition, ToolFilter, ToolRegistry},
             ChatMessage, Role,
         },
-        llm::{actor::LlmCommand, GenerationOptions, ReasoningMode},
+        llm::{actor::LlmCommand, CanonicalToolCall, GenerationOptions, ReasoningMode},
         memory::compaction::CompactionResult,
     },
 };
@@ -246,7 +246,9 @@ impl Harness {
     }
 
     /// Records a user turn and applies the production intake and critical-compaction decision.
-    pub fn intake_recorded_turn(&mut self, query: String) -> bool {
+    pub fn intake_recorded_turn(&mut self, turn_id: u32, query: String) -> bool {
+        self.uncommitted_user_turn_id = Some(turn_id);
+        self.has_committed_steps_this_turn = false;
         self.has_played_filler = false;
         self.guardrails_state = TurnGuardrailsState::default();
         self.is_compacted_this_turn = false;
@@ -335,10 +337,22 @@ impl Harness {
         state: Arc<AppState>,
         harness_lock: Arc<Mutex<Option<Harness>>>,
     ) {
+        self.uncommitted_user_turn_id = None;
         let tracked_turns = self.check_quiet_compaction_eligibility();
         if let Some(ref mut watcher) = self.watcher {
             watcher.on_turn_completed(state, harness_lock, tracked_turns);
         }
+    }
+
+    pub fn commit_tool_step(
+        &mut self,
+        preamble: String,
+        calls: Vec<CanonicalToolCall>,
+        results: Vec<(String, String)>,
+    ) {
+        self.uncommitted_user_turn_id = None;
+        self.has_committed_steps_this_turn = true;
+        self.history.commit_tool_step(preamble, calls, results);
     }
 
     pub fn abort_watcher(&mut self) {

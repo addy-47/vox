@@ -112,14 +112,20 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
             TurnOutcome::Cancelled { turn_id } => {
                 log::info!("[Pipeline::Transcript] Turn {} cancelled", turn_id);
                 if turn_id == app_state.pipeline.peek_turn_id() {
-                    app_state.pipeline.reset_turn_guards();
-                    transition(
-                        InteractionState::Ready,
-                        None,
-                        &ctx_clone,
-                        &app_clone,
-                        &app_state,
-                    );
+                    let current = app_state.pipeline.state();
+                    if current != InteractionState::Listening
+                        && current != InteractionState::Idle
+                        && current != InteractionState::Ready
+                    {
+                        app_state.pipeline.reset_turn_guards();
+                        transition(
+                            InteractionState::Ready,
+                            None,
+                            &ctx_clone,
+                            &app_clone,
+                            &app_state,
+                        );
+                    }
                 }
             }
             TurnOutcome::Error { turn_id, message } => {
@@ -161,6 +167,56 @@ pub fn on_transcript_final<R: tauri::Runtime>(
 
     let current_state = state.pipeline.state();
 
+    let is_held = {
+        let guard = state.harness.lock();
+        guard.as_ref().map(|h| h.inbox().is_speech_held()).unwrap_or(false)
+    };
+
+    if is_held {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            log::info!("[Pipeline::Transcript] Empty transcript during speech-held turn; releasing hold and returning to Working");
+            {
+                let guard = state.harness.lock();
+                if let Some(ref harness) = *guard {
+                    harness.inbox().release_speech_hold();
+                }
+            }
+            state.pipeline_accumulator.lock().clear();
+            transition(InteractionState::Working, None, ctx, app, state);
+            return;
+        } else {
+            log::info!("[Pipeline::Transcript] Steering transcript during speech-held turn: '{}'", trimmed);
+            let payload = TranscriptPayload {
+                turn_id,
+                text: trimmed.to_string(),
+                owner: Some(ctx.owner),
+            };
+            let _ = emit_ipc_to(
+                app,
+                target_window(ctx.owner),
+                IpcEvent::TranscriptFinal(payload),
+            );
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            {
+                let guard = state.harness.lock();
+                if let Some(ref harness) = *guard {
+                    harness.inbox().push(crate::services::harness::stages::inbox::InboxMessage::new(
+                        trimmed.to_string(),
+                        crate::services::harness::stages::inbox::QueuedMessageDelivery::Immediate,
+                        now,
+                    ));
+                }
+            }
+            state.pipeline_accumulator.lock().clear();
+            transition(InteractionState::Working, None, ctx, app, state);
+            return;
+        }
+    }
+
     // If turn_id matches a late-arriving final while the user is already speaking the continuation (Listening),
     // capture it directly into continuation_prefix instead of dropping it.
     if current_state == InteractionState::Listening {
@@ -176,7 +232,7 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         }
     }
 
-    if current_state != InteractionState::Thinking {
+    if current_state != InteractionState::Thinking && current_state != InteractionState::Listening {
         log::debug!(
             "[Pipeline::Transcript] Transcript dropped: state is {:?}, expected Thinking or Listening",
             current_state

@@ -10,6 +10,8 @@
 - [ ] `app/src-tauri/src/services/harness/chassis.rs`
   - Add `pub(crate) inbox: Arc<StepInbox>` to `Harness` struct and instantiate in `Harness::new_modular`.
   - Add `pub(crate) has_committed_steps_this_turn: bool` to `Harness` struct (initialized to `false`).
+  - Add `pub(crate) uncommitted_user_turn_id: Option<u32>` to `Harness` struct (initialized to `None`).
+  - Add `pub fn rollback_user_turn(&mut self, turn_id: u32) -> Option<ChatMessage>` to `Harness` struct.
 - [ ] `app/src-tauri/src/core/events.rs`
   - Add `VoxEvent::StopTurn` variant.
 - [ ] `app/src-tauri/src/ipc/pipeline.rs`

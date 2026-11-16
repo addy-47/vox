@@ -1,5 +1,5 @@
 import React, { memo } from "react";
-import { Power, Mic, Keyboard, Play, Pause, X, RotateCcw } from "lucide-react";
+import { Power, Mic, Keyboard, Play, Pause, X, RotateCcw, Square } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { HOME_CONTROLS_COPY } from "@/data/homeCopy";
 import { shortcutKeysSuffix } from "@/data/shortcuts";
@@ -16,12 +16,14 @@ export interface HomeControlsProps {
   pttStatus: string;
   isLaunching: boolean;
   isThinking: boolean;
+  interactionState?: string;
   pause: () => void;
   resume: () => void;
   handlePttStart: () => Promise<void>;
   handlePttStop: () => Promise<void>;
   setTextModeOpen: (open: boolean) => void;
   disengage: () => void;
+  stopTurn?: () => void;
   engage: () => void;
   cancelLaunch: () => void;
 }
@@ -36,12 +38,14 @@ export const HomeControls = memo(({
   pttStatus,
   isLaunching,
   isThinking,
+  interactionState,
   pause,
   resume,
   handlePttStart,
   handlePttStop,
   setTextModeOpen,
   disengage,
+  stopTurn,
   engage,
   cancelLaunch,
 }: HomeControlsProps) => {
@@ -57,6 +61,11 @@ export const HomeControls = memo(({
   }, [pttStatus, isPressed]);
 
   const isPttActive = isPressed || isLatched || pttStatus === "RECORDING";
+  const isActiveTurn =
+    interactionState === "Thinking" ||
+    interactionState === "Working" ||
+    interactionState === "Speaking" ||
+    interactionState === "Listening";
 
   return (
     <div className="flex items-center justify-center gap-6 z-20">
@@ -166,29 +175,47 @@ export const HomeControls = memo(({
             </button>
           </Tooltip>
 
-          {/* Disengage */}
+          {/* Stop Turn or Disengage */}
           <div className="relative flex flex-col items-center">
-            <Tooltip label={tooltip ?? HOME_CONTROLS_COPY.engage.stopAriaLabel} side="top">
-              <button
-                onClick={isBlocked ? undefined : disengage}
-                tabIndex={isBlocked ? -1 : 0}
-                className={cn(
-                  "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-150 border border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)] touch-manipulation select-none",
-                  isThinking && "engage-btn-loading border-transparent",
-                  isLaunching && "animate-spin",
-                  guardProps.className
-                )}
-                disabled={isBlocked || isLaunching}
-                aria-disabled={guardProps["aria-disabled"]}
-                aria-label={HOME_CONTROLS_COPY.engage.stopAriaLabel}
-              >
-                {isLaunching ? (
-                  <Power size={28} className="animate-pulse-slow" />
-                ) : (
-                  <X size={28} />
-                )}
-              </button>
-            </Tooltip>
+            {isActiveTurn && stopTurn ? (
+              <Tooltip label={tooltip ?? "Stop current turn (Esc)"} side="top">
+                <button
+                  onClick={isBlocked ? undefined : stopTurn}
+                  tabIndex={isBlocked ? -1 : 0}
+                  className={cn(
+                    "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-150 border border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)] touch-manipulation select-none",
+                    guardProps.className
+                  )}
+                  disabled={isBlocked}
+                  aria-disabled={guardProps["aria-disabled"]}
+                  aria-label="Stop current turn (Esc)"
+                >
+                  <Square size={22} className="fill-current" />
+                </button>
+              </Tooltip>
+            ) : (
+              <Tooltip label={tooltip ?? HOME_CONTROLS_COPY.engage.stopAriaLabel} side="top">
+                <button
+                  onClick={isBlocked ? undefined : disengage}
+                  tabIndex={isBlocked ? -1 : 0}
+                  className={cn(
+                    "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-150 border border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)] touch-manipulation select-none",
+                    isThinking && "engage-btn-loading border-transparent",
+                    isLaunching && "animate-spin",
+                    guardProps.className
+                  )}
+                  disabled={isBlocked || isLaunching}
+                  aria-disabled={guardProps["aria-disabled"]}
+                  aria-label={HOME_CONTROLS_COPY.engage.stopAriaLabel}
+                >
+                  {isLaunching ? (
+                    <Power size={28} className="animate-pulse-slow" />
+                  ) : (
+                    <X size={28} />
+                  )}
+                </button>
+              </Tooltip>
+            )}
           </div>
         </React.Fragment>
       ) : (

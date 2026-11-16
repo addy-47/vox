@@ -41,12 +41,9 @@ Domain 4 completes the Harness v2 core transformation by delivering:
 3. **History Invariant & Prompt De-duplication in Scenario B (P0 Defect 3 Fix)**:
    - *Issue:* Calling `stash_for_continuation()` during Step $K \ge 1$ re-prepended Step 0's query from `pipeline_accumulator.user_transcript`, duplicating `"Query 1"` in the steering message.
    - *Resolution:* Add `has_committed_steps_this_turn: bool` to `Harness`. In Scenario B (`has_committed_steps_this_turn == true`), `interrupt.rs` calls `acc.clear()` instead of `stash_for_continuation()`. `TranscriptFinal` commits `Role::User(new_speech)` as a standalone message without re-prepending Step 0.
-4. **Synchronous Router Thread Cleanup & Idempotent Turn Rollback (P0 Defect 4 Fix & Implementation Guard)**:
+4. **Synchronous Router Thread Cleanup (P0 Defect 4 Fix)**:
    - *Issue:* An async `TurnOutcome::Cancelled` task executing off-thread raced `vox-router`, overwriting state transitions or popping subsequent user turns.
-   - *Resolution:*
-     - Track `uncommitted_user_turn_id: Option<u32>` on `Harness` (set to `Some(req.turn_id)` in `intake_recorded_turn`, cleared to `None` in `commit_tool_step`, `step7_commit_completed`, and `rollback_user_turn(turn_id)`).
-     - Both `on_interrupt` (Scenario A) / `on_stop_turn` (on the `vox-router` thread) and `step7_handle_cancelled` (on the async Tokio task) call `harness.rollback_user_turn(turn_id)`. The first caller clears `uncommitted_user_turn_id` to `None`. If Turn $N+1$ starts 2ms later and pushes a new `Role::User` before Turn $N$'s async task finishes cancelling, Turn $N$'s `step7_handle_cancelled` safely no-ops rather than popping Turn $N+1$'s user message.
-     - Enforce `RULE-EVT-01` (Single-Writer State Transitions): In `transcript.rs::spawn_harness_turn_task`, when `Harness::execute_turn` returns `TurnOutcome::Cancelled`, do NOT call `transition(InteractionState::Ready, ...)`. `on_interrupt` (`Listening`) and `on_stop_turn` (`Ready`) already own the synchronous transition on `vox-router`.
+   - *Resolution:* Perform deterministic history rollback (`rollback_last_user_turn()` if Step 0 `Thinking`) and `inbox.clear()` synchronously under `state.harness.lock()` on the `vox-router` thread. Never let `transcript.rs:108`'s async `Cancelled` branch overwrite a state already transitioned by `vox-router`.
 5. **Pure 4-Tier Boundary & Thin `loop.rs` (P0 Defect 5 Fix)**:
    - *Issue:* `loop.rs` directly imported `stages::*` and `tools::*`, ran inline budget checks, and sent TTS commands directly.
    - *Resolution:* Slim `loop.rs` to ~150 lines. Move budget check to `steps::step3_check_and_run_loop_budget`. Move suspended question audio to `steps::step7_commit_suspended_question`. Move inbox drain to `steps::step6_await_and_drain_inbox`. Move raw actor sends to `stages/speech.rs`, `stages/dispatch.rs`, `stages/persistence.rs`.
@@ -64,7 +61,7 @@ Every batch and phase is implemented sequentially with its own atomic, increment
 ### Orchestration Roles & Boundaries
 - **Backend Engineer**: Implements production types, module reorganization, stage dispatchers, `stop_turn` IPC command, `StepInbox` with speech hold, and coordinator loop steering. Strictly forbidden from modifying `tests/**`.
 - **Frontend Engineer**: Implements two-step UI state transitions, Stop icon rendering, and `Esc` keyboard routing in `HomeControls.tsx` and `Home.tsx`.
-- **Test Engineer**: Authors the 10 black-box seam tests in Phase 2 (verifies RED). In Phase 4, **exclusively owns Mutation Testing**: offloads the mutation campaign to the remote 32-core server via `scripts/remote-mutate.py` (creds in `temp/server.txt`), deliberately seeding mutants from the False-Green Table into production code, confirming tests turn RED, reverting mutants, and confirming green.
+- **Test Engineer**: Authors the 10 black-box seam tests in Phase 2 (verifies RED). In Phase 4, **exclusively owns Mutation Testing**: deliberately seeds mutants from the False-Green Table into production code, confirms tests turn RED, reverts mutants, and confirms green.
 - **Adversarial Reviewer Agent**: Evaluates the full diff with **zero prior context** (launched as an independent subagent with fresh eyes). Audits diffs against `backend-style-guide.md`, `testing-style-guide.md`, `architectural-invariants.md`, and authoritative specs (`harness-spec.md`, `ipc-spec.md`, `events-spec.md`). Does NOT run mutation testing.
 
 ### Sequential Phase Loop & Incremental Commit Gates
@@ -129,7 +126,7 @@ Every batch and phase is implemented sequentially with its own atomic, increment
 *Scope:* Public types, enums, and method stubs so test stubs compile cleanly.
 *Files:*
 - `app/src-tauri/src/services/harness/stages/inbox.rs` (`QueuedMessageDelivery`, `InboxMessage`, `StepInbox` with `speech_hold_active` and `notify`)
-- `app/src-tauri/src/services/harness/chassis.rs` (`Harness::inbox`, `Harness::has_committed_steps_this_turn`)
+- `app/src-tauri/src/services/harness/chassis.rs` (`Harness::inbox`, `Harness::has_committed_steps_this_turn`, `Harness::uncommitted_user_turn_id`, `Harness::rollback_user_turn`)
 - `app/src-tauri/src/ipc/pipeline.rs` (stub for `stop_turn`)
 - `app/src-tauri/src/core/events.rs` (`VoxEvent::StopTurn`)
 *Build Expectation:* Compiles cleanly (`cargo test --no-run --release`).

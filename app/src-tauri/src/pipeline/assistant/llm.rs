@@ -70,8 +70,8 @@ pub fn on_llm_finished<R: tauri::Runtime>(
     flush_pre_roll(state, &ctx.pipeline_mode);
 
     let (full_text, user_text) = {
-        let mut acc = state.pipeline_accumulator.lock();
-        (acc.take_assistant_response(), acc.take_user_transcript())
+        let acc = state.pipeline_accumulator.lock();
+        (acc.assistant_response.clone(), acc.user_transcript())
     };
     if !full_text.trim().is_empty() {
         log::info!(

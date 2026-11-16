@@ -10,10 +10,11 @@ use crate::services::harness::{
     chassis::Harness,
     steps::{
         step1_intake, step3_check_and_run_loop_budget, step3_execute_compaction,
-        step4_assemble_request, step5_dispatch_llm, step6_execute_tool_batch,
-        step6_run_stream_pass, step7_commit_completed, step7_commit_suspended_question,
-        step7_handle_cancelled, step7_handle_error, IntakeResult, StreamPassOutcome,
-        StreamRoutingHandles, StreamRoutingStage, TurnLoopContext,
+        step4_assemble_request, step5_dispatch_llm, step6_await_and_drain_inbox,
+        step6_execute_tool_batch, step6_run_stream_pass, step7_commit_completed,
+        step7_commit_suspended_question, step7_handle_cancelled, step7_handle_error,
+        IntakeResult, StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage,
+        TurnLoopContext,
     },
     TurnExecutionRequest, TurnOutcome,
 };
@@ -92,7 +93,13 @@ async fn run_cognitive_loop(
         turn_metrics: Arc::clone(&req.app_state.turn_metrics),
     };
 
-    let session_id = req.app_state.conversation_id.load(Relaxed) as i64;
+    let session_id = {
+        let guard = harness_arc.lock();
+        guard
+            .as_ref()
+            .and_then(|h| h.session_id())
+            .unwrap_or_else(|| req.app_state.conversation_id.load(Relaxed) as i64)
+    };
     let (loop_ctx, supports_tools) = match TurnLoopContext::new(
         harness_arc,
         &req,
@@ -312,7 +319,10 @@ async fn handle_pass_outcome(
                 let outcome = step7_commit_suspended_question(ctx, question);
                 (LoopAction::Terminal(outcome), circuit_broken)
             } else {
-                (LoopAction::Continue, circuit_broken)
+                match step6_await_and_drain_inbox(ctx).await {
+                    Ok(_) => (LoopAction::Continue, circuit_broken),
+                    Err(outcome) => (LoopAction::Terminal(outcome), circuit_broken),
+                }
             }
         }
     }

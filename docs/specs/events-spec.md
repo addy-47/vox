@@ -45,10 +45,11 @@ stateDiagram-v2
     Working --> Speaking: Response Audio Starts
     Thinking --> Speaking: Response Audio Starts
     Speaking --> Listening: User Barge-In
-    Speaking --> Ready: Audio Playback Complete / Stop Turn
-    Thinking --> Ready: Empty Speech / Turn Abort / Stop Turn
-    Working --> Ready: Stop Turn
+    Speaking --> Ready: Audio Playback Complete
+    Thinking --> Ready: Empty Speech / Turn Abort
     Listening --> Ready: Stop Turn
+    Working --> Ready: Stop Turn
+    Speaking --> Ready: Stop Turn
     Ready --> Paused: Pause Session / 7m Inactivity
     Paused --> Sleeping: 5m Sustained Inactivity
     Paused --> Ready: Resume Session
