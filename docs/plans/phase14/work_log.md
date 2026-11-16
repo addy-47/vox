@@ -1,5 +1,29 @@
 # Phase 14 Work Log
 
+## 2026-11-15 — Unified Model Hub (Batch 1: Speech Modals, Flow Banners & VAD Inline Refactor)
+
+- **Authored Implementation Plan & Checklist**:
+  - Generated `docs/plans/phase14/unified-model-hub-plan.md` and `docs/plans/phase14/unified-model-hub-checklist.md` following the `/create-plan` skill.
+  - Divided full Unified Model Hub initiative into 4 decoupled batches (Batch 1: Speech Modals & Flow Banners; Batch 2: Homepage Quick Popover & Symmetrical Dock Trigger; Batch 3: Unified Centered Modal & Overview Dashboard; Batch 4: Settings Consolidation).
+- **Generalized Multi-Mode Speech Flow Banner (`SpeechFlowBanner.tsx`)**:
+  - Extended TTS flow banner into a versatile component supporting 3 dynamic audio pipeline modes:
+    1. `kind="tts"`: Streaming words inlet along curved guide lanes $\to$ microphone core $\to$ acoustic output waveform.
+    2. `kind="stt"`: Raw acoustic waveform inlet $\to$ neural acoustic ear mark / decoder $\to$ streaming transcribed text tokens on right.
+    3. `kind="vad"`: Continuous audio waveform $\to$ probabilistic energy diamond gate with threshold line $\to$ clean active speech pulses with boundary bracket markers.
+  - Backward-compatible `EngineFlowBanner.tsx` preserved as a forwarder to `SpeechFlowBanner(kind="tts")`.
+- **Created STT Expanded Modal (`SttModelsModal.tsx`)**:
+  - Implemented Tier 2b modal with `CatalogModalShell`, `CatalogFacetRail` (sources: All, On-device, Cloud), 3-column responsive card grid, and `SpeechFlowBanner(kind="stt")` footer.
+  - Wrapped `SttModelList` in `ExpandableList` with dedicated `Ear` icon and accessible modal triggers.
+- **Created VAD Expanded Modal & Inlined Detection Knobs (`VadModelsModal.tsx`)**:
+  - Implemented Tier 2b modal with `CatalogModalShell`, `CatalogFacetRail` (categories: All, Built-in, ONNX), VAD model grid, section divider, embedded `VadSettingsPanel`, and `SpeechFlowBanner(kind="vad")` footer.
+  - Wrapped `VadModelList` in `ExpandableList`.
+  - Refactored `SpeechCard.tsx`: removed hidden corner toggle button (`vadSettingsOpen`). Integrated `VadSettingsPanel` directly inline beneath `VadModelList` separated by a clean section divider.
+- **Verification**:
+  - `pnpm tsc --noEmit` passed with 0 errors.
+  - `pnpm lint:arch` passed (`lint-arch: all architectural invariants hold`).
+  - `pnpm build` passed in 12.10s with 0 warnings.
+
+
 ## 2026-11-15 — Domain 3: Loop Guardrails, Observation Truncation & Step Provenance (TDD Red-Seam First)
 
 - **Phase 1: Minimal Signatures & Stubs (`0e17350e1`)**:

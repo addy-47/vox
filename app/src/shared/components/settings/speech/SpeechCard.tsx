@@ -7,13 +7,10 @@ import { SPEECH_CARD_COPY } from "@/data/settingsCopy";
 import {
   AudioLines,
   AudioWaveform,
-  ArrowLeft,
   Ear,
   Loader2,
-  Settings2,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { Tooltip } from "@/shared/ui/Tooltip";
 
 import { useModelDownloads } from "@/shared/hooks/useModelDownloads";
 
@@ -22,7 +19,6 @@ import { CardTitleBar } from "../shared/CardTitleBar";
 import { SttModelList } from "./SttModelList";
 import { TtsModelList } from "./TtsModelList";
 import { VadModelList } from "./VadModelList";
-import { VadSettingsPanel } from "./VadSettingsPanel";
 import { VoiceCatalogView } from "./voices/VoiceCatalogView";
 import { SETTINGS_DOMAIN_CARD_HEIGHT_CLASS } from "../shared/settingsLayout";
 
@@ -68,14 +64,12 @@ export const SpeechCard = memo(({ layoutMode = "full-max" }: SpeechCardProps) =>
 
   const [activeTab, setActiveTab] = useState<SpeechTab>("tts");
   const [view, setView] = useState<"models" | "voices">("models");
-  const [vadSettingsOpen, setVadSettingsOpen] = useState(false);
 
   // Interaction card -> this card. Only the speech stages are shared now.
   useEffect(() => onSpeechTabRequest((tab) => setActiveTab(tab)), []);
 
   const handleChangeTab = useCallback((id: SpeechTab) => {
     setActiveTab(id);
-    setVadSettingsOpen(false);
   }, []);
 
   const nodes = useMemo<PipelineTopologyNode<SpeechTab>[]>(() => [
@@ -159,59 +153,15 @@ export const SpeechCard = memo(({ layoutMode = "full-max" }: SpeechCardProps) =>
             ) : (
               <>
                 {activeTab === "vad" && (
-                  <>
-                    {/* Sits in the same bottom-right corner as the expand
-                        trigger, in the same size: no row, no reserved height. */}
-                    <div className="absolute -bottom-2 right-1 z-20">
-                      <Tooltip
-                        label={
-                          vadSettingsOpen
-                            ? SPEECH_CARD_COPY.backToVadModels
-                            : SPEECH_CARD_COPY.vadSettings
-                        }
-                        side="top"
-                        asChild
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setVadSettingsOpen((v) => !v)}
-                          aria-label={
-                            vadSettingsOpen
-                              ? SPEECH_CARD_COPY.backToVadModels
-                              : SPEECH_CARD_COPY.vadSettings
-                          }
-                          aria-expanded={vadSettingsOpen}
-                          className={cn(
-                            "w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))] shadow-sm",
-                            "border border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.85)]",
-                            vadSettingsOpen
-                              ? "text-[rgb(var(--accent))] border-[rgba(var(--accent),0.35)]"
-                              : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.95)]"
-                          )}
-                        >
-                          {vadSettingsOpen ? (
-                            <ArrowLeft size={13} strokeWidth={2} />
-                          ) : (
-                            <Settings2 size={13} strokeWidth={1.75} />
-                          )}
-                        </button>
-                      </Tooltip>
-                    </div>
-
-                    {vadSettingsOpen ? (
-                      <VadSettingsPanel layoutMode={layoutMode} />
-                    ) : (
-                      <VadModelList
-                        layoutMode={layoutMode}
-                        confirmDeleteId={confirmDeleteId}
-                        setConfirmDeleteId={setConfirmDeleteId}
-                        modelPresence={modelPresence}
-                        downloadStatuses={downloadStatuses}
-                        startDownload={startDownload}
-                        deleteModel={handleDeleteModelGroup}
-                      />
-                    )}
-                  </>
+                  <VadModelList
+                    layoutMode={layoutMode}
+                    confirmDeleteId={confirmDeleteId}
+                    setConfirmDeleteId={setConfirmDeleteId}
+                    modelPresence={modelPresence}
+                    downloadStatuses={downloadStatuses}
+                    startDownload={startDownload}
+                    deleteModel={handleDeleteModelGroup}
+                  />
                 )}
 
                 {activeTab === "stt" && (

@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { Ear } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useCatalogStore } from "@/store/catalogStore";
 import { SpeechModelCard } from "./SpeechModelCard";
@@ -6,9 +7,12 @@ import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
 import { activeSelection, promoteActive } from "@/shared/lib/activeSelection";
 import { SPEECH_CARD_COPY } from "@/data/settingsCopy";
+import { ExpandableList } from "@/shared/ui/ExpandableList";
+import { SettingsCommitControls } from "@/shared/components/settings/SettingsCommitControls";
+import { SttModelsModal } from "./SttModelsModal";
 import { getSettingsInlineListMaxHeightClass } from "../shared/settingsLayout";
 
-interface SttModelListProps {
+export interface SttModelListProps {
   layoutMode?: "full-max" | "full-min" | "small";
   confirmDeleteId: string | null;
   setConfirmDeleteId: (id: string | null) => void;
@@ -19,9 +23,12 @@ interface SttModelListProps {
   isGroupRequired: (id: string) => boolean;
 }
 
-/** Speech-transcription models. */
-export const SttModelList = memo(
-  ({
+/**
+ * Speech-transcription models with inline grid and ExpandableList
+ * modal trigger opening SttModelsModal.
+ */
+export const SttModelList = memo((props: SttModelListProps) => {
+  const {
     layoutMode,
     confirmDeleteId,
     setConfirmDeleteId,
@@ -30,18 +37,31 @@ export const SttModelList = memo(
     startDownload,
     deleteModel,
     isGroupRequired,
-  }: SttModelListProps) => {
-    const activeSttId = useSettingsStore((s) => s.draftSettings?.stt.active.model);
-    const committedSttId = useSettingsStore((s) => s.settings?.stt.active.model);
-    const hasDraft = useSettingsStore((s) => !!s.draftSettings);
-    const updateDraft = useSettingsStore((s) => s.updateDraft);
-    const modelCatalog = useCatalogStore((s) => s.modelCatalog);
-    if (!hasDraft || !modelCatalog) return null;
+  } = props;
 
-    const rawSttModels = modelCatalog?.stt ?? [];
-    const sttModels = promoteActive(rawSttModels, committedSttId);
+  const activeSttId = useSettingsStore((s) => s.draftSettings?.stt.active.model);
+  const committedSttId = useSettingsStore((s) => s.settings?.stt.active.model);
+  const hasDraft = useSettingsStore((s) => !!s.draftSettings);
+  const updateDraft = useSettingsStore((s) => s.updateDraft);
+  const modelCatalog = useCatalogStore((s) => s.modelCatalog);
 
-    return (
+  if (!hasDraft || !modelCatalog) return null;
+
+  const rawSttModels = modelCatalog?.stt ?? [];
+  const sttModels = promoteActive(rawSttModels, committedSttId);
+
+  return (
+    <ExpandableList
+      className="flex-1 min-h-0 flex flex-col"
+      inlineMaxHeightClass={getSettingsInlineListMaxHeightClass(layoutMode)}
+      icon={<Ear size={16} className="text-[rgb(var(--accent))]" />}
+      title={SPEECH_CARD_COPY.sttModelsTitle}
+      modalSubtitle={SPEECH_CARD_COPY.sttModelsSubtitle}
+      expandLabel={SPEECH_CARD_COPY.expandStt}
+      ariaLabel={SPEECH_CARD_COPY.sttModelsAria}
+      headerActions={<SettingsCommitControls domainId="speech" layoutMode={layoutMode} />}
+      modalContent={() => <SttModelsModal {...props} />}
+    >
       <div
         className={cn(
           "flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1",
@@ -88,8 +108,8 @@ export const SttModelList = memo(
           })}
         </div>
       </div>
-    );
-  }
-);
+    </ExpandableList>
+  );
+});
 
 SttModelList.displayName = "SttModelList";
