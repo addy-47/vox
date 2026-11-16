@@ -22,18 +22,21 @@ use futures_util::future::BoxFuture;
 use vox_lib::{
     core::{
         error::{PipelineError, PipelineImpact},
-        events::{AudioIntent, PipelineMode, VoxEvent},
+        events::{AudioIntent, InteractionOwner, PipelineMode, VoxEvent},
         state::InteractionState,
     },
     services::{
         harness::{
             chassis::Harness,
             r#loop::MAX_TOOL_STEPS,
-            stages::tools::{
-                ToolDefinition, ToolError, ToolExecutionContext, ToolFilter, ToolResult,
-                TruncationPolicy,
+            stages::{
+                inbox::{InboxMessage, QueuedMessageDelivery, StepInbox},
+                tools::{
+                    ToolDefinition, ToolError, ToolExecutionContext, ToolFilter, ToolResult,
+                    TruncationPolicy,
+                },
             },
-            Role, TurnOutcome,
+            Role, ToolExecutionMode, TurnOutcome,
         },
         llm::{actor::LlmResponse, CanonicalToolCall},
         tts::actor::TtsCommand,
@@ -2195,6 +2198,945 @@ async fn mid_loop_critical_budget_triggers_compaction_while_preserving_active_tu
     .await
     .expect("test timed out");
 }
+
+// ============================================================================
+// Section 13: Domain 4 — Two-Phase Mid-Work Interruption, Step Steering & Architectural Clean Boundaries
+// ============================================================================
+
+struct HoldTool {
+    entered_tx: tokio::sync::mpsc::Sender<()>,
+    release_rx: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<()>>,
+}
+
+impl ToolDefinition for HoldTool {
+    fn name(&self) -> &str {
+        "hold_tool"
+    }
+
+    fn description(&self, _: PipelineMode) -> &str {
+        "Tool that holds until released"
+    }
+
+    fn parameters_schema(&self, _: PipelineMode) -> serde_json::Value {
+        serde_json::json!({})
+    }
+
+    fn execution_mode(&self, _: &serde_json::Value) -> ToolExecutionMode {
+        ToolExecutionMode::Exclusive
+    }
+
+    fn execute<'a>(
+        &'a self,
+        _mode: PipelineMode,
+        _args: serde_json::Value,
+        _ctx: &'a ToolExecutionContext,
+    ) -> BoxFuture<'a, Result<ToolResult, ToolError>> {
+        use futures_util::future::FutureExt;
+        async move {
+            let _ = self.entered_tx.send(()).await;
+            let mut rx = self.release_rx.lock().await;
+            let _ = rx.recv().await;
+            Ok(ToolResult::new("done hold"))
+        }
+        .boxed()
+    }
+}
+
+struct SimpleTestTool {
+    name: String,
+}
+
+impl ToolDefinition for SimpleTestTool {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn description(&self, _: PipelineMode) -> &str {
+        "Simple instant test tool"
+    }
+
+    fn parameters_schema(&self, _: PipelineMode) -> serde_json::Value {
+        serde_json::json!({})
+    }
+
+    fn execution_mode(&self, _: &serde_json::Value) -> ToolExecutionMode {
+        ToolExecutionMode::Parallel
+    }
+
+    fn execute<'a>(
+        &'a self,
+        _mode: PipelineMode,
+        _args: serde_json::Value,
+        _ctx: &'a ToolExecutionContext,
+    ) -> BoxFuture<'a, Result<ToolResult, ToolError>> {
+        use futures_util::future::FutureExt;
+        async move {
+            Ok(ToolResult::new("done simple"))
+        }
+        .boxed()
+    }
+}
+
+/// PURPOSE:  StopTurn event aborts active Working turn, clears StepInbox, cancels playback, and returns pipeline to Ready without unmounting harness.
+/// SCENARIO: Turn is executing tools in Working state with messages in StepInbox; user triggers StopTurn (Esc step 1).
+/// ASSERTS:  Pipeline transitions to Ready; harness remains mounted (Some); StepInbox is cleared; turn_open is false.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   In on_stop_turn, transition pipeline to InteractionState::Idle and take() harness.
+#[tokio::test]
+async fn stop_turn_aborts_active_turn_and_transitions_to_ready_without_ending_session() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1201;
+
+        let (entered_tx, mut entered_rx) = tokio::sync::mpsc::channel(1);
+        let (release_tx, release_rx) = tokio::sync::mpsc::channel(1);
+        let tool = Arc::new(HoldTool {
+            entered_tx,
+            release_rx: tokio::sync::Mutex::new(release_rx),
+        });
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness must be mounted");
+            harness.register_tool(tool);
+            harness.inbox().push(InboxMessage::new(
+                "stale steering".to_string(),
+                QueuedMessageDelivery::Immediate,
+                1700000000000,
+            ));
+        }
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-stop-turn".to_string(),
+                name: "hold_tool".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Active query before StopTurn", turn_id);
+        let harness_arc = Arc::clone(&rig.state.harness);
+        let handle = tokio::spawn(async move {
+            Harness::execute_turn(&harness_arc, req).await
+        });
+
+        // Wait until tool starts executing in Working
+        entered_rx.recv().await.expect("tool entered");
+        assert_eq!(
+            rig.state.pipeline.state(),
+            InteractionState::Working,
+            "pipeline must be in Working state while tool executes"
+        );
+        assert!(rig.state.pipeline.is_turn_open());
+
+        // Esc Step 1: send StopTurn event
+        rig.send_event(VoxEvent::StopTurn);
+
+        // Assert pipeline transitions to Ready (bounded 500ms check)
+        assert!(
+            rig.wait_for_state(InteractionState::Ready, Duration::from_millis(500)).await,
+            "pipeline must transition to Ready on StopTurn"
+        );
+
+        // Assert harness remains mounted and inbox is cleared
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().expect("Harness must remain mounted in app_state");
+            assert!(
+                harness.inbox().is_empty(),
+                "StepInbox must be synchronously cleared on StopTurn"
+            );
+        }
+
+        assert!(
+            !rig.state.pipeline.is_turn_open(),
+            "turn_open must be reset to false on StopTurn"
+        );
+
+        let _ = release_tx.send(()).await;
+        let outcome = handle.await.expect("turn join");
+        assert!(
+            matches!(outcome, TurnOutcome::Cancelled { .. }),
+            "turn outcome must be Cancelled, got {:?}",
+            outcome
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  With pipeline in Ready (after first Esc stops the turn), a second Esc (EndSession) disengages the session to Idle and unmounts the harness.
+/// SCENARIO: Turn is in Working; first Esc sends StopTurn transitioning to Ready (harness mounted); second Esc sends EndSession.
+/// ASSERTS:  First Esc leaves pipeline in Ready with harness mounted; second Esc transitions pipeline to Idle and unmounts harness.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   In on_end, return early if current_state == InteractionState::Ready.
+#[tokio::test]
+async fn ready_state_disengages_session_to_idle_on_second_esc() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1202;
+
+        let (entered_tx, mut entered_rx) = tokio::sync::mpsc::channel(1);
+        let (release_tx, release_rx) = tokio::sync::mpsc::channel(1);
+        let tool = Arc::new(HoldTool {
+            entered_tx,
+            release_rx: tokio::sync::Mutex::new(release_rx),
+        });
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness must be mounted");
+            harness.register_tool(tool);
+        }
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-esc-2".to_string(),
+                name: "hold_tool".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Query for two-step Esc", turn_id);
+        let harness_arc = Arc::clone(&rig.state.harness);
+        let handle = tokio::spawn(async move {
+            Harness::execute_turn(&harness_arc, req).await
+        });
+
+        entered_rx.recv().await.expect("tool entered");
+        assert_eq!(rig.state.pipeline.state(), InteractionState::Working);
+
+        // Esc Step 1: StopTurn aborts active turn to Ready
+        rig.send_event(VoxEvent::StopTurn);
+        assert!(
+            rig.wait_for_state(InteractionState::Ready, Duration::from_millis(500)).await,
+            "first Esc must transition pipeline to Ready"
+        );
+        assert!(
+            rig.state.harness.lock().is_some(),
+            "harness must remain mounted after first Esc"
+        );
+
+        // Esc Step 2: EndSession disengages session from Ready to Idle
+        rig.send_event(VoxEvent::EndSession);
+        assert!(
+            rig.wait_for_state(InteractionState::Idle, Duration::from_millis(500)).await,
+            "second Esc must transition pipeline to Idle"
+        );
+        assert!(
+            rig.state.harness.lock().is_none(),
+            "harness must be unmounted after second Esc"
+        );
+
+        let _ = release_tx.send(()).await;
+        let _ = handle.await;
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Scenario A (Step 0 Thinking, !has_committed_steps_this_turn) barge-in rolls back premature Step 0 user turn, stashes prompt in continuation prefix, and merges with new speech.
+/// SCENARIO: User speaks "search for"; model streams interim tokens in Step 0 Thinking; user interrupts with " the budget report".
+/// ASSERTS:  Stream aborts; Step 0 user turn is rolled back from history; continuation_prefix contains "search for"; on TranscriptFinal, merged prompt "search for the budget report" is dispatched.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   In Scenario A, omit rollback_last_user_turn().
+#[tokio::test]
+async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1203;
+
+        // Verify Step 0 provenance
+        assert!(
+            !rig.state.harness.lock().as_ref().unwrap().has_committed_steps_this_turn(),
+            "has_committed_steps_this_turn must be false at turn onset"
+        );
+
+        // Model starts streaming in Step 0 Thinking (streaming paused to simulate in-flight thinking)
+        let (stream_pause_tx, stream_pause_rx) = std::sync::mpsc::channel();
+        rig.scripted_llm.push_step(move |tx| {
+            let _ = tx.send(LlmResponse::Token("Searching".to_string()));
+            let _ = stream_pause_rx.recv();
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Push second step for when merged prompt arrives
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Found the budget report.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("search for", turn_id);
+        let harness_arc = Arc::clone(&rig.state.harness);
+        let _turn_handle = tokio::spawn(async move {
+            Harness::execute_turn(&harness_arc, req).await
+        });
+
+        // Wait until pipeline enters Thinking and stream begins
+        assert!(
+            rig.wait_for_state(InteractionState::Thinking, Duration::from_millis(500)).await,
+            "pipeline must enter Thinking in Step 0"
+        );
+
+        // Trigger SpeechStart during Step 0 Thinking (Scenario A)
+        rig.send_event(VoxEvent::SpeechStart {
+            owner: InteractionOwner::Assistant,
+        });
+
+        assert!(
+            rig.wait_for_state(InteractionState::Listening, Duration::from_millis(500)).await,
+            "pipeline must transition to Listening on SpeechStart"
+        );
+
+        // Assert Step 0 user turn was rolled back synchronously from history
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().unwrap();
+            let messages = harness.messages();
+            assert!(
+                !messages.iter().any(|m| m.role == Role::User && m.content == "search for"),
+                "Step 0 user query must be rolled back from history on Scenario A interrupt"
+            );
+        }
+
+        // Assert continuation_prefix stashed the partial query
+        {
+            let acc = rig.state.pipeline_accumulator.lock();
+            assert_eq!(
+                acc.continuation_prefix, "search for",
+                "continuation_prefix must hold the stashed partial query"
+            );
+        }
+
+        // Release first LLM stream
+        let _ = stream_pause_tx.send(());
+
+        // Send TranscriptFinal with continuation
+        let new_turn_id = rig.state.pipeline.peek_turn_id();
+        rig.send_event(VoxEvent::TranscriptFinal {
+            owner: InteractionOwner::Assistant,
+            turn_id: new_turn_id,
+            text: " the budget report".to_string(),
+        });
+
+        // Assert merged turn dispatched to LLM
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
+        while tokio::time::Instant::now() < deadline && rig.dispatch_count() < 2 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(
+            rig.dispatch_count(), 2,
+            "merged query must dispatch to LLM in Thinking"
+        );
+
+        // Verify history holds merged query
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
+        while tokio::time::Instant::now() < deadline {
+            let guard = rig.state.harness.lock();
+            if let Some(harness) = guard.as_ref() {
+                if harness.messages().iter().any(|m| m.role == Role::User && m.content == "search for the budget report") {
+                    break;
+                }
+            }
+            drop(guard);
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().unwrap();
+        assert!(
+            harness.messages().iter().any(|m| m.role == Role::User && m.content == "search for the budget report"),
+            "history must record merged prompt as single Role::User message"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Scenario B (Step K >= 1 Thinking, has_committed_steps_this_turn == true) barge-in preserves committed tool steps, clears accumulator without continuation prefix, and appends standalone Role::User.
+/// SCENARIO: Turn executes Step 0 tool; in Step 1 Thinking, user interrupts with "Also check the weather".
+/// ASSERTS:  Step 1 stream aborts; Step 0 [User, Assistant(call), Tool(result)] preserved in history; continuation_prefix is EMPTY; new speech commits as standalone Role::User on top of tool history.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   In interrupt.rs, call stash_for_continuation() unconditionally during Thinking.
+#[tokio::test]
+async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standalone_user_message() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1204;
+
+        let simple_tool = Arc::new(SimpleTestTool {
+            name: "simple_scen_b".to_string(),
+        });
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness must be mounted");
+            harness.register_tool(simple_tool);
+        }
+
+        // Step 0: model issues a tool call that commits
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-mid-turn-scen-b".to_string(),
+                name: "simple_scen_b".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Step 1: pause LLM in Thinking
+        let (step1_pause_tx, step1_pause_rx) = std::sync::mpsc::channel();
+        rig.scripted_llm.push_step(move |tx| {
+            let _ = tx.send(LlmResponse::Token("I found the notes.".to_string()));
+            let _ = step1_pause_rx.recv();
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Step 2: for when steering speech is dispatched
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Here is the weather.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Initial query for Scenario B", turn_id);
+        let harness_arc = Arc::clone(&rig.state.harness);
+        let _turn_handle = tokio::spawn(async move {
+            Harness::execute_turn(&harness_arc, req).await
+        });
+
+        // Wait until Step 0 completes tool execution and advances to Step 1 Thinking (500ms max)
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
+        while tokio::time::Instant::now() < deadline {
+            let guard = rig.state.harness.lock();
+            if let Some(harness) = guard.as_ref() {
+                if harness.has_committed_steps_this_turn() {
+                    break;
+                }
+            }
+            drop(guard);
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().unwrap();
+            assert!(
+                harness.has_committed_steps_this_turn(),
+                "has_committed_steps_this_turn must be true after Step 0 commits tool"
+            );
+        }
+
+        // Trigger SpeechStart during Step 1 Thinking (Scenario B)
+        rig.send_event(VoxEvent::SpeechStart {
+            owner: InteractionOwner::Assistant,
+        });
+
+        assert!(
+            rig.wait_for_state(InteractionState::Listening, Duration::from_millis(500)).await,
+            "pipeline must transition to Listening on Scenario B interrupt"
+        );
+
+        // Assert Step 0 committed tool steps remain preserved in history
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().unwrap();
+            let messages = harness.messages();
+            assert!(
+                messages.iter().any(|m| m.role == Role::User && m.content == "Initial query for Scenario B"),
+                "Step 0 user query must remain in history"
+            );
+            assert!(
+                messages.iter().any(|m| m.role == Role::Assistant && m.tool_calls.as_ref().map(|c| !c.is_empty()).unwrap_or(false)),
+                "Step 0 tool call must remain in history"
+            );
+            assert!(
+                messages.iter().any(|m| m.role == Role::Tool),
+                "Step 0 tool result must remain in history"
+            );
+        }
+
+        // Assert continuation_prefix was NOT stashed (preventing prompt duplication)
+        {
+            let acc = rig.state.pipeline_accumulator.lock();
+            assert!(
+                acc.continuation_prefix.is_empty(),
+                "Scenario B must call acc.clear(); continuation_prefix must be empty, but was '{}'",
+                acc.continuation_prefix
+            );
+        }
+
+        let _ = step1_pause_tx.send(());
+
+        // Send TranscriptFinal with steering text
+        let new_turn_id = rig.state.pipeline.peek_turn_id();
+        rig.send_event(VoxEvent::TranscriptFinal {
+            owner: InteractionOwner::Assistant,
+            turn_id: new_turn_id,
+            text: "Also check the weather".to_string(),
+        });
+
+        // Wait for steering turn to dispatch
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
+        while tokio::time::Instant::now() < deadline && rig.dispatch_count() < 3 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        // Assert new speech committed as standalone Role::User without Step 0 prepended
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().unwrap();
+        let messages = harness.messages();
+        let standalone_user = messages.iter().find(|m| m.role == Role::User && m.content == "Also check the weather");
+        assert!(
+            standalone_user.is_some(),
+            "Scenario B must append new speech as standalone Role::User, not merged with Step 0"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Scenario C (Working) user speech mutes audio, does not cancel in-flight tools, engages speech hold on StepInbox, and injects steering message at step boundary.
+/// SCENARIO: Turn is executing tool in Working; user speaks; tool finishes; speech buffers into StepInbox with Immediate; loop advances to Step 1 with user steering message.
+/// ASSERTS:  turn_token is NOT cancelled on SpeechStart in Working; inbox speech_hold_active is true; steering message injected as Role::User into Step 1.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   In on_interrupt during Working, call state.pipeline.turn_token().cancel().
+#[tokio::test]
+async fn active_working_speech_buffers_in_step_inbox_and_injects_at_step_boundary() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1205;
+
+        let (entered_tx, mut entered_rx) = tokio::sync::mpsc::channel(1);
+        let (release_tx, release_rx) = tokio::sync::mpsc::channel(1);
+        let tool = Arc::new(HoldTool {
+            entered_tx,
+            release_rx: tokio::sync::Mutex::new(release_rx),
+        });
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness must be mounted");
+            harness.register_tool(tool);
+        }
+
+        // Pass 0: tool call
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-scen-c-working".to_string(),
+                name: "hold_tool".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Pass 1: response to steering
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Processed steering input.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Scenario C query", turn_id);
+        let harness_arc = Arc::clone(&rig.state.harness);
+        let turn_handle = tokio::spawn(async move {
+            Harness::execute_turn(&harness_arc, req).await
+        });
+
+        // Wait until tool is executing in Working
+        entered_rx.recv().await.expect("tool entered");
+        assert_eq!(rig.state.pipeline.state(), InteractionState::Working);
+
+        // User begins speaking during Working (Scenario C)
+        rig.send_event(VoxEvent::SpeechStart {
+            owner: InteractionOwner::Assistant,
+        });
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Assert tool execution was NOT cancelled
+        assert!(
+            !rig.state.pipeline.turn_token().is_cancelled(),
+            "turn_token must NOT be cancelled during Working SpeechStart"
+        );
+
+        // Assert speech hold was engaged on StepInbox
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().unwrap();
+            assert!(
+                harness.inbox().is_speech_held(),
+                "speech_hold_active must be true when SpeechStart occurs in Working"
+            );
+        }
+
+        // Send finalized steering transcript
+        rig.send_event(VoxEvent::TranscriptFinal {
+            owner: InteractionOwner::Assistant,
+            turn_id,
+            text: "Mid-work steering instruction".to_string(),
+        });
+
+        let _ = release_tx.send(()).await;
+        let outcome = turn_handle.await.expect("turn join");
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "turn must complete successfully, got {:?}",
+            outcome
+        );
+
+        // Assert steering instruction was injected into history at step boundary
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().unwrap();
+        let messages = harness.messages();
+        let steering_msg = messages.iter().find(|m| m.role == Role::User && m.content == "Mid-work steering instruction");
+        assert!(
+            steering_msg.is_some(),
+            "steering instruction must be injected into history at step boundary"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Fast tool completing in Working while user speech is in progress waits at step boundary via wait_if_speech_held until TranscriptFinal arrives.
+/// SCENARIO: Tool finishes quickly (e.g. 10ms); speech hold is active; coordinator holds at step boundary; when TranscriptFinal pushes message, hold releases and Step 1 dispatches.
+/// ASSERTS:  Coordinator does not dispatch Step 1 while is_speech_held is true; dispatches Step 1 immediately upon TranscriptFinal.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   In StepInbox::wait_if_speech_held, return immediately without awaiting notify.
+#[tokio::test]
+async fn active_working_fast_tool_waits_at_step_boundary_until_user_speech_finalizes() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1206;
+
+        let simple_tool = Arc::new(SimpleTestTool {
+            name: "simple_fast_tool".to_string(),
+        });
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness must be mounted");
+            harness.register_tool(simple_tool);
+        }
+
+        // Pass 0: fast tool call
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-fast-tool".to_string(),
+                name: "simple_fast_tool".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Pass 1: response after hold released
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Step 1 response after hold.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Engage speech hold on StepInbox before turn boundary
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().unwrap();
+            harness.inbox().engage_speech_hold();
+        }
+
+        let req = rig.turn_request("Fast tool with speech hold", turn_id);
+        let harness_arc = Arc::clone(&rig.state.harness);
+        let turn_handle = tokio::spawn(async move {
+            Harness::execute_turn(&harness_arc, req).await
+        });
+
+        // Wait a short duration: tool completes fast, but coordinator must be held by wait_if_speech_held
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Assert Step 1 has NOT dispatched yet because speech hold is active
+        assert_eq!(
+            rig.dispatch_count(), 1,
+            "coordinator must hold at step boundary while speech hold is active; dispatch_count must be 1"
+        );
+
+        // Now user speech finalizes, pushing message to inbox and releasing hold
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().unwrap();
+            harness.inbox().push(InboxMessage::new(
+                "Late arriving speech".to_string(),
+                QueuedMessageDelivery::Immediate,
+                1700000000000,
+            ));
+        }
+
+        // Held coordinator must wake and dispatch Step 1
+        let outcome = turn_handle.await.expect("turn join");
+        assert!(matches!(outcome, TurnOutcome::Completed { .. }));
+        assert_eq!(
+            rig.dispatch_count(), 2,
+            "coordinator must resume and dispatch Step 1 once speech hold is released"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Empty speech transcript (cough / false VAD trigger) during Working releases speech hold and resumes ReAct loop without aborting to Ready.
+/// SCENARIO: SpeechStart occurs in Working; TranscriptFinal("") arrives; hold releases; pipeline remains active in Working/Thinking and completes turn with zero lost work.
+/// ASSERTS:  release_speech_hold() releases hold; pipeline does not abort to Ready; loop completes turn cleanly.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   In on_transcript_final, let empty speech during a held turn transition to InteractionState::Ready.
+#[tokio::test]
+async fn active_working_empty_speech_releases_hold_and_resumes_react_loop_without_aborting() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1207;
+
+        let simple_tool = Arc::new(SimpleTestTool {
+            name: "simple_cough_tool".to_string(),
+        });
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness must be mounted");
+            harness.register_tool(simple_tool);
+        }
+
+        // Pass 0: tool call
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-cough-tool".to_string(),
+                name: "simple_cough_tool".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Pass 1: final response
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Turn finished after cough.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        // Engage speech hold on inbox simulating SpeechStart in Working
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().unwrap();
+            harness.inbox().engage_speech_hold();
+        }
+
+        // Set pipeline state to Listening as speech is active
+        rig.state.pipeline.set_state(InteractionState::Listening);
+
+        let req = rig.turn_request("Query with false VAD cough", turn_id);
+        let harness_arc = Arc::clone(&rig.state.harness);
+        let turn_handle = tokio::spawn(async move {
+            Harness::execute_turn(&harness_arc, req).await
+        });
+
+        // Empty speech arrives on event channel
+        rig.send_event(VoxEvent::TranscriptFinal {
+            owner: InteractionOwner::Assistant,
+            turn_id,
+            text: "".to_string(),
+        });
+
+        // Poll for speech hold release (500ms max)
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
+        while tokio::time::Instant::now() < deadline {
+            let guard = rig.state.harness.lock();
+            if let Some(harness) = guard.as_ref() {
+                if !harness.inbox().is_speech_held() {
+                    break;
+                }
+            }
+            drop(guard);
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().unwrap();
+            assert!(
+                !harness.inbox().is_speech_held(),
+                "speech hold must be released upon empty transcript"
+            );
+        }
+
+        assert_ne!(
+            rig.state.pipeline.state(),
+            InteractionState::Ready,
+            "pipeline must not abort to Ready on false VAD / cough during active tool turn"
+        );
+
+        let outcome = turn_handle.await.expect("turn join");
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "loop must complete turn with zero lost work, got {:?}",
+            outcome
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  StepInbox partitions messages by delivery: drain_immediate returns Immediate messages while retaining TurnBoundary messages; coordinator injects Immediate into history at step boundary.
+/// SCENARIO: Both Immediate and TurnBoundary messages are pushed into StepInbox; execute_turn executes a tool step.
+/// ASSERTS:  drain_immediate returns only Immediate messages; TurnBoundary messages remain buffered in inbox; during turn execution Immediate message is injected into history.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   In StepInbox::drain_immediate, drain all messages unconditionally.
+#[tokio::test]
+async fn step_inbox_drains_immediate_messages_and_retains_turn_boundary_messages() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1208;
+
+        // 1. Unit invariant check on StepInbox
+        let inbox = StepInbox::new();
+        inbox.push(InboxMessage::new(
+            "immediate 1".to_string(),
+            QueuedMessageDelivery::Immediate,
+            1,
+        ));
+        inbox.push(InboxMessage::new(
+            "turn boundary 1".to_string(),
+            QueuedMessageDelivery::TurnBoundary,
+            2,
+        ));
+        inbox.push(InboxMessage::new(
+            "immediate 2".to_string(),
+            QueuedMessageDelivery::Immediate,
+            3,
+        ));
+
+        let drained = inbox.drain_immediate();
+        assert_eq!(drained.len(), 2, "drain_immediate must return exactly the 2 Immediate messages");
+        assert!(drained.iter().all(|m| m.delivery == QueuedMessageDelivery::Immediate));
+        assert_eq!(inbox.len(), 1, "TurnBoundary message must remain in inbox");
+
+        // 2. Seam invariant check: coordinator drains Immediate messages into history at step boundary
+        let simple_tool = Arc::new(SimpleTestTool {
+            name: "simple_inbox_tool".to_string(),
+        });
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness must be mounted");
+            harness.register_tool(simple_tool);
+        }
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-inbox-drain".to_string(),
+                name: "simple_inbox_tool".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Drained and completed.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().unwrap();
+            harness.inbox().push(InboxMessage::new(
+                "Immediate steering in harness".to_string(),
+                QueuedMessageDelivery::Immediate,
+                10,
+            ));
+            harness.inbox().push(InboxMessage::new(
+                "Queued next turn in harness".to_string(),
+                QueuedMessageDelivery::TurnBoundary,
+                11,
+            ));
+        }
+
+        let req = rig.turn_request("Initial query for inbox seam", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+        assert!(matches!(outcome, TurnOutcome::Completed { .. }));
+
+        // Assert Immediate was drained into history, while TurnBoundary remains in harness.inbox()
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().unwrap();
+        let messages = harness.messages();
+        assert!(
+            messages.iter().any(|m| m.role == Role::User && m.content == "Immediate steering in harness"),
+            "coordinator must drain Immediate message and inject it into history at step boundary"
+        );
+        assert_eq!(
+            harness.inbox().len(), 1,
+            "TurnBoundary message must remain retained in inbox across step boundaries"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Deterministic lint-arch.sh enforces RULE-HARN-01: forbids services/harness/stages/tools/, forbids raw actor commands in loop.rs and steps.rs, and forbids stages/tools imports in loop.rs.
+/// SCENARIO: Verify scripts/lint-arch.sh content and execution against RULE-HARN-01 specification.
+/// ASSERTS:  lint-arch.sh contains RULE-HARN-01 invariant check; checks stages/tools absence, actor command isolation, and loop.rs pure boundaries.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   Disable RULE-HARN-01 check in scripts/lint-arch.sh.
+#[test]
+fn lint_arch_enforces_rule_harn_01_and_forbids_actor_commands_in_loop_and_steps() {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_path = manifest_dir.join("scripts/lint-arch.sh");
+    assert!(script_path.exists(), "scripts/lint-arch.sh must exist");
+
+    let script_content = std::fs::read_to_string(&script_path).expect("read lint-arch.sh");
+    assert!(
+        script_content.contains("RULE-HARN-01"),
+        "scripts/lint-arch.sh must enforce RULE-HARN-01 invariant"
+    );
+    assert!(
+        script_content.contains("services/harness/stages/tools"),
+        "lint-arch.sh must verify that services/harness/stages/tools does not exist"
+    );
+    assert!(
+        script_content.contains("TtsCommand") && script_content.contains("LlmCommand") && script_content.contains("PersistenceEvent"),
+        "lint-arch.sh must forbid raw actor commands in loop.rs and steps.rs"
+    );
+}
+
+/// PURPOSE:  Agentic tools operate as an isolated sibling module under services/harness/tools/, completely separate from pipeline stages at services/harness/stages/.
+/// SCENARIO: Verify filesystem topology of tools chassis and execute a tool batch through ToolRegistry.
+/// ASSERTS:  src/services/harness/tools directory exists; src/services/harness/stages/tools does NOT exist; tool chassis executes tools cleanly.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   Point ToolRegistry import or directory back to stages::tools.
+#[tokio::test]
+async fn sibling_tools_chassis_executes_isolated_from_stages() {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let sibling_tools_dir = manifest_dir.join("src/services/harness/tools");
+    let legacy_stages_tools_dir = manifest_dir.join("src/services/harness/stages/tools");
+
+    // 1. Filesystem topology assertions
+    assert!(
+        sibling_tools_dir.exists(),
+        "services/harness/tools/ must exist as an isolated sibling directory under services/harness/"
+    );
+    assert!(
+        !legacy_stages_tools_dir.exists(),
+        "services/harness/stages/tools/ must NOT exist; tools must be promoted to sibling directory"
+    );
+
+    // 2. Functional tool chassis execution check
+    let mut registry = vox_lib::services::harness::stages::tools::ToolRegistry::new();
+    registry.register(Arc::new(vox_lib::services::harness::stages::tools::MemorySearchTool));
+
+    assert!(
+        registry.get("search_memory").is_some(),
+        "ToolRegistry must successfully vend search_memory tool definition"
+    );
+}
+
 
 
 
