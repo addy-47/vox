@@ -1,5 +1,48 @@
 # Phase 14 Work Log
 
+## 2026-11-16 — Domain 4: Interruption, Steering & Two-Step Disengage (Phase 3: Batches 1, 2 & 3)
+
+- **Phase 3 Batch 1: 4-Tier Cognitive Boundary Refactor & Tool Sibling Promotion (`7ddce6dd3`)**:
+  - Promoted `tools/` from `stages/tools/` to sibling directory `services/harness/tools/`.
+  - Implemented Tier 4 dispatchers: `stages/speech.rs` (`dispatch_tts_filler`, `dispatch_tts_response`), `stages/dispatch.rs` (`dispatch_llm_generation`), `stages/persistence.rs` (`persist_step_and_tools`, `persist_cancelled_turn`), `stages/budget.rs` (step token estimators).
+  - Slimmed `steps.rs` (Tier 3) and `loop.rs` (Tier 2), eliminating raw actor commands (`TtsCommand`, `LlmCommand`, `PersistenceEvent`).
+  - Hardened `scripts/lint-arch.sh` with static verification rules enforcing `RULE-HARN-01`.
+- **Phase 3 Batch 2: Two-Step Esc & StopTurn UX (`9ef295929`)**:
+  - Implemented `stop_turn` Tauri IPC command in `ipc/pipeline.rs` routing `VoxEvent::StopTurn` via `state.event_tx`.
+  - Routed `VoxEvent::StopTurn` in `pipeline/assistant/mod.rs` to `session::on_stop_turn`.
+  - Implemented `on_stop_turn` in `pipeline/assistant/session.rs`: cancels audio playback, clears AEC queue, resets turn guards, synchronously clears inbox and rolls back uncommitted user turns under `state.harness.lock()`, and transitions pipeline to `Ready`.
+  - Frontend integration: exported `stopTurn()` in `pipelineService.ts`, wired `Escape` key in `Home.tsx` to two-step progression (close text bar $\to$ `stopTurn()` during active turns $\to$ `disengage()` when `Ready`), and added active-turn Stop button with `Square` icon in `HomeControls.tsx`.
+- **Phase 3 Batch 3: StepInbox & Scenario A/B/C Steering Engine (`9ef295929`)**:
+  - Extended `StepInbox` with atomic `speech_hold_active`, `tokio::sync::Notify`, and `wait_if_speech_held(&self, cancel: &CancellationToken)`.
+  - Implemented `intake_recorded_turn`, `commit_tool_step`, and idempotent `rollback_user_turn(turn_id)` on `Harness`.
+  - Refactored `pipeline/assistant/interrupt.rs` into 3 deterministic scenarios:
+    - *Scenario A* (Step 0 `Thinking`, `!has_committed_steps_this_turn`): rolls back user turn in history, stashes transcript for continuation, transitions to `Listening`.
+    - *Scenario B* (Step $K \ge 1$ `Thinking`, `has_committed_steps_this_turn`): cancels generation, preserves committed tool history, clears accumulator, transitions to `Listening`.
+    - *Scenario C* (`Working`): keeps active tools running to completion, engages speech hold on `StepInbox`, transitions to `Listening`.
+  - Implemented `on_transcript_final` steering in `transcript.rs`: empty speech releases speech hold back to `Working`; spoken text buffers into `StepInbox` as `Immediate` message.
+  - Implemented `step6_await_and_drain_inbox` in `steps.rs`: pauses at tool step boundaries when speech hold is active, drains queued messages into history, and transitions back to `Thinking`.
+  - Fixed `on_llm_finished` in `llm.rs` to clone assistant response rather than draining it, preventing race condition with accumulator test assertions.
+- **Phase 4: Mutation Testing Campaign (Remote 32-Core Server Verification)**:
+  - Executed full mutation campaign against all 10 deliberate mutants defined in `docs/plans/phase14/domain-4-plan.md` (§5 Phase 2b Table) on remote 32-core server (`hypr4@100.67.98.126`).
+  - Deliberately seeded mutants:
+    1. `stop_turn_aborts_active_turn_and_transitions_to_ready_without_ending_session`: transitioned to `Idle` and unmounted harness $\to$ KILLED (RED, 63.70s).
+    2. `ready_state_disengages_session_to_idle_on_second_esc`: returned early in `Ready` $\to$ KILLED (RED, 64.33s).
+    3. `pre_working_thinking_barge_in_aborts_stream_and_merges_prompt`: omitted `rollback_user_turn` $\to$ KILLED (RED, 63.78s).
+    4. `mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standalone_user_message`: seeded stashed continuation prefix in Scenario B $\to$ KILLED (RED, 63.75s).
+    5. `active_working_speech_buffers_in_step_inbox_and_injects_at_step_boundary`: called `turn_token().cancel()` during `Working` $\to$ KILLED (RED, 63.59s).
+    6. `active_working_fast_tool_waits_at_step_boundary_until_user_speech_finalizes`: returned immediately from `wait_if_speech_held` $\to$ KILLED (RED, 63.84s).
+    7. `active_working_empty_speech_releases_hold_and_resumes_react_loop_without_aborting`: transitioned to `Ready` on empty speech $\to$ KILLED (RED, 63.55s).
+    8. `step_inbox_drains_immediate_messages_and_retains_turn_boundary_messages`: drained all messages unconditionally $\to$ KILLED (RED, 63.64s).
+    9. `lint_arch_enforces_rule_harn_01_and_forbids_actor_commands_in_loop_and_steps`: added raw `TtsCommand` import $\to$ KILLED (RED, 0.97s).
+    10. `sibling_tools_chassis_executes_isolated_from_stages`: recreated `stages/tools` directory $\to$ KILLED (RED, 63.61s).
+  - All 10 mutants cleanly reverted using in-memory state preservation in `finally`.
+  - Baseline and final verification suites confirmed 100% GREEN (39/39 passing in 6.68s).
+  - Full report generated at `docs/plans/phase14/mutation_report.md` (10/10 killed, 100.0% kill rate).
+- **Verification**:
+  - `cd app/src-tauri && ./scripts/lint-arch.sh`: SUCCESS (all backend architectural invariants hold).
+  - `cd app/src-tauri && cargo test --test harness_loop_test --release -- --test-threads=1`: ALL 39 TESTS GREEN (100% passing).
+  - `cd app && pnpm exec tsc --noEmit`: 0 TypeScript errors.
+
 ## 2026-11-15 — Unified Model Hub (Batch 1: Speech Modals, Flow Banners & VAD Inline Refactor)
 
 - **Authored Implementation Plan & Checklist**:

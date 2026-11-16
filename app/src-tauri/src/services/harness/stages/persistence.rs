@@ -8,6 +8,7 @@ use crate::{
 pub type PersistenceSender = Sender<PersistenceEvent>;
 
 /// Persists parent StepCompleted record followed by child ToolCallExecuted records in strict FIFO order.
+#[allow(clippy::too_many_arguments)]
 pub fn persist_step_and_tools(
     persist_tx: Option<&Sender<PersistenceEvent>>,
     session_id: i64,

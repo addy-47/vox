@@ -323,6 +323,18 @@ if os.path.exists(legacy_tools_dir):
         "services/harness/stages/tools must not exist; tools must be promoted to sibling directory services/harness/tools",
     )
 
+stages_mod_path = os.path.join(src_dir, "services", "harness", "stages", "mod.rs")
+if os.path.exists(stages_mod_path):
+    with open(stages_mod_path, "r", encoding="utf-8", errors="ignore") as fp:
+        stages_mod_content = fp.read()
+    if "pub use crate::services::harness::tools" in stages_mod_content or "mod tools;" in stages_mod_content:
+        report_violation(
+            "RULE-HARN-01",
+            stages_mod_path,
+            1,
+            "services/harness/stages/mod.rs must not re-export or declare `tools`; tools must be an isolated sibling",
+        )
+
 for target_rel in ("services/harness/loop.rs", "services/harness/steps.rs"):
     target_path = os.path.join(src_dir, target_rel)
     if os.path.exists(target_path):

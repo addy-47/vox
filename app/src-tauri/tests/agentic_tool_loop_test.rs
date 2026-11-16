@@ -42,8 +42,8 @@ use vox_lib::{
             stages::{
                 prompt::PromptBuilderStage,
                 streaming::{StreamRoutingHandles, StreamRoutingStage},
-                tools::{ToolDomain, ToolError, ToolExecutionContext, ToolFilter, ToolRegistry},
             },
+            tools::{ToolDomain, ToolError, ToolExecutionContext, ToolFilter, ToolRegistry},
             Role, TurnExecutionRequest, TurnOutcome,
         },
         llm::{

@@ -381,17 +381,17 @@ async fn run_cases(
             // constants the production path uses (single source of truth).
             "retrieval_stack": {
                 "nexus_version": nexus::NEXUS_VERSION,
-                "engines": vox_lib::services::harness::stages::tools::web_search::default_engines()
+                "engines": vox_lib::services::harness::tools::web_search::default_engines()
                     .iter().map(|e| e.to_string()).collect::<Vec<_>>(),
                 "deadlines_ms": {
-                    "sparse": vox_lib::services::harness::stages::tools::web_search::TIMEOUT_SPARSE_MS,
-                    "dense": vox_lib::services::harness::stages::tools::web_search::TIMEOUT_DENSE_MS,
-                    "hybrid": vox_lib::services::harness::stages::tools::web_search::TIMEOUT_HYBRID_MS,
-                    "floor": vox_lib::services::harness::stages::tools::web_search::TIMEOUT_FLOOR_MS,
-                    "ceiling": vox_lib::services::harness::stages::tools::web_search::TIMEOUT_CEILING_MS,
+                    "sparse": vox_lib::services::harness::tools::web_search::TIMEOUT_SPARSE_MS,
+                    "dense": vox_lib::services::harness::tools::web_search::TIMEOUT_DENSE_MS,
+                    "hybrid": vox_lib::services::harness::tools::web_search::TIMEOUT_HYBRID_MS,
+                    "floor": vox_lib::services::harness::tools::web_search::TIMEOUT_FLOOR_MS,
+                    "ceiling": vox_lib::services::harness::tools::web_search::TIMEOUT_CEILING_MS,
                 },
-                "min_score": vox_lib::services::harness::stages::tools::web_search::DEFAULT_MIN_SCORE,
-                "fetch_candidates": vox_lib::services::harness::stages::tools::web_search::DEFAULT_FETCH_CANDIDATES,
+                "min_score": vox_lib::services::harness::tools::web_search::DEFAULT_MIN_SCORE,
+                "fetch_candidates": vox_lib::services::harness::tools::web_search::DEFAULT_FETCH_CANDIDATES,
             },
         }),
     )?;

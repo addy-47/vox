@@ -29,12 +29,10 @@ use vox_lib::{
         harness::{
             chassis::Harness,
             r#loop::MAX_TOOL_STEPS,
-            stages::{
-                inbox::{InboxMessage, QueuedMessageDelivery, StepInbox},
-                tools::{
-                    ToolDefinition, ToolError, ToolExecutionContext, ToolFilter, ToolResult,
-                    TruncationPolicy,
-                },
+            stages::inbox::{InboxMessage, QueuedMessageDelivery, StepInbox},
+            tools::{
+                ToolDefinition, ToolError, ToolExecutionContext, ToolFilter, ToolResult,
+                TruncationPolicy,
             },
             Role, ToolExecutionMode, TurnOutcome,
         },
@@ -1933,8 +1931,13 @@ async fn oversized_tool_observation_spills_to_tier4_cache_and_commits_head_tail_
         // Verify Tier 4 spillover file exists on disk
         let spillover_file = vox_lib::utils::paths::session_tool_outputs_dir(rig.session_id)
             .join(format!("{}.txt", call_id));
+        let mut exists = spillover_file.exists();
+        if !exists {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            exists = spillover_file.exists();
+        }
         assert!(
-            spillover_file.exists(),
+            exists,
             "Spillover cache file must exist at {:?}",
             spillover_file
         );
@@ -2537,13 +2540,20 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
         // Verify history holds merged query
         let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
         while tokio::time::Instant::now() < deadline {
-            let guard = rig.state.harness.lock();
-            if let Some(harness) = guard.as_ref() {
-                if harness.messages().iter().any(|m| m.role == Role::User && m.content == "search for the budget report") {
-                    break;
-                }
+            let found = {
+                let guard = rig.state.harness.lock();
+                guard
+                    .as_ref()
+                    .map(|h| {
+                        h.messages()
+                            .iter()
+                            .any(|m| m.role == Role::User && m.content == "search for the budget report")
+                    })
+                    .unwrap_or(false)
+            };
+            if found {
+                break;
             }
-            drop(guard);
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         let guard = rig.state.harness.lock();
@@ -2611,13 +2621,16 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
         // Wait until Step 0 completes tool execution and advances to Step 1 Thinking (500ms max)
         let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
         while tokio::time::Instant::now() < deadline {
-            let guard = rig.state.harness.lock();
-            if let Some(harness) = guard.as_ref() {
-                if harness.has_committed_steps_this_turn() {
-                    break;
-                }
+            let committed = {
+                let guard = rig.state.harness.lock();
+                guard
+                    .as_ref()
+                    .map(|h| h.has_committed_steps_this_turn())
+                    .unwrap_or(false)
+            };
+            if committed {
+                break;
             }
-            drop(guard);
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
 
@@ -2947,13 +2960,16 @@ async fn active_working_empty_speech_releases_hold_and_resumes_react_loop_withou
         // Poll for speech hold release (500ms max)
         let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
         while tokio::time::Instant::now() < deadline {
-            let guard = rig.state.harness.lock();
-            if let Some(harness) = guard.as_ref() {
-                if !harness.inbox().is_speech_held() {
-                    break;
-                }
+            let released = {
+                let guard = rig.state.harness.lock();
+                guard
+                    .as_ref()
+                    .map(|h| !h.inbox().is_speech_held())
+                    .unwrap_or(false)
+            };
+            if released {
+                break;
             }
-            drop(guard);
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
 
@@ -3128,8 +3144,8 @@ async fn sibling_tools_chassis_executes_isolated_from_stages() {
     );
 
     // 2. Functional tool chassis execution check
-    let mut registry = vox_lib::services::harness::stages::tools::ToolRegistry::new();
-    registry.register(Arc::new(vox_lib::services::harness::stages::tools::MemorySearchTool));
+    let mut registry = vox_lib::services::harness::tools::ToolRegistry::new();
+    registry.register(Arc::new(vox_lib::services::harness::tools::MemorySearchTool));
 
     assert!(
         registry.get("search_memory").is_some(),

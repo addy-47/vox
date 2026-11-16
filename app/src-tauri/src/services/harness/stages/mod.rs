@@ -23,10 +23,4 @@ pub use persistence::{persist_cancelled_turn, persist_step_and_tools};
 pub use prompt::PromptBuilderStage;
 pub use speech::{dispatch_tts_filler, dispatch_tts_response};
 pub use streaming::{ClauseChunker, StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage};
-pub use crate::services::harness::tools;
-pub use crate::services::harness::tools::{
-    MemorySearchTool, SetSessionTitleTool, SetTitleTool, ToolControlAction, ToolDefinition,
-    ToolDomain, ToolError, ToolExecutionContext, ToolExecutionMode, ToolExecutionOutcome,
-    ToolExecutor, ToolFilter, ToolRegistry, ToolResult, TruncationPolicy,
-};
 pub use truncation::TruncationStage;

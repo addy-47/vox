@@ -1,3 +1,5 @@
+use std::sync::atomic::Ordering;
+
 use tauri::AppHandle;
 
 use crate::{
@@ -64,6 +66,7 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
     {
         super::interrupt::on_interrupt(app, state, ctx)
     } else if current_state == InteractionState::Ready {
+        state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
         let (new_turn_id, _) = state.pipeline.next_turn();
         state.pipeline_accumulator.lock().clear();
         state.turn_metrics.start_turn(new_turn_id);

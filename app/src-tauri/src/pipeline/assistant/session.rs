@@ -591,6 +591,7 @@ pub fn on_stop_turn<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rout
         }
     }
 
+    state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
     transition(InteractionState::Ready, None, ctx, app, state);
     log::info!("[Pipeline::Session] Turn stopped -> Ready");
 }
