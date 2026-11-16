@@ -6,40 +6,19 @@ use std::sync::{
 use parking_lot::Mutex;
 use tokio::spawn as spawn_task;
 
-use crate::{
-    core::events::{AudioIntent, PipelineMode, VoxEvent},
-    services::{
-        harness::{
-            chassis::Harness,
-            stages::{
-                budget::ContextStatus,
-                streaming::{
-                    StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage, TextNormalizer,
-                },
-                tools::{ToolFilter, ToolRegistry},
-            },
-            steps::{
-                step1_intake, step3_execute_compaction, step4_assemble_request, step5_dispatch_llm,
-                step6_execute_tool_batch, step6_run_stream_pass,
-                step7_commit_completed, step7_handle_cancelled, step7_handle_error,
-                CancelledTurnContext, IntakeResult,
-            },
-            TurnExecutionRequest, TurnOutcome,
-        },
-        tts::TtsCommand,
+use crate::services::harness::{
+    chassis::Harness,
+    steps::{
+        step1_intake, step3_check_and_run_loop_budget, step3_execute_compaction,
+        step4_assemble_request, step5_dispatch_llm, step6_execute_tool_batch,
+        step6_run_stream_pass, step7_commit_completed, step7_commit_suspended_question,
+        step7_handle_cancelled, step7_handle_error, IntakeResult, StreamPassOutcome,
+        StreamRoutingHandles, StreamRoutingStage, TurnLoopContext,
     },
+    TurnExecutionRequest, TurnOutcome,
 };
 
 pub const MAX_TOOL_STEPS: usize = 20;
-
-pub struct TurnLoopContext<'a> {
-    pub harness_arc: &'a Arc<Mutex<Option<Harness>>>,
-    pub req: &'a TurnExecutionRequest,
-    pub stream_stage: &'a StreamRoutingStage,
-    pub stream_handles: &'a StreamRoutingHandles,
-    pub tool_registry: &'a ToolRegistry,
-    pub session_id: i64,
-}
 
 enum LoopAction {
     Terminal(TurnOutcome),
@@ -84,25 +63,6 @@ async fn run_cognitive_loop(
     stream_stage: StreamRoutingStage,
     turn_id: u32,
 ) -> TurnOutcome {
-    let (tool_registry, supports_tools) = {
-        let guard = harness_arc.lock();
-        let Some(ref harness) = *guard else {
-            return TurnOutcome::Error {
-                turn_id,
-                message: "Harness unmounted during execution".to_string(),
-            };
-        };
-        (harness.tool_registry.clone(), harness.supports_tools)
-    };
-    log::info!(
-        "[Harness::Loop] Turn {} cognitive loop: supports_tools={} registered_tools={}",
-        turn_id,
-        supports_tools,
-        tool_registry
-            .canonical_definitions(PipelineMode::Modular)
-            .len()
-    );
-
     let Some(ref pipeline_tx) = req.pipeline_tx else {
         return step7_handle_error(
             harness_arc,
@@ -133,14 +93,25 @@ async fn run_cognitive_loop(
     };
 
     let session_id = req.app_state.conversation_id.load(Relaxed) as i64;
-    let loop_ctx = TurnLoopContext {
+    let (loop_ctx, supports_tools) = match TurnLoopContext::new(
         harness_arc,
-        req: &req,
-        stream_stage: &stream_stage,
-        stream_handles: &stream_handles,
-        tool_registry: &tool_registry,
+        &req,
+        &stream_stage,
+        &stream_handles,
         session_id,
+    ) {
+        Ok(ctx_and_tools) => ctx_and_tools,
+        Err(outcome) => {
+            cancel_bridge.abort();
+            return outcome;
+        }
     };
+
+    log::info!(
+        "[Harness::Loop] Turn {} cognitive loop: supports_tools={}",
+        turn_id,
+        supports_tools,
+    );
 
     let outcome = execute_loop_iterations(&loop_ctx, supports_tools, &cancel_atomic).await;
     cancel_bridge.abort();
@@ -173,24 +144,23 @@ async fn execute_loop_iterations(
                 .lock()
                 .assistant_response
                 .clone();
-            return step7_handle_cancelled(cancelled_ctx(ctx, partial));
+            return step7_handle_cancelled(ctx.cancelled_ctx(partial));
         }
 
-        check_loop_budget(ctx, allow_tools, iteration).await;
+        step3_check_and_run_loop_budget(ctx, allow_tools, iteration).await;
 
         // === STEP 4: Assemble Generation Request ===
-        let generation_request =
-            match step4_assemble_request(ctx.harness_arc, turn_id, allow_tools) {
-                Ok(req_obj) => req_obj,
-                Err(e) => {
-                    return step7_handle_error(
-                        ctx.harness_arc,
-                        turn_id,
-                        e,
-                        Some(&ctx.stream_handles.event_tx),
-                    )
-                }
-            };
+        let generation_request = match step4_assemble_request(ctx.harness_arc, turn_id, allow_tools) {
+            Ok(req_obj) => req_obj,
+            Err(e) => {
+                return step7_handle_error(
+                    ctx.harness_arc,
+                    turn_id,
+                    e,
+                    Some(&ctx.stream_handles.event_tx),
+                );
+            }
+        };
 
         // === STEP 5: Dispatch Request to Duplex LLM Pipe ===
         ctx.req.app_state.turn_metrics.record_llm_dispatch();
@@ -207,7 +177,7 @@ async fn execute_loop_iterations(
                     turn_id,
                     err,
                     Some(&ctx.stream_handles.event_tx),
-                )
+                );
             }
         };
 
@@ -255,7 +225,7 @@ async fn execute_loop_iterations(
                     turn_id,
                     err,
                     Some(&ctx.stream_handles.event_tx),
-                )
+                );
             }
         }
     }
@@ -266,71 +236,6 @@ async fn execute_loop_iterations(
         "Exceeded max tool iterations without terminal response".to_string(),
         Some(&ctx.stream_handles.event_tx),
     )
-}
-
-/// Evaluates context budget including history and tool schemas, triggering inline compaction at critical threshold.
-async fn check_loop_budget(
-    ctx: &TurnLoopContext<'_>,
-    allow_tools: bool,
-    iteration: usize,
-) {
-    let (should_compact, total_tokens) = {
-        let guard = ctx.harness_arc.lock();
-        if let Some(ref harness) = *guard {
-            if let Some(ref budget) = harness.budget {
-                let tools = if allow_tools && harness.supports_tools {
-                    let filter = ToolFilter {
-                        mode: PipelineMode::Modular,
-                        title_is_unset: !harness.title_set,
-                        memory_retrieval_enabled: harness.memory_retrieval_enabled,
-                        web_search_enabled: harness.web_search_enabled,
-                    };
-                    Some(harness.tool_registry.active_definitions(&filter))
-                } else {
-                    None
-                };
-                let total_tokens = budget.calculate_tracked_tokens_with_extras(
-                    harness.history.messages(),
-                    tools.as_deref(),
-                );
-                let (utilization, status) = budget.evaluate_utilization(total_tokens);
-                log::debug!(
-                    "[Harness::Loop] Loop budget (turn {}, iter {}): tokens={}, util={:.1}%, status={:?}",
-                    ctx.req.turn_id,
-                    iteration,
-                    total_tokens,
-                    utilization * 100.0,
-                    status
-                );
-                ctx.req
-                    .app_state
-                    .turn_metrics
-                    .record_context_budget(total_tokens, budget.max_context_tokens());
-                let can_compact = status == ContextStatus::Critical
-                    && harness
-                        .compaction
-                        .as_ref()
-                        .map(|c| c.can_perform_inline_compaction(harness.history.messages().len()))
-                        .unwrap_or(false);
-
-                (can_compact, total_tokens)
-            } else {
-                (false, 0)
-            }
-        } else {
-            (false, 0)
-        }
-    };
-
-    if should_compact {
-        log::info!(
-            "[Harness::Loop] Mid-loop critical budget triggered inline compaction (turn {}, iter {}, tokens {})",
-            ctx.req.turn_id,
-            iteration,
-            total_tokens
-        );
-        step3_execute_compaction(ctx.harness_arc, ctx.req).await;
-    }
 }
 
 /// Processes single-pass stream outcomes and branches to terminal resolution or reentrant looping.
@@ -353,21 +258,29 @@ async fn handle_pass_outcome(
                 assistant_text.len()
             );
             if cancel_atomic.load(Relaxed) {
-                (LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, assistant_text))), false)
+                (
+                    LoopAction::Terminal(step7_handle_cancelled(ctx.cancelled_ctx(assistant_text))),
+                    false,
+                )
             } else {
-                (LoopAction::Terminal(step7_commit_completed(
-                    ctx.harness_arc,
-                    turn_id,
-                    assistant_text,
-                )), false)
+                (
+                    LoopAction::Terminal(step7_commit_completed(
+                        ctx.harness_arc,
+                        turn_id,
+                        assistant_text,
+                    )),
+                    false,
+                )
             }
         }
-        StreamPassOutcome::Cancelled { partial_text } => {
-            (LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, partial_text))), false)
-        }
-        StreamPassOutcome::Error(err) => {
-            (LoopAction::Terminal(step7_handle_error(ctx.harness_arc, turn_id, err, None)), false)
-        }
+        StreamPassOutcome::Cancelled { partial_text } => (
+            LoopAction::Terminal(step7_handle_cancelled(ctx.cancelled_ctx(partial_text))),
+            false,
+        ),
+        StreamPassOutcome::Error(err) => (
+            LoopAction::Terminal(step7_handle_error(ctx.harness_arc, turn_id, err, None)),
+            false,
+        ),
         StreamPassOutcome::ToolCallsReceived {
             preamble_text,
             thinking_text,
@@ -378,66 +291,29 @@ async fn handle_pass_outcome(
                     "[Harness::Loop] Discarding {} tool calls during final tool-free pass; committing text.",
                     calls.len()
                 );
-                return (LoopAction::Terminal(step7_commit_completed(
-                    ctx.harness_arc,
-                    turn_id,
-                    preamble_text,
-                )), false);
+                return (
+                    LoopAction::Terminal(step7_commit_completed(
+                        ctx.harness_arc,
+                        turn_id,
+                        preamble_text,
+                    )),
+                    false,
+                );
             }
 
             let (cancelled, suspended_question, circuit_broken) =
                 step6_execute_tool_batch(ctx, calls, &preamble_text, &thinking_text, iteration).await;
             if cancelled {
-                (LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, String::new()))), circuit_broken)
+                (
+                    LoopAction::Terminal(step7_handle_cancelled(ctx.cancelled_ctx(String::new()))),
+                    circuit_broken,
+                )
             } else if let Some(question) = suspended_question {
-                if let Some(ref tts_tx) = ctx.req.tts_tx {
-                    let normalized = TextNormalizer::normalize_for_speech(&question);
-                    if !normalized.is_empty() {
-                        ctx.req.pending_synthesis_jobs.fetch_add(1, Relaxed);
-                        if let Err(e) = tts_tx.send(TtsCommand::Generate {
-                            turn_id,
-                            text: normalized,
-                            intent: AudioIntent::TurnResponse,
-                        }) {
-                            log::warn!(
-                                "[Harness::Loop] Failed to dispatch suspended question TTS: {}",
-                                e
-                            );
-                            ctx.req.pending_synthesis_jobs.fetch_sub(1, Relaxed);
-                        }
-                    }
-                }
-                if let Err(e) = ctx
-                    .stream_handles
-                    .event_tx
-                    .send(VoxEvent::LlmFinished { turn_id })
-                {
-                    log::warn!(
-                        "[Harness::Loop] Failed to emit LlmFinished on turn suspension: {}",
-                        e
-                    );
-                }
-                (LoopAction::Terminal(step7_commit_completed(ctx.harness_arc, turn_id, question)), circuit_broken)
+                let outcome = step7_commit_suspended_question(ctx, question);
+                (LoopAction::Terminal(outcome), circuit_broken)
             } else {
                 (LoopAction::Continue, circuit_broken)
             }
         }
-    }
-}
-
-/// Constructs a CancelledTurnContext from active turn loop state.
-fn cancelled_ctx<'a>(
-    ctx: &'a TurnLoopContext<'_>,
-    partial_text: String,
-) -> CancelledTurnContext<'a> {
-    CancelledTurnContext {
-        harness_arc: ctx.harness_arc,
-        turn_id: ctx.req.turn_id,
-        session_id: ctx.session_id,
-        user_text: ctx.req.query.clone(),
-        partial_text,
-        app_state: &ctx.req.app_state,
-        event_tx: Some(&ctx.stream_handles.event_tx),
-        owner: ctx.req.owner,
     }
 }

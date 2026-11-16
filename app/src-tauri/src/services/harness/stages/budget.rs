@@ -82,6 +82,30 @@ impl ContextBudgetStage {
         history_tokens + tool_tokens
     }
 
+    /// Estimates completion tokens for a step given preamble, thinking text, and canonical tool calls.
+    pub fn estimate_step_completion_tokens(
+        preamble_text: &str,
+        thinking_text: &str,
+        calls: &[crate::services::llm::CanonicalToolCall],
+    ) -> u32 {
+        let preamble_tok = estimate_tokens(preamble_text);
+        let thinking_tok = estimate_tokens(thinking_text);
+        let tool_calls_tok: usize = calls
+            .iter()
+            .map(|c| estimate_tokens(&c.name) + estimate_tokens(&c.arguments.to_string()))
+            .sum();
+        (preamble_tok + thinking_tok + tool_calls_tok) as u32
+    }
+
+    /// Estimates prompt tokens for a step given messages and active tool definitions.
+    pub fn estimate_step_prompt_tokens(
+        &self,
+        messages: &[ChatMessage],
+        tools: Option<&[crate::services::llm::CanonicalToolDefinition]>,
+    ) -> u32 {
+        self.calculate_tracked_tokens_with_extras(messages, tools) as u32
+    }
+
     /// Calculates the maximum allowed observation tokens for a tool execution (clamped to 30% of remaining usable context, max 2000, min 100).
     pub fn calculate_max_observation_tokens(
         &self,

@@ -13,6 +13,7 @@
 #   7. RC-SSO: Single Definition Site — Every remote-control domain constant is defined exactly once
 #   8. RULE-DB-04: One Write Path — `last_seen_at` is written from exactly one place
 #   9. VERIFY-RC-15: Link Neutrality — tests/common/ names no concrete link implementation
+#  10. RULE-HARN-01: 4-Tier Cognitive Boundary — services/harness/stages/tools must not exist; loop.rs and steps.rs must not contain TtsCommand, LlmCommand, or PersistenceEvent; loop.rs must not import stages or tools
 #
 
 set -euo pipefail
@@ -308,6 +309,53 @@ if os.path.isdir(tests_common_dir):
                     1,
                     "the shared test infrastructure must not name a link implementation (`LoopbackLink`)",
                 )
+
+# ---------------------------------------------------------------------------
+# 10. RULE-HARN-01: 4-tier cognitive boundary & actor command isolation
+# ---------------------------------------------------------------------------
+
+legacy_tools_dir = os.path.join(src_dir, "services", "harness", "stages", "tools")
+if os.path.exists(legacy_tools_dir):
+    report_violation(
+        "RULE-HARN-01",
+        legacy_tools_dir,
+        1,
+        "services/harness/stages/tools must not exist; tools must be promoted to sibling directory services/harness/tools",
+    )
+
+for target_rel in ("services/harness/loop.rs", "services/harness/steps.rs"):
+    target_path = os.path.join(src_dir, target_rel)
+    if os.path.exists(target_path):
+        with open(target_path, "r", encoding="utf-8", errors="ignore") as fp:
+            target_content = fp.read()
+        target_lines = target_content.splitlines()
+        for idx, line in enumerate(target_lines, 1):
+            for cmd in ("TtsCommand", "LlmCommand", "PersistenceEvent"):
+                if cmd in line:
+                    report_violation(
+                        "RULE-HARN-01",
+                        target_path,
+                        idx,
+                        f"{target_rel} must not reference raw actor command `{cmd}`",
+                    )
+
+loop_path = os.path.join(src_dir, "services", "harness", "loop.rs")
+if os.path.exists(loop_path):
+    with open(loop_path, "r", encoding="utf-8", errors="ignore") as fp:
+        loop_content = fp.read()
+    for imported in used_paths(loop_content):
+        if (
+            "services::harness::stages" in imported
+            or "services::harness::tools" in imported
+            or imported.startswith("stages::")
+            or imported.startswith("tools::")
+        ):
+            report_violation(
+                "RULE-HARN-01",
+                loop_path,
+                1,
+                f"loop.rs (Tier 2) must not import stages or tools directly; found `{imported}`",
+            )
 
 print("------------------------------------------------------------------------")
 if failures > 0:

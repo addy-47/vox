@@ -19,7 +19,7 @@ use crate::{
     pipeline::target_window,
     services::{
         audio::PlaybackEngine,
-        harness::stages::tools::{ToolExecutionContext, ToolExecutor, ToolRegistry},
+        harness::tools::{ToolExecutionContext, ToolExecutor, ToolRegistry},
         llm::CanonicalToolCall,
         realtime::{
             audio_bridge::AudioBridge,

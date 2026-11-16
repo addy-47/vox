@@ -9,37 +9,87 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     core::{
         events::{
-            ActivityEnvelope, ActivityKind, AudioIntent, InteractionOwner, IpcEmitter, IpcEvent,
+            ActivityEnvelope, ActivityKind, InteractionOwner, IpcEmitter, IpcEvent,
             PipelineMode, VoxEvent, ACTIVITY_COMPACTION,
         },
         state::{AppState, AppWindow, InteractionState},
     },
-    persistence::PersistenceEvent,
     pipeline::router::{transition, RoutingContext},
     services::{
         harness::{
             chassis::Harness,
-            current_timestamp_ms,
-            r#loop::TurnLoopContext,
             stages::{
+                self,
+                budget::{ContextBudgetStage, ContextStatus},
                 compaction::{CompactionParams, CompactionStage},
                 guardrails::GuardrailAction,
-                streaming::{
-                    normalizer::TextNormalizer, StreamPassOutcome, StreamRoutingHandles,
-                    StreamRoutingStage,
-                },
-                tools::{ToolExecutionContext, ToolExecutor, ToolFilter},
             },
+            tools::{ToolExecutionContext, ToolExecutor, ToolFilter, ToolRegistry},
             TurnExecutionRequest, TurnOutcome,
         },
-        llm::{
-            actor::{LlmCommand, LlmResponse},
-            CanonicalToolCall, GenerationRequest,
-        },
-        memory::ml::estimate_tokens,
-        tts::actor::TtsCommand,
+        llm::{actor::LlmResponse, CanonicalToolCall, GenerationRequest},
     },
 };
+
+pub use crate::services::harness::stages::streaming::{
+    normalizer::TextNormalizer, StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage,
+};
+
+/// Bundled contextual handles for a single active cognitive turn loop iteration.
+pub struct TurnLoopContext<'a> {
+    pub harness_arc: &'a Arc<Mutex<Option<Harness>>>,
+    pub req: &'a TurnExecutionRequest,
+    pub stream_stage: &'a StreamRoutingStage,
+    pub stream_handles: &'a StreamRoutingHandles,
+    pub tool_registry: ToolRegistry,
+    pub session_id: i64,
+}
+
+impl<'a> TurnLoopContext<'a> {
+    pub fn new(
+        harness_arc: &'a Arc<Mutex<Option<Harness>>>,
+        req: &'a TurnExecutionRequest,
+        stream_stage: &'a StreamRoutingStage,
+        stream_handles: &'a StreamRoutingHandles,
+        session_id: i64,
+    ) -> Result<(Self, bool), TurnOutcome> {
+        let guard = harness_arc.lock();
+        let Some(ref harness) = *guard else {
+            return Err(TurnOutcome::Error {
+                turn_id: req.turn_id,
+                message: "Harness unmounted during execution".to_string(),
+            });
+        };
+        let tool_registry = harness.tool_registry.clone();
+        let supports_tools = harness.supports_tools;
+        drop(guard);
+
+        Ok((
+            Self {
+                harness_arc,
+                req,
+                stream_stage,
+                stream_handles,
+                tool_registry,
+                session_id,
+            },
+            supports_tools,
+        ))
+    }
+
+    pub fn cancelled_ctx(&self, partial_text: String) -> CancelledTurnContext<'_> {
+        CancelledTurnContext {
+            harness_arc: self.harness_arc,
+            turn_id: self.req.turn_id,
+            session_id: self.session_id,
+            user_text: self.req.query.clone(),
+            partial_text,
+            app_state: &self.req.app_state,
+            event_tx: Some(&self.stream_handles.event_tx),
+            owner: self.req.owner,
+        }
+    }
+}
 
 // =========================================================================
 // === STEP 1 & STEP 2: INTAKE, DEDUPLICATION & TOKEN BUDGET EVALUATION ===
@@ -166,7 +216,7 @@ pub struct NonTerminalContext<'a> {
     pub routing_ctx: &'a RoutingContext,
     pub emitter: &'a Arc<dyn IpcEmitter>,
     pub app_state: &'a Arc<AppState>,
-    pub tts_tx: Option<&'a mpsc::Sender<TtsCommand>>,
+    pub tts_tx: Option<&'a stages::speech::TtsSender>,
     pub pending_synthesis_jobs: &'a Arc<AtomicU32>,
     pub play_filler: bool,
 }
@@ -202,15 +252,79 @@ pub fn enter_non_terminal_phase(phase: &NonTerminalPhase, ctx: &NonTerminalConte
     }
 
     if let Some(tts_tx) = ctx.tts_tx {
-        ctx.pending_synthesis_jobs.fetch_add(1, Relaxed);
-        if let Err(e) = tts_tx.send(TtsCommand::Generate {
-            turn_id: ctx.turn_id,
-            text: normalized_filler,
-            intent: AudioIntent::InterimFiller,
-        }) {
-            log::warn!("[Phase] Failed to dispatch interim filler TTS: {}", e);
-            ctx.pending_synthesis_jobs.fetch_sub(1, Relaxed);
+        if let Err(e) = stages::speech::dispatch_tts_filler(
+            tts_tx,
+            ctx.turn_id,
+            normalized_filler,
+            ctx.pending_synthesis_jobs,
+        ) {
+            log::warn!("[Phase] {}", e);
         }
+    }
+}
+
+/// Evaluates context budget including history and tool schemas, triggering inline compaction at critical threshold.
+pub async fn step3_check_and_run_loop_budget(
+    ctx: &TurnLoopContext<'_>,
+    allow_tools: bool,
+    iteration: usize,
+) {
+    let (should_compact, total_tokens) = {
+        let guard = ctx.harness_arc.lock();
+        if let Some(ref harness) = *guard {
+            if let Some(ref budget) = harness.budget {
+                let tools = if allow_tools && harness.supports_tools {
+                    let filter = ToolFilter {
+                        mode: PipelineMode::Modular,
+                        title_is_unset: !harness.title_set,
+                        memory_retrieval_enabled: harness.memory_retrieval_enabled,
+                        web_search_enabled: harness.web_search_enabled,
+                    };
+                    Some(harness.tool_registry.active_definitions(&filter))
+                } else {
+                    None
+                };
+                let total_tokens = budget.calculate_tracked_tokens_with_extras(
+                    harness.history.messages(),
+                    tools.as_deref(),
+                );
+                let (utilization, status) = budget.evaluate_utilization(total_tokens);
+                log::debug!(
+                    "[Harness::Loop] Loop budget (turn {}, iter {}): tokens={}, util={:.1}%, status={:?}",
+                    ctx.req.turn_id,
+                    iteration,
+                    total_tokens,
+                    utilization * 100.0,
+                    status
+                );
+                ctx.req
+                    .app_state
+                    .turn_metrics
+                    .record_context_budget(total_tokens, budget.max_context_tokens());
+                let can_compact = status == ContextStatus::Critical
+                    && harness
+                        .compaction
+                        .as_ref()
+                        .map(|c| c.can_perform_inline_compaction(harness.history.messages().len()))
+                        .unwrap_or(false);
+
+                (can_compact, total_tokens)
+            } else {
+                (false, 0)
+            }
+        } else {
+            (false, 0)
+        }
+    };
+
+    if should_compact {
+        log::info!(
+            "[Harness::Loop] Mid-loop critical budget triggered inline compaction (turn {}, iter {}, tokens {})",
+            ctx.req.turn_id,
+            iteration,
+            total_tokens
+        );
+        step3_execute_compaction(ctx.harness_arc, ctx.req).await;
     }
 }
 
@@ -382,32 +496,14 @@ pub fn step4_assemble_request(
 // === STEP 5: MODEL PIPE DISPATCH ===
 // =========================================================================
 
-/// Dispatches an LlmCommand::Generate command over the actor channel.
+/// Dispatches an LLM generation command over the actor channel.
 pub fn step5_dispatch_llm(
-    llm_tx: Option<&mpsc::Sender<LlmCommand>>,
+    llm_tx: Option<&stages::dispatch::LlmSender>,
     request: GenerationRequest,
     turn_id: u32,
     cancel: &CancellationToken,
 ) -> Result<mpsc::Receiver<LlmResponse>, String> {
-    let Some(tx) = llm_tx else {
-        return Err("No LLM channel available".to_string());
-    };
-    let start_dispatch = std::time::Instant::now();
-    let (response_tx, response_rx) = mpsc::channel();
-    let cmd = LlmCommand::Generate {
-        request: Box::new(request),
-        turn_id,
-        cancel: cancel.clone(),
-        response_tx,
-    };
-    tx.send(cmd)
-        .map_err(|e| format!("Failed to dispatch LlmCommand: {}", e))?;
-    log::info!(
-        "[Harness::Dispatch] Turn {} dispatched to LLM actor in {}ms",
-        turn_id,
-        start_dispatch.elapsed().as_millis()
-    );
-    Ok(response_rx)
+    stages::dispatch::dispatch_llm_generation(llm_tx, request, turn_id, cancel)
 }
 
 // =========================================================================
@@ -430,7 +526,7 @@ pub async fn step6_run_stream_pass(
     .unwrap_or_else(|join_err| Err(format!("Stream task panic: {:?}", join_err)))
 }
 
-/// Handles Phase 6 Case B: Multi-tool batch execution with wave scheduling and immediate step commits.
+/// Executes a batch of intercepted canonical tool calls, persisting execution audit and metrics.
 pub async fn step6_execute_tool_batch(
     ctx: &TurnLoopContext<'_>,
     calls: Vec<CanonicalToolCall>,
@@ -445,20 +541,12 @@ pub async fn step6_execute_tool_batch(
         .lock()
         .assistant_response
         .clear();
-
-    let first_tool = calls.first().map(|c| c.name.as_str()).unwrap_or("tool");
-    let non_terminal = NonTerminalPhase::tool(first_tool, "", None);
-    let non_term_ctx = NonTerminalContext {
-        query: &ctx.req.query,
+    log::info!(
+        "[Harness::Tools] Turn {} executing tool batch ({} calls) on step_index {}",
         turn_id,
-        routing_ctx: &ctx.req.routing_ctx,
-        emitter: &ctx.req.emitter,
-        app_state: &ctx.req.app_state,
-        tts_tx: ctx.req.tts_tx.as_ref(),
-        pending_synthesis_jobs: &ctx.req.pending_synthesis_jobs,
-        play_filler: false,
-    };
-    enter_non_terminal_phase(&non_terminal, &non_term_ctx);
+        calls.len(),
+        step_index
+    );
 
     let max_observation_tokens = {
         let guard = ctx.harness_arc.lock();
@@ -496,7 +584,7 @@ pub async fn step6_execute_tool_batch(
     .with_observation_budget(max_observation_tokens);
 
     let (mut outcomes, suspended_question) = ToolExecutor::execute_batch(
-        ctx.tool_registry,
+        &ctx.tool_registry,
         PipelineMode::Modular,
         calls.clone(),
         &tool_ctx,
@@ -538,17 +626,12 @@ pub async fn step6_execute_tool_batch(
         }
     }
 
-    let completion_tokens = {
-        let preamble_tok = estimate_tokens(preamble_text);
-        let thinking_tok = estimate_tokens(thinking_text);
-        let tool_calls_tok: usize = calls
-            .iter()
-            .map(|c| estimate_tokens(&c.name) + estimate_tokens(&c.arguments.to_string()))
-            .sum();
-        (preamble_tok + thinking_tok + tool_calls_tok) as u32
-    };
+    let completion_tokens = ContextBudgetStage::estimate_step_completion_tokens(
+        preamble_text,
+        thinking_text,
+        &calls,
+    );
 
-    // Compute prompt_tokens for step provenance BEFORE committing this step's observations
     let prompt_tokens = {
         let guard = ctx.harness_arc.lock();
         guard
@@ -562,10 +645,10 @@ pub async fn step6_execute_tool_batch(
                 };
                 let active_tools = h.tool_registry.active_definitions(&filter);
                 h.budget.as_ref().map(|b| {
-                    b.calculate_tracked_tokens_with_extras(
+                    b.estimate_step_prompt_tokens(
                         h.history.messages(),
                         Some(&active_tools),
-                    ) as u32
+                    )
                 })
             })
             .unwrap_or(0)
@@ -589,7 +672,6 @@ pub async fn step6_execute_tool_batch(
     }
 
     // Dispatch persistence events in strict parent-then-child FIFO order
-    let now = current_timestamp_ms();
     let step_duration_ms = step_start.elapsed().as_millis() as u64;
 
     let is_compacted = {
@@ -617,42 +699,20 @@ pub async fn step6_execute_tool_batch(
     );
 
     let persist_lock = ctx.req.app_state.persist_tx.lock();
-    if let Some(ref tx) = *persist_lock {
-        // 1. Dispatch parent StepCompleted record
-        let _ = tx.try_send(PersistenceEvent::StepCompleted {
-            id: step_id.clone(),
-            session_id: ctx.session_id,
-            turn_id,
-            step_index: step_index as u32,
-            preamble_text: Some(preamble_text.to_string()),
-            tool_count: outcomes.len() as u32,
-            duration_ms: Some(step_duration_ms),
-            prompt_tokens: Some(prompt_tokens),
-            completion_tokens: Some(completion_tokens),
-            guardrail_strike: strike_count as u32,
-            is_compacted,
-            created_at: now,
-        });
-
-        // 2. Dispatch child tool call records with valid foreign key
-        for outcome in &outcomes {
-            let _ = tx.try_send(PersistenceEvent::ToolCallExecuted {
-                id: outcome.call_id.clone(),
-                session_id: ctx.session_id,
-                turn_id,
-                step_id: Some(step_id.clone()),
-                step_index: step_index as u32,
-                tool_name: outcome.tool_name.clone(),
-                arguments: outcome.arguments.clone(),
-                result: outcome.result.content.clone(),
-                is_error: outcome.is_error,
-                duration_ms: outcome.duration_ms,
-                truncated: outcome.truncated,
-                spillover_path: outcome.spillover_path.clone(),
-                created_at: now,
-            });
-        }
-    }
+    stages::persistence::persist_step_and_tools(
+        persist_lock.as_ref(),
+        ctx.session_id,
+        turn_id,
+        step_id,
+        step_index as u32,
+        Some(preamble_text.to_string()),
+        &outcomes,
+        step_duration_ms,
+        prompt_tokens,
+        completion_tokens,
+        strike_count as u32,
+        is_compacted,
+    );
 
     (ctx.req.cancel.is_cancelled(), suspended_question, circuit_broken)
 }
@@ -686,6 +746,41 @@ pub struct CancelledTurnContext<'a> {
     pub owner: InteractionOwner,
 }
 
+/// Finalizes a suspended question by dispatching response TTS, emitting LlmFinished, and committing to history.
+pub fn step7_commit_suspended_question(
+    ctx: &TurnLoopContext<'_>,
+    question: String,
+) -> TurnOutcome {
+    let turn_id = ctx.req.turn_id;
+    if let Some(ref tts_tx) = ctx.req.tts_tx {
+        let normalized = TextNormalizer::normalize_for_speech(&question);
+        if !normalized.is_empty() {
+            if let Err(e) = stages::speech::dispatch_tts_response(
+                tts_tx,
+                turn_id,
+                normalized,
+                &ctx.req.pending_synthesis_jobs,
+            ) {
+                log::warn!(
+                    "[Harness::Loop] Failed to dispatch suspended question TTS: {}",
+                    e
+                );
+            }
+        }
+    }
+    if let Err(e) = ctx
+        .stream_handles
+        .event_tx
+        .send(VoxEvent::LlmFinished { turn_id })
+    {
+        log::warn!(
+            "[Harness::Loop] Failed to emit LlmFinished on turn suspension: {}",
+            e
+        );
+    }
+    step7_commit_completed(ctx.harness_arc, turn_id, question)
+}
+
 /// Handles Phase 7 Branch B: turn cancellation / user barge-in (Invariant 13).
 pub fn step7_handle_cancelled(ctx: CancelledTurnContext<'_>) -> TurnOutcome {
     log::info!(
@@ -710,20 +805,13 @@ pub fn step7_handle_cancelled(ctx: CancelledTurnContext<'_>) -> TurnOutcome {
         }
         drop(guard);
         let persist_lock = ctx.app_state.persist_tx.lock();
-        if let Some(ref tx) = *persist_lock {
-            if let Err(e) = tx.try_send(PersistenceEvent::TurnCompleted {
-                session_id: ctx.session_id,
-                turn_id: ctx.turn_id,
-                user_text: ctx.user_text,
-                assistant_text: ctx.partial_text,
-            }) {
-                log::warn!(
-                    "[Harness::Finalize] Failed to persist interrupted turn {}: {}",
-                    ctx.turn_id,
-                    e
-                );
-            }
-        }
+        stages::persistence::persist_cancelled_turn(
+            persist_lock.as_ref(),
+            ctx.session_id,
+            ctx.turn_id,
+            ctx.user_text,
+            ctx.partial_text,
+        );
     } else if let Some(ref mut harness) = *guard {
         harness.history.rollback_last_user_turn();
     }

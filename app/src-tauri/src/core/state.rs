@@ -29,7 +29,7 @@ use crate::{
     pipeline::assistant::TurnAccumulator,
     services::{
         harness::{
-            stages::tools::web_search::{default_engines, VoxEmbedder, DEFAULT_MIN_SCORE},
+            tools::web_search::{default_engines, VoxEmbedder, DEFAULT_MIN_SCORE},
             Harness,
         },
         llm::LlmProvider,

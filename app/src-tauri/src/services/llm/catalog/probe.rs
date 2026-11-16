@@ -25,7 +25,7 @@ use crate::{
     core::{events::PipelineMode, state::AppState},
     services::{
         harness::{
-            stages::tools::{web_search::WebSearchTool, ToolDefinition},
+            tools::{web_search::WebSearchTool, ToolDefinition},
             ChatMessage, Role,
         },
         llm::{
