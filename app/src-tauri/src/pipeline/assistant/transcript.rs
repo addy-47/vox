@@ -9,9 +9,9 @@ use crate::{
         state::{AppState, InteractionState},
     },
     pipeline::{target_window, transition, RoutingContext},
+    harness::{Harness, TurnExecutionRequest, TurnOutcome},
     services::{
         self,
-        harness::{Harness, TurnExecutionRequest, TurnOutcome},
         notifications::{Action, NotificationCategory, NotificationParams},
         translit::transliterate_if_hi,
     },
@@ -204,9 +204,9 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             {
                 let guard = state.harness.lock();
                 if let Some(ref harness) = *guard {
-                    harness.inbox().push(crate::services::harness::stages::inbox::InboxMessage::new(
+                    harness.inbox().push(crate::harness::stages::inbox::InboxMessage::new(
                         trimmed.to_string(),
-                        crate::services::harness::stages::inbox::QueuedMessageDelivery::Immediate,
+                        crate::harness::stages::inbox::QueuedMessageDelivery::Immediate,
                         now,
                     ));
                 }

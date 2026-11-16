@@ -2,7 +2,7 @@
 //! evals/agentic-tool/main.rs — Agentic Tool Evaluation Harness
 //! ============================================================================
 //! Category     : Evaluation
-//! Component    : services/harness (loop, steps, stages/tools) + services/tts + services/audio
+//! Component    : harness (loop, steps, stages/tools) + services/tts + services/audio
 //! Prerequisites: a local Kokoro model; outbound network for tool egress
 //! Execution    : cargo bench --bench agentic_tool_eval --release -- --help
 //! Metrics      : tool latency, LLM-visible context, per-stage telemetry, audio clips
@@ -381,17 +381,17 @@ async fn run_cases(
             // constants the production path uses (single source of truth).
             "retrieval_stack": {
                 "nexus_version": nexus::NEXUS_VERSION,
-                "engines": vox_lib::services::harness::tools::web_search::default_engines()
+                "engines": vox_lib::harness::tools::web_search::default_engines()
                     .iter().map(|e| e.to_string()).collect::<Vec<_>>(),
                 "deadlines_ms": {
-                    "sparse": vox_lib::services::harness::tools::web_search::TIMEOUT_SPARSE_MS,
-                    "dense": vox_lib::services::harness::tools::web_search::TIMEOUT_DENSE_MS,
-                    "hybrid": vox_lib::services::harness::tools::web_search::TIMEOUT_HYBRID_MS,
-                    "floor": vox_lib::services::harness::tools::web_search::TIMEOUT_FLOOR_MS,
-                    "ceiling": vox_lib::services::harness::tools::web_search::TIMEOUT_CEILING_MS,
+                    "sparse": vox_lib::harness::tools::web_search::TIMEOUT_SPARSE_MS,
+                    "dense": vox_lib::harness::tools::web_search::TIMEOUT_DENSE_MS,
+                    "hybrid": vox_lib::harness::tools::web_search::TIMEOUT_HYBRID_MS,
+                    "floor": vox_lib::harness::tools::web_search::TIMEOUT_FLOOR_MS,
+                    "ceiling": vox_lib::harness::tools::web_search::TIMEOUT_CEILING_MS,
                 },
-                "min_score": vox_lib::services::harness::tools::web_search::DEFAULT_MIN_SCORE,
-                "fetch_candidates": vox_lib::services::harness::tools::web_search::DEFAULT_FETCH_CANDIDATES,
+                "min_score": vox_lib::harness::tools::web_search::DEFAULT_MIN_SCORE,
+                "fetch_candidates": vox_lib::harness::tools::web_search::DEFAULT_FETCH_CANDIDATES,
             },
         }),
     )?;
@@ -549,7 +549,7 @@ async fn run_one(
     let turn_start = Instant::now();
     let outcome = tokio::time::timeout(
         Duration::from_secs(cfg.turn_timeout_s),
-        vox_lib::services::harness::chassis::Harness::execute_turn(&harness_arc, req),
+        vox_lib::harness::chassis::Harness::execute_turn(&harness_arc, req),
     )
     .await;
     let turn_ms = turn_start.elapsed().as_millis() as u64;

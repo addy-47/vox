@@ -17,9 +17,9 @@ use crate::{
         state::{AppState, AppWindow, InteractionOwner},
     },
     pipeline::target_window,
+    harness::tools::{ToolExecutionContext, ToolExecutor, ToolRegistry},
     services::{
         audio::PlaybackEngine,
-        harness::tools::{ToolExecutionContext, ToolExecutor, ToolRegistry},
         llm::CanonicalToolCall,
         realtime::{
             audio_bridge::AudioBridge,

@@ -3,7 +3,7 @@
 //! ============================================================================
 //! Category  : Integration (Seam 6 — TranscriptFinal → accumulator → LLM request)
 //! Component : pipeline/assistant/transcript.rs + pipeline/assistant/interrupt.rs
-//!             + pipeline/assistant/{speech,mod}.rs + services/harness/steps.rs
+//!             + pipeline/assistant/{speech,mod}.rs + harness/steps.rs
 //! Binary    : transcript_ingestion_test
 //! Prereqs   : none. The LLM is a recording stub; no model is loaded.
 //! Run       : cargo nextest run --test transcript_ingestion_test --release --test-threads=1
@@ -30,8 +30,8 @@ use vox_lib::{
         state::{AppState, InteractionOwner, InteractionState},
     },
     pipeline::router::spawn_router,
+    harness::{Harness, LlmExecutionParams, Role},
     services::{
-        harness::{Harness, LlmExecutionParams, Role},
         llm::{actor::LlmResponse, LlmCommand},
     },
 };

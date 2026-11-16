@@ -1,6 +1,5 @@
 pub mod audio;
 pub mod dictation;
-pub mod harness;
 pub mod health;
 pub mod llm;
 pub mod memory;

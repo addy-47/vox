@@ -1,4 +1,4 @@
-use crate::services::harness::{ChatMessage, Role};
+use crate::harness::{ChatMessage, Role};
 
 /// Plugin managing conversation turn history, KV-cache synchronization, and turn rollback.
 #[derive(Debug, Clone, Default)]

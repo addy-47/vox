@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 
 use serde_json::Value;
 
-use crate::services::harness::tools::ToolExecutionOutcome;
+use crate::harness::tools::ToolExecutionOutcome;
 
 const MAX_SLIDING_WINDOW: usize = 10;
 const IDENTICAL_CALL_THRESHOLD: usize = 3;

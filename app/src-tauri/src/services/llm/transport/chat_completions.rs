@@ -7,9 +7,9 @@ use futures_util::StreamExt;
 use serde::Deserialize;
 
 use super::{config::ConnectionConfig, sse::SseDecoder, think_tags::ThinkTagDemuxer};
-use crate::services::{
+use crate::{
     harness::ChatMessage,
-    llm::{
+    services::llm::{
         catalog::{ResponseEnvelope, WireValue},
         CanonicalToolCall, GenerationRequest, LlmError, OutputConstraint, ReasoningMode,
     },

@@ -23,8 +23,8 @@ use vox_lib::{
     core::{events::VoxEvent, state::AppState},
     monitoring::telemetry::{TelemetryAggregator, TelemetryAggregatorHandles, TelemetryState},
     pipeline::{assistant::TurnAccumulator, RoutingContext},
+    harness::{chassis::Harness, TurnExecutionRequest, TurnOutcome},
     services::{
-        harness::{chassis::Harness, TurnExecutionRequest, TurnOutcome},
         llm::{spawn_llm_worker, ConnectionConfig, LlmCommand, LlmProvider, RemoteTransport},
     },
     utils::paths,
@@ -243,7 +243,7 @@ pub fn build_modular_harness(
         ctx.state.resolve_base_prompt(),
         None,
         &settings,
-        vox_lib::services::harness::LlmExecutionParams {
+        vox_lib::harness::LlmExecutionParams {
             max_output_tokens: 2000,
             ..Default::default()
         },

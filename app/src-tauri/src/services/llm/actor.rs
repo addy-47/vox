@@ -18,7 +18,7 @@ use crate::{
         },
         error::{PipelineError, PipelineImpact},
     },
-    services::harness::{ChatMessage, LlmExecutionParams, Role},
+    harness::{ChatMessage, LlmExecutionParams, Role},
 };
 
 pub type LlmProviderCache = Arc<parking_lot::RwLock<Option<Arc<dyn LlmProvider>>>>;

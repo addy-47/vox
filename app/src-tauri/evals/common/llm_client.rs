@@ -15,9 +15,9 @@ use anyhow::{anyhow, Result};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
-use vox_lib::services::{
+use vox_lib::{
     harness::Role,
-    llm::{
+    services::llm::{
         ConnectionConfig, GenerationOptions, GenerationRequest, LlmError, LlmProvider,
         LlmStreamEvent, OutputConstraint, ProviderCapabilities, ProviderKind, RemoteTransport,
     },

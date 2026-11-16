@@ -46,7 +46,7 @@ MUTANTS = [
                     let mut guard = state.harness.lock();
                     guard.as_mut().and_then(|h| h.rollback_user_turn(interrupted_turn_id))
                 };""",
-        "replacement": """                let rolled_back_msg: Option<crate::services::harness::ChatMessage> = None;""",
+        "replacement": """                let rolled_back_msg: Option<crate::harness::ChatMessage> = None;""",
         "test_cmd": "cargo test --test harness_loop_test pre_working_thinking_barge_in_aborts_stream_and_merges_prompt --release -- --test-threads=1",
         "expected_failure": "history contains duplicate unmerged Step 0 user turn",
     },
@@ -74,7 +74,7 @@ MUTANTS = [
     {
         "id": 6,
         "name": "active_working_fast_tool_waits_at_step_boundary_until_user_speech_finalizes",
-        "file": "src/services/harness/stages/inbox.rs",
+        "file": "src/harness/stages/inbox.rs",
         "target": """    pub async fn wait_if_speech_held(&self, cancel: &CancellationToken) {
         while self.is_speech_held() {""",
         "replacement": """    pub async fn wait_if_speech_held(&self, cancel: &CancellationToken) {
@@ -100,7 +100,7 @@ MUTANTS = [
     {
         "id": 8,
         "name": "step_inbox_drains_immediate_messages_and_retains_turn_boundary_messages",
-        "file": "src/services/harness/stages/inbox.rs",
+        "file": "src/harness/stages/inbox.rs",
         "target": """    pub fn drain_immediate(&self) -> Vec<InboxMessage> {
         let mut guard = self.messages.lock();
         let (immediate, remaining): (Vec<_>, Vec<_>) = guard
@@ -119,7 +119,7 @@ MUTANTS = [
     {
         "id": 9,
         "name": "lint_arch_enforces_rule_harn_01_and_forbids_actor_commands_in_loop_and_steps",
-        "file": "src/services/harness/steps.rs",
+        "file": "src/harness/steps.rs",
         "target": "use std::sync::",
         "replacement": "#[allow(unused_imports)]\nuse crate::services::tts::actor::TtsCommand;\nuse std::sync::",
         "test_cmd": "./scripts/lint-arch.sh",
@@ -128,7 +128,7 @@ MUTANTS = [
     {
         "id": 10,
         "name": "sibling_tools_chassis_executes_isolated_from_stages",
-        "file": "src/services/harness/stages/tools",
+        "file": "src/harness/stages/tools",
         "is_dir_creation": True,
         "test_cmd": "cargo test --test harness_loop_test sibling_tools_chassis_executes_isolated_from_stages --release -- --test-threads=1",
         "expected_failure": "assert !legacy_stages_tools_dir.exists() fails",

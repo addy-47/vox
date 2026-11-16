@@ -13,8 +13,8 @@ use crate::{
         state::InteractionOwner,
     },
     pipeline::{assistant::TurnAccumulator, target_window},
+    harness::stages::streaming::TextNormalizer,
     services::{
-        harness::stages::streaming::TextNormalizer,
         llm::{actor::LlmResponse, CanonicalToolCall},
         tts::actor::TtsCommand,
     },

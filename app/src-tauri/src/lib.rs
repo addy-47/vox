@@ -4,6 +4,7 @@ extern crate symphonia_core;
 
 pub mod config;
 pub mod core;
+pub mod harness;
 pub mod ipc;
 pub mod monitoring;
 pub mod persistence;

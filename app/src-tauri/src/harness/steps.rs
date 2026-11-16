@@ -15,24 +15,24 @@ use crate::{
         state::{AppState, AppWindow, InteractionState},
     },
     pipeline::router::{transition, RoutingContext},
-    services::{
-        harness::{
-            chassis::Harness,
-            stages::{
-                self,
-                budget::{ContextBudgetStage, ContextStatus},
-                compaction::{CompactionParams, CompactionStage},
-                guardrails::GuardrailAction,
-                inbox::InboxMessage,
-            },
-            tools::{ToolExecutionContext, ToolExecutor, ToolFilter, ToolRegistry},
-            TurnExecutionRequest, TurnOutcome,
+    harness::{
+        chassis::Harness,
+        stages::{
+            self,
+            budget::{ContextBudgetStage, ContextStatus},
+            compaction::{CompactionParams, CompactionStage},
+            guardrails::GuardrailAction,
+            inbox::InboxMessage,
         },
+        tools::{ToolExecutionContext, ToolExecutor, ToolFilter, ToolRegistry},
+        TurnExecutionRequest, TurnOutcome,
+    },
+    services::{
         llm::{actor::LlmResponse, CanonicalToolCall, GenerationRequest},
     },
 };
 
-pub use crate::services::harness::stages::streaming::{
+pub use crate::harness::stages::streaming::{
     normalizer::TextNormalizer, StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage,
 };
 
@@ -254,7 +254,7 @@ pub fn enter_non_terminal_phase(phase: &NonTerminalPhase, ctx: &NonTerminalConte
 
     let raw_filler = match &phase.filler_phrase {
         Some(phrase) if !phrase.trim().is_empty() => phrase.clone(),
-        _ => crate::services::harness::select_filler_phrase(ctx.query, ctx.turn_id).to_string(),
+        _ => crate::harness::select_filler_phrase(ctx.query, ctx.turn_id).to_string(),
     };
 
     let normalized_filler = TextNormalizer::normalize_for_speech(&raw_filler);

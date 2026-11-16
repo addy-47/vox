@@ -16,9 +16,9 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
-use vox_lib::services::{
+use vox_lib::{
     harness::{ChatMessage, Role},
-    llm::{
+    services::llm::{
         ConversationInput, GenerationOptions, GenerationPurpose, GenerationRequest, LlmProvider,
         LlmStreamEvent, OutputConstraint,
     },

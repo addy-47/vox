@@ -2,7 +2,7 @@
 //! memory_compaction_test.rs — compaction slices only the turns past the watermark, refuse to run twice for one session, and inject the prior summary into the next request
 //! ============================================================================
 //! Category  : Integration (Seam 12 — memory compaction)
-//! Component : src/services/memory/compaction/coordinator.rs, src/services/harness/stages/compaction.rs, src/persistence/compactions.rs
+//! Component : src/services/memory/compaction/coordinator.rs, src/harness/stages/compaction.rs, src/persistence/compactions.rs
 //! Binary    : memory_compaction_test
 //! Prereqs   : none (the live-server scenario additionally needs the remote Ollama host)
 //! Run       : cargo nextest run --test memory_compaction_test --release --test-threads=1
@@ -24,8 +24,8 @@ use vox_lib::{
         },
         notifications::find_notification_by_group,
     },
+    harness::stages::compaction::{CompactionStage, MIN_MESSAGES_FOR_COMPACTION},
     services::{
-        harness::stages::compaction::{CompactionStage, MIN_MESSAGES_FOR_COMPACTION},
         llm::LlmCustomServer,
         memory::compaction::coordinator::{build_history_messages, CompactionCoordinator},
     },
@@ -369,8 +369,8 @@ fn pruned_history_keeps_only_the_system_and_the_current_user_turn() {
     let pruned = active_plugin.prune_history_with_summary(base_prompt, user_turn);
 
     assert_eq!(pruned.len(), 2);
-    assert_eq!(pruned[0].role, vox_lib::services::harness::Role::System);
-    assert_eq!(pruned[1].role, vox_lib::services::harness::Role::User);
+    assert_eq!(pruned[0].role, vox_lib::harness::Role::System);
+    assert_eq!(pruned[1].role, vox_lib::harness::Role::User);
     assert_eq!(pruned[1].content, user_turn);
 }
 
@@ -627,7 +627,7 @@ async fn production_assembler_emits_a_system_message_carrying_the_prior_summary(
 
         assert_eq!(
             history_messages.first().map(|m| m.role),
-            Some(vox_lib::services::harness::Role::System),
+            Some(vox_lib::harness::Role::System),
             "production assembler must lead with a System message carrying session context"
         );
         assert_eq!(
@@ -715,7 +715,7 @@ async fn compaction_request_includes_the_prior_summary_tag() {
             .input
             .messages
             .iter()
-            .find(|m| m.role == vox_lib::services::harness::Role::User)
+            .find(|m| m.role == vox_lib::harness::Role::User)
             .expect("Must have user message in compaction request");
         assert!(
             user_msg.content.contains("<prior_summary>"),

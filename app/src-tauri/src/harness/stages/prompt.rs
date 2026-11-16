@@ -1,10 +1,10 @@
-use crate::services::{
+use crate::{
     harness::{ChatMessage, PromptTag, Role},
-    llm::{
+    services::llm::{
         CanonicalToolDefinition, ConversationInput, GenerationOptions, GenerationPurpose,
         GenerationRequest, OutputConstraint,
     },
-    memory::ml::estimate_tokens,
+    services::memory::ml::estimate_tokens,
 };
 
 /// Plugin managing system prompt assembly, user identity grounding, and system budget ceiling enforcement.

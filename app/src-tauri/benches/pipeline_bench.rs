@@ -513,7 +513,7 @@ fn main() {
                     h.messages()
                         .iter()
                         .rev()
-                        .find(|m| m.role == vox_lib::services::harness::Role::Assistant)
+                        .find(|m| m.role == vox_lib::harness::Role::Assistant)
                         .map(|m| m.content.clone())
                 })
                 .unwrap_or_default()

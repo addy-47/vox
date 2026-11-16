@@ -16,8 +16,8 @@ use crate::{
         },
         models::get_model_parameters,
     },
+    harness::{ChatMessage, Harness, PromptTag, Role},
     services::{
-        harness::{ChatMessage, Harness, PromptTag, Role},
         llm::{LlmProvider, LlmSettings},
         memory::compaction::runner::{run_compaction, CompactionResult},
     },

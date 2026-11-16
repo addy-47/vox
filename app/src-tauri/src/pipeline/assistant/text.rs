@@ -85,11 +85,11 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
             target_window(ctx.owner),
             IpcEvent::TranscriptFinal(payload),
         );
-        let now = crate::services::harness::current_timestamp_ms();
+        let now = crate::harness::current_timestamp_ms();
         if let Some(ref harness) = *state.harness.lock() {
-            harness.inbox().push(crate::services::harness::stages::inbox::InboxMessage::new(
+            harness.inbox().push(crate::harness::stages::inbox::InboxMessage::new(
                 query,
-                crate::services::harness::stages::inbox::QueuedMessageDelivery::Immediate,
+                crate::harness::stages::inbox::QueuedMessageDelivery::Immediate,
                 now,
             ));
         }

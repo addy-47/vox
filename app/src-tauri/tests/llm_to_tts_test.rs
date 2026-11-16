@@ -2,7 +2,7 @@
 //! llm_to_tts_test.rs — LLM to TTS chunking seam
 //! ============================================================================
 //! Category  : Integration (Seam 8 — token stream → clauses → TTS commands)
-//! Component : services/harness/stages/streaming/chunker.rs + services/harness/steps.rs
+//! Component : harness/stages/streaming/chunker.rs + harness/steps.rs
 //!             + services/tts/actor.rs + pipeline/assistant/llm.rs
 //! Binary    : llm_to_tts_test
 //! Prereqs   : the deterministic scripted tests need no model; the Qwen scenario
@@ -29,8 +29,8 @@ use vox_lib::{
         state::{InteractionOwner, InteractionState},
     },
     pipeline::{router::spawn_router, RoutingContext},
+    harness::{Harness, TurnExecutionRequest, TurnOutcome},
     services::{
-        harness::{Harness, TurnExecutionRequest, TurnOutcome},
         llm::{
             actor::{spawn_llm_worker, LlmCommand},
             EmbeddedProvider,
@@ -97,7 +97,7 @@ impl SeamRig {
                 prompt,
                 None,
                 &settings,
-                vox_lib::services::harness::LlmExecutionParams {
+                vox_lib::harness::LlmExecutionParams {
                     context_window: 8192,
                     max_output_tokens: 300,
                     temperature: 0.7,

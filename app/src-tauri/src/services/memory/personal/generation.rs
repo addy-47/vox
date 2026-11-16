@@ -9,8 +9,8 @@ use tokio_util::sync::CancellationToken;
 use super::prompts::{CONSOLIDATION_MAX_OUTPUT_TOKENS, PERSONAL_CONSOLIDATION_TEMPERATURE};
 use crate::{
     core::defaults::DEFAULT_LLM_CONTEXT_WINDOW,
+    harness::{ChatMessage, Role},
     services::{
-        harness::{ChatMessage, Role},
         llm::{
             catalog::get_baseline_spec, ConversationInput, GenerationPolicy, GenerationPurpose,
             LlmProvider, LlmSettings, LlmStreamEvent, OutputConstraint, ReasoningMode,

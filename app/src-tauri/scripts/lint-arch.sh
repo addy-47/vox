@@ -13,7 +13,7 @@
 #   7. RC-SSO: Single Definition Site — Every remote-control domain constant is defined exactly once
 #   8. RULE-DB-04: One Write Path — `last_seen_at` is written from exactly one place
 #   9. VERIFY-RC-15: Link Neutrality — tests/common/ names no concrete link implementation
-#  10. RULE-HARN-01: 4-Tier Cognitive Boundary — services/harness/stages/tools must not exist; loop.rs and steps.rs must not contain TtsCommand, LlmCommand, or PersistenceEvent; loop.rs must not import stages or tools
+#  10. RULE-HARN-01: 4-Tier Cognitive Boundary — harness/stages/tools must not exist; loop.rs and steps.rs must not contain TtsCommand, LlmCommand, or PersistenceEvent; loop.rs must not import stages or tools
 #
 
 set -euo pipefail
@@ -314,28 +314,28 @@ if os.path.isdir(tests_common_dir):
 # 10. RULE-HARN-01: 4-tier cognitive boundary & actor command isolation
 # ---------------------------------------------------------------------------
 
-legacy_tools_dir = os.path.join(src_dir, "services", "harness", "stages", "tools")
+legacy_tools_dir = os.path.join(src_dir, "harness", "stages", "tools")
 if os.path.exists(legacy_tools_dir):
     report_violation(
         "RULE-HARN-01",
         legacy_tools_dir,
         1,
-        "services/harness/stages/tools must not exist; tools must be promoted to sibling directory services/harness/tools",
+        "harness/stages/tools must not exist; tools must be promoted to sibling directory harness/tools",
     )
 
-stages_mod_path = os.path.join(src_dir, "services", "harness", "stages", "mod.rs")
+stages_mod_path = os.path.join(src_dir, "harness", "stages", "mod.rs")
 if os.path.exists(stages_mod_path):
     with open(stages_mod_path, "r", encoding="utf-8", errors="ignore") as fp:
         stages_mod_content = fp.read()
-    if "pub use crate::services::harness::tools" in stages_mod_content or "mod tools;" in stages_mod_content:
+    if "pub use crate::harness::tools" in stages_mod_content or "mod tools;" in stages_mod_content:
         report_violation(
             "RULE-HARN-01",
             stages_mod_path,
             1,
-            "services/harness/stages/mod.rs must not re-export or declare `tools`; tools must be an isolated sibling",
+            "harness/stages/mod.rs must not re-export or declare `tools`; tools must be an isolated sibling",
         )
 
-for target_rel in ("services/harness/loop.rs", "services/harness/steps.rs"):
+for target_rel in ("harness/loop.rs", "harness/steps.rs"):
     target_path = os.path.join(src_dir, target_rel)
     if os.path.exists(target_path):
         with open(target_path, "r", encoding="utf-8", errors="ignore") as fp:
@@ -351,14 +351,14 @@ for target_rel in ("services/harness/loop.rs", "services/harness/steps.rs"):
                         f"{target_rel} must not reference raw actor command `{cmd}`",
                     )
 
-loop_path = os.path.join(src_dir, "services", "harness", "loop.rs")
+loop_path = os.path.join(src_dir, "harness", "loop.rs")
 if os.path.exists(loop_path):
     with open(loop_path, "r", encoding="utf-8", errors="ignore") as fp:
         loop_content = fp.read()
     for imported in used_paths(loop_content):
         if (
-            "services::harness::stages" in imported
-            or "services::harness::tools" in imported
+            "harness::stages" in imported
+            or "harness::tools" in imported
             or imported.startswith("stages::")
             or imported.startswith("tools::")
         ):

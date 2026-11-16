@@ -6,7 +6,7 @@ use std::sync::{
 use parking_lot::Mutex;
 use tokio::spawn as spawn_task;
 
-use crate::services::harness::{
+use crate::harness::{
     chassis::Harness,
     steps::{
         step1_intake, step3_check_and_run_loop_budget, step3_execute_compaction,

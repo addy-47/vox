@@ -27,11 +27,11 @@ use crate::{
     monitoring::snapshots::MonitoringState,
     persistence::{PersistenceEvent, VoxDb},
     pipeline::assistant::TurnAccumulator,
+    harness::{
+        tools::web_search::{default_engines, VoxEmbedder, DEFAULT_MIN_SCORE},
+        Harness,
+    },
     services::{
-        harness::{
-            tools::web_search::{default_engines, VoxEmbedder, DEFAULT_MIN_SCORE},
-            Harness,
-        },
         llm::LlmProvider,
         realtime::RealtimeActor,
         remote::{

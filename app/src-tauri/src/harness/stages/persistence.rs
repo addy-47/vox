@@ -2,7 +2,7 @@ use crossbeam_channel::Sender;
 
 use crate::{
     persistence::PersistenceEvent,
-    services::harness::{current_timestamp_ms, tools::ToolExecutionOutcome},
+    harness::{current_timestamp_ms, tools::ToolExecutionOutcome},
 };
 
 pub type PersistenceSender = Sender<PersistenceEvent>;

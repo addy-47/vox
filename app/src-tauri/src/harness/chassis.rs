@@ -14,20 +14,20 @@ use crate::{
         state::AppState,
     },
     persistence::TurnRow,
-    services::{
-        harness::{
-            stages::{
-                budget::{ContextBudgetStage, ContextStatus},
-                compaction::{CompactionStage, QuietCompactionWatcher},
-                guardrails::{GuardrailsStage, TurnGuardrailsState},
-                history::ConversationHistoryStage,
-                inbox::StepInbox,
-                prompt::PromptBuilderStage,
-                streaming::StreamRoutingStage,
-            },
-            tools::{ToolDefinition, ToolFilter, ToolRegistry},
-            ChatMessage, Role,
+    harness::{
+        stages::{
+            budget::{ContextBudgetStage, ContextStatus},
+            compaction::{CompactionStage, QuietCompactionWatcher},
+            guardrails::{GuardrailsStage, TurnGuardrailsState},
+            history::ConversationHistoryStage,
+            inbox::StepInbox,
+            prompt::PromptBuilderStage,
+            streaming::StreamRoutingStage,
         },
+        tools::{ToolDefinition, ToolFilter, ToolRegistry},
+        ChatMessage, Role,
+    },
+    services::{
         llm::{actor::LlmCommand, CanonicalToolCall, GenerationOptions, ReasoningMode},
         memory::compaction::CompactionResult,
     },

@@ -23,11 +23,11 @@ use super::{
 };
 use crate::{
     core::{events::PipelineMode, state::AppState},
+    harness::{
+        tools::{web_search::WebSearchTool, ToolDefinition},
+        ChatMessage, Role,
+    },
     services::{
-        harness::{
-            tools::{web_search::WebSearchTool, ToolDefinition},
-            ChatMessage, Role,
-        },
         llm::{
             provider::Support,
             transport::{

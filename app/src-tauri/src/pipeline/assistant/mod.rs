@@ -16,7 +16,7 @@ use crate::{
         state::{AppState, InteractionOwner},
     },
     pipeline::router::RoutingContext,
-    services::harness::stages::streaming::ClauseChunker,
+    harness::stages::streaming::ClauseChunker,
 };
 
 /// Canonical turn-level textual accumulator and TTS clause chunker.

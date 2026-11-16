@@ -2,8 +2,8 @@
 //! agentic_tool_loop_test.rs — Agentic tool loop seam
 //! ============================================================================
 //! Category  : Integration (Seam 7 — tool call → tool execution → turn outcome)
-//! Component : services/harness/stages/tools/ + services/harness/steps.rs
-//!             + services/harness/stages/prompt.rs + persistence/sessions.rs
+//! Component : harness/stages/tools/ + harness/steps.rs
+//!             + harness/stages/prompt.rs + persistence/sessions.rs
 //! Binary    : agentic_tool_loop_test
 //! Prereqs   : none (isolated temporary database)
 //! Run       : cargo nextest run --test agentic_tool_loop_test --release --test-threads=1
@@ -36,16 +36,16 @@ use vox_lib::{
         events::InteractionMode,
         state::InteractionState,
     },
-    services::{
-        harness::{
-            chassis::Harness,
-            stages::{
-                prompt::PromptBuilderStage,
-                streaming::{StreamRoutingHandles, StreamRoutingStage},
-            },
-            tools::{ToolDomain, ToolError, ToolExecutionContext, ToolFilter, ToolRegistry},
-            Role, TurnExecutionRequest, TurnOutcome,
+    harness::{
+        chassis::Harness,
+        stages::{
+            prompt::PromptBuilderStage,
+            streaming::{StreamRoutingHandles, StreamRoutingStage},
         },
+        tools::{ToolDomain, ToolError, ToolExecutionContext, ToolFilter, ToolRegistry},
+        Role, TurnExecutionRequest, TurnOutcome,
+    },
+    services::{
         llm::{
             transport::{ConnectionConfig, RemoteTransport},
             actor::{spawn_llm_worker, LlmResponse},
@@ -134,7 +134,7 @@ async fn terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity() {
                 prompt,
                 None,
                 &settings,
-                vox_lib::services::harness::LlmExecutionParams::default(),
+                vox_lib::harness::LlmExecutionParams::default(),
                 llm_tx.clone(),
                 true,
             ));
@@ -193,7 +193,7 @@ async fn terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity() {
 
         // 1. Assert Outcome is Completed with spoken response
         match outcome {
-            vox_lib::services::harness::TurnOutcome::Completed {
+            vox_lib::harness::TurnOutcome::Completed {
                 turn_id,
                 assistant_response,
             } => {
@@ -362,7 +362,7 @@ async fn search_memory_retrieval_is_non_terminal_and_drops_the_scratchpad() {
                 prompt,
                 None,
                 &settings,
-                vox_lib::services::harness::LlmExecutionParams::default(),
+                vox_lib::harness::LlmExecutionParams::default(),
                 llm_tx.clone(),
                 true,
             ));
@@ -533,7 +533,7 @@ async fn tool_call_preserves_the_buffered_preamble_clause() {
         .expect("Stream route failed");
 
         match outcome {
-            vox_lib::services::harness::stages::streaming::StreamPassOutcome::ToolCallsReceived {
+            vox_lib::harness::stages::streaming::StreamPassOutcome::ToolCallsReceived {
                 preamble_text,
                 calls,
                 ..
@@ -564,7 +564,7 @@ async fn tool_call_preserves_the_buffered_preamble_clause() {
 fn turn1_title_request() -> GenerationRequest {
     GenerationRequest {
         input: ConversationInput {
-            messages: vec![vox_lib::services::harness::ChatMessage::new(
+            messages: vec![vox_lib::harness::ChatMessage::new(
                 Role::User,
                 "Hello Vox!".to_string(),
             )],
@@ -968,7 +968,7 @@ async fn web_search_flows_through_the_harness_turn_without_network() {
                 prompt,
                 None,
                 &settings,
-                vox_lib::services::harness::LlmExecutionParams::default(),
+                vox_lib::harness::LlmExecutionParams::default(),
                 llm_tx.clone(),
                 true,
             ));

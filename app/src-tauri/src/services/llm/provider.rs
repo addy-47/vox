@@ -3,9 +3,9 @@ use std::sync::mpsc;
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 
-use crate::services::{
+use crate::{
     harness::{ChatMessage, ConversationContext},
-    llm::LlmModelInfo,
+    services::llm::LlmModelInfo,
 };
 
 /// Purpose of generation, allowing default policy selection.

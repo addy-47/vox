@@ -1638,12 +1638,12 @@ impl HarnessRig {
         {
             let settings = state.settings.read().unwrap().clone();
             let prompt = state.resolve_base_prompt();
-            *state.harness.lock() = Some(vox_lib::services::harness::Harness::new_modular(
+            *state.harness.lock() = Some(vox_lib::harness::Harness::new_modular(
                 Some(session_id),
                 prompt,
                 None,
                 &settings,
-                vox_lib::services::harness::LlmExecutionParams {
+                vox_lib::harness::LlmExecutionParams {
                     context_window: 8192,
                     max_output_tokens: 512,
                     temperature: 0.7,
@@ -1683,12 +1683,12 @@ impl HarnessRig {
         }
     }
 
-    pub fn turn_request(&self, query: &str, turn_id: u32) -> vox_lib::services::harness::TurnExecutionRequest {
+    pub fn turn_request(&self, query: &str, turn_id: u32) -> vox_lib::harness::TurnExecutionRequest {
         self.state
             .pipeline
             .turn_id
             .store(turn_id, std::sync::atomic::Ordering::Relaxed);
-        vox_lib::services::harness::TurnExecutionRequest {
+        vox_lib::harness::TurnExecutionRequest {
             query: query.to_string(),
             turn_id,
             cancel: self.state.pipeline.turn_token(),
@@ -1832,7 +1832,7 @@ impl Drop for HarnessRig {
 
 pub struct BarrierTraceTool {
     pub name: String,
-    pub mode: vox_lib::services::harness::ToolExecutionMode,
+    pub mode: vox_lib::harness::ToolExecutionMode,
     pub barrier: Option<Arc<tokio::sync::Barrier>>,
     pub trace: Arc<parking_lot::Mutex<Vec<String>>>,
     pub post_barrier_yields: usize,
@@ -1841,7 +1841,7 @@ pub struct BarrierTraceTool {
 impl BarrierTraceTool {
     pub fn new(
         name: impl Into<String>,
-        mode: vox_lib::services::harness::ToolExecutionMode,
+        mode: vox_lib::harness::ToolExecutionMode,
         barrier: Option<Arc<tokio::sync::Barrier>>,
         trace: Arc<parking_lot::Mutex<Vec<String>>>,
     ) -> Self {
@@ -1860,7 +1860,7 @@ impl BarrierTraceTool {
     }
 }
 
-impl vox_lib::services::harness::ToolDefinition for BarrierTraceTool {
+impl vox_lib::harness::ToolDefinition for BarrierTraceTool {
     fn name(&self) -> &str {
         &self.name
     }
@@ -1873,7 +1873,7 @@ impl vox_lib::services::harness::ToolDefinition for BarrierTraceTool {
         serde_json::json!({})
     }
 
-    fn execution_mode(&self, _: &serde_json::Value) -> vox_lib::services::harness::ToolExecutionMode {
+    fn execution_mode(&self, _: &serde_json::Value) -> vox_lib::harness::ToolExecutionMode {
         self.mode
     }
 
@@ -1881,21 +1881,21 @@ impl vox_lib::services::harness::ToolDefinition for BarrierTraceTool {
         &'a self,
         _mode: vox_lib::core::events::PipelineMode,
         _args: serde_json::Value,
-        _ctx: &'a vox_lib::services::harness::ToolExecutionContext,
-    ) -> futures_util::future::BoxFuture<'a, Result<vox_lib::services::harness::ToolResult, vox_lib::services::harness::ToolError>> {
+        _ctx: &'a vox_lib::harness::ToolExecutionContext,
+    ) -> futures_util::future::BoxFuture<'a, Result<vox_lib::harness::ToolResult, vox_lib::harness::ToolError>> {
         use futures_util::future::FutureExt;
         async move {
             self.trace.lock().push(format!("start:{}", self.name));
             if let Some(ref b) = self.barrier {
                 tokio::time::timeout(std::time::Duration::from_secs(2), b.wait())
                     .await
-                    .map_err(|_| vox_lib::services::harness::ToolError::Timeout)?;
+                    .map_err(|_| vox_lib::harness::ToolError::Timeout)?;
             }
             for _ in 0..self.post_barrier_yields {
                 tokio::task::yield_now().await;
             }
             self.trace.lock().push(format!("end:{}", self.name));
-            Ok(vox_lib::services::harness::ToolResult::new(format!("done:{}", self.name)))
+            Ok(vox_lib::harness::ToolResult::new(format!("done:{}", self.name)))
         }
         .boxed()
     }

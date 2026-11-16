@@ -7,9 +7,9 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 
 use super::{config::ConnectionConfig, sse::SseDecoder};
-use crate::services::{
+use crate::{
     harness::Role,
-    llm::{CanonicalToolCall, GenerationRequest, LlmError, OutputConstraint, ReasoningMode},
+    services::llm::{CanonicalToolCall, GenerationRequest, LlmError, OutputConstraint, ReasoningMode},
 };
 
 #[derive(Serialize)]
@@ -469,9 +469,9 @@ pub async fn stream_responses(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::{
+    use crate::{
         harness::{ChatMessage as MemMsg, Role},
-        llm::{
+        services::llm::{
             catalog::ProviderPresetMeta, AuthScheme, ConversationInput, GenerationOptions,
             GenerationPurpose, OutputConstraint, TransportType,
         },

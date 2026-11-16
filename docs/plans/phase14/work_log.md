@@ -1,5 +1,20 @@
 # Phase 14 Work Log
 
+## 2026-11-16 — RCA: verify-targets.sh recompiles Vox on every run
+
+- **Symptom:** `scripts/verify-targets.sh` recompiles `Vox` + `tauri-plugin-positioner` on each invocation (49s, 1m21s, 3m24s, 36s) despite no source changes; "1234/1236" progress repeats.
+- **Root cause (confirmed by repro + fingerprints):** the script alternates build configurations that produce distinct Cargo fingerprints for the same crate:
+  - Step 3 `clippy --bin Vox --lib --release --no-default-features` (no-default features, clippy wrapper).
+  - Step 4 `clippy --tests --benches --release` (DEFAULT features, test/bench targets).
+  - Step 5 `build --release --no-default-features --bin Vox` (no-default features, rustc not clippy).
+  - Step 6 `build --release -p vox-llm ...` (default features again).
+  - Each switch invalidates the previous fingerprint, so `Vox` (a large crate) recompiles. `clippy` uses `RUSTC_WORKSPACE_WRAPPER=clippy-driver`, giving it a different fingerprint from `cargo build` even with identical flags. `~300` Vox fingerprint dirs and same-day re-creation timestamps confirm chronic churn.
+  - `[env]` block in `~/.cargo/config.toml` is rewritten every run (android-env.sh) but values are stable, so it is NOT the churn driver (verified stable hash).
+- **Secondary factors:** `crate-type = ["staticlib","cdylib","rlib"]` emits 3 artifacts per build; `codegen-units = 16` in `[profile.release]`; no `sccache`/incremental release cache. These raise the per-recompile cost but are not the cause of recompilation itself.
+- **Classification:** Contained (build-script/config ordering in verify-targets.sh). No source code changes needed.
+- **Fix applied:** `scripts/verify-targets.sh` now uses `--no-default-features` consistently for desktop clippy/tests-benches and sidecar builds (steps 4, 6) to keep one Cargo feature fingerprint. Clippy-vs-build wrapper difference still causes at most one rebuild between clippy and build phases; rerun script twice back-to-back to confirm subsequent runs are near-instant for unchanged sources. No Cargo.toml/profile changes made.
+- **Fix applied (follow-up):** merged desktop clippy into one `cargo clippy --all-targets --release --no-default-features -- -D warnings -D clippy::disallowed_methods` pass. Verified tests/benches already satisfy `clippy::disallowed_methods`, so the separate tests/benches pass with `-A clippy::disallowed_methods` was unnecessary and caused a second full Vox recompile due to different `CLIPPY_ARGS`. Outcome preserved (same gate checks, stricter uniform lint). Expect one desktop clippy compile instead of two.
+
 ## 2026-11-16 — Domain 4: Interruption, Steering & Two-Step Disengage (Phase 3: Batches 1, 2 & 3)
 
 - **Phase 3 Batch 1: 4-Tier Cognitive Boundary Refactor & Tool Sibling Promotion (`7ddce6dd3`)**:

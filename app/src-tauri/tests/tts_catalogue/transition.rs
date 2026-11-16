@@ -3,7 +3,7 @@
 //! ============================================================================
 //! Category  : Integration (Seam 9 — TTS voice hot-swap and filler dispatch)
 //! Component : services/tts/actor.rs + services/tts/providers/supertonic.rs
-//!             + services/harness/facade.rs + services/audio/playback.rs
+//!             + harness/facade.rs + services/audio/playback.rs
 //! Binary    : tts_catalogue_test
 //! Prereqs   : the Supertonic ONNX model
 //! Run       : cargo nextest run --test tts_catalogue_test --release --test-threads=1
@@ -30,8 +30,8 @@ use vox_lib::{
         },
         RoutingContext,
     },
+    harness::{Harness, TRANSITION_MESSAGES_EN},
     services::{
-        harness::{Harness, TRANSITION_MESSAGES_EN},
         tts::{
             actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
             providers::{supertonic::TtsEngine as SupertonicEngine, SynthesisContext, TtsProvider},
@@ -316,7 +316,7 @@ async fn compaction_filler_is_dispatched_and_counted() {
             "You are a helpful voice assistant.".to_string(),
             None,
             &settings,
-            vox_lib::services::harness::LlmExecutionParams {
+            vox_lib::harness::LlmExecutionParams {
                 context_window: 8192,
                 max_output_tokens: 512,
                 temperature: 0.7,
@@ -436,7 +436,7 @@ async fn compaction_filler_is_dispatched_and_counted() {
             "System prompt for new session".to_string(),
             None,
             &settings,
-            vox_lib::services::harness::LlmExecutionParams {
+            vox_lib::harness::LlmExecutionParams {
                 context_window: 8192,
                 max_output_tokens: 512,
                 temperature: 0.7,

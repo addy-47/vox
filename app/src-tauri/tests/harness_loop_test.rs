@@ -2,8 +2,8 @@
 //! harness_loop_test.rs — Canonical Harness Turn Loop & Pipeline Seam
 //! ============================================================================
 //! Category  : Integration (Seam 12 — Harness turn loop → dispatch → commit)
-//! Component : services/harness/loop.rs + services/harness/steps.rs
-//!             + services/harness/chassis.rs + services/harness/stages/streaming/router.rs
+//! Component : harness/loop.rs + harness/steps.rs
+//!             + harness/chassis.rs + harness/stages/streaming/router.rs
 //!             + pipeline/assistant/llm.rs + pipeline/assistant/playback.rs
 //! Binary    : harness_loop_test
 //! Prereqs   : none (isolated temporary database)
@@ -25,17 +25,17 @@ use vox_lib::{
         events::{AudioIntent, InteractionOwner, PipelineMode, VoxEvent},
         state::InteractionState,
     },
-    services::{
-        harness::{
-            chassis::Harness,
-            r#loop::MAX_TOOL_STEPS,
-            stages::inbox::{InboxMessage, QueuedMessageDelivery, StepInbox},
-            tools::{
-                ToolDefinition, ToolError, ToolExecutionContext, ToolFilter, ToolResult,
-                TruncationPolicy,
-            },
-            Role, ToolExecutionMode, TurnOutcome,
+    harness::{
+        chassis::Harness,
+        r#loop::MAX_TOOL_STEPS,
+        stages::inbox::{InboxMessage, QueuedMessageDelivery, StepInbox},
+        tools::{
+            ToolDefinition, ToolError, ToolExecutionContext, ToolFilter, ToolResult,
+            TruncationPolicy,
         },
+        Role, ToolExecutionMode, TurnOutcome,
+    },
+    services::{
         llm::{actor::LlmResponse, CanonicalToolCall},
         tts::actor::TtsCommand,
     },
@@ -202,7 +202,7 @@ async fn critical_threshold_plays_the_compaction_filler() {
             prompt,
             None,
             &settings,
-            vox_lib::services::harness::LlmExecutionParams {
+            vox_lib::harness::LlmExecutionParams {
                 context_window: 8192,
                 max_output_tokens: 512,
                 temperature: 0.7,
@@ -267,7 +267,7 @@ async fn critical_threshold_plays_the_compaction_filler() {
                 "filler must have InterimFiller intent"
             );
             assert!(
-                vox_lib::services::harness::TRANSITION_MESSAGES_EN.contains(&text.as_str()),
+                vox_lib::harness::TRANSITION_MESSAGES_EN.contains(&text.as_str()),
                 "filler text '{}' must be from TRANSITION_MESSAGES_EN",
                 text
             );
@@ -1136,7 +1136,7 @@ async fn parallel_tool_wave_executes_concurrently_and_commits_in_declaration_ord
         let p1 = Arc::new(
             common::harness::BarrierTraceTool::new(
                 "P1",
-                vox_lib::services::harness::ToolExecutionMode::Parallel,
+                vox_lib::harness::ToolExecutionMode::Parallel,
                 Some(barrier.clone()),
                 trace.clone(),
             )
@@ -1146,7 +1146,7 @@ async fn parallel_tool_wave_executes_concurrently_and_commits_in_declaration_ord
         let p2 = Arc::new(
             common::harness::BarrierTraceTool::new(
                 "P2",
-                vox_lib::services::harness::ToolExecutionMode::Parallel,
+                vox_lib::harness::ToolExecutionMode::Parallel,
                 Some(barrier.clone()),
                 trace.clone(),
             )
@@ -1156,7 +1156,7 @@ async fn parallel_tool_wave_executes_concurrently_and_commits_in_declaration_ord
         let p3 = Arc::new(
             common::harness::BarrierTraceTool::new(
                 "P3",
-                vox_lib::services::harness::ToolExecutionMode::Parallel,
+                vox_lib::harness::ToolExecutionMode::Parallel,
                 Some(barrier.clone()),
                 trace.clone(),
             )
@@ -1253,31 +1253,31 @@ async fn exclusive_tool_acts_as_strict_barrier_between_parallel_waves() {
 
         let p1 = Arc::new(common::harness::BarrierTraceTool::new(
             "P1",
-            vox_lib::services::harness::ToolExecutionMode::Parallel,
+            vox_lib::harness::ToolExecutionMode::Parallel,
             Some(wave1_barrier.clone()),
             trace.clone(),
         ));
         let p2 = Arc::new(common::harness::BarrierTraceTool::new(
             "P2",
-            vox_lib::services::harness::ToolExecutionMode::Parallel,
+            vox_lib::harness::ToolExecutionMode::Parallel,
             Some(wave1_barrier.clone()),
             trace.clone(),
         ));
         let e1 = Arc::new(common::harness::BarrierTraceTool::new(
             "E1",
-            vox_lib::services::harness::ToolExecutionMode::Exclusive,
+            vox_lib::harness::ToolExecutionMode::Exclusive,
             None,
             trace.clone(),
         ));
         let p3 = Arc::new(common::harness::BarrierTraceTool::new(
             "P3",
-            vox_lib::services::harness::ToolExecutionMode::Parallel,
+            vox_lib::harness::ToolExecutionMode::Parallel,
             Some(wave2_barrier.clone()),
             trace.clone(),
         ));
         let p4 = Arc::new(common::harness::BarrierTraceTool::new(
             "P4",
-            vox_lib::services::harness::ToolExecutionMode::Parallel,
+            vox_lib::harness::ToolExecutionMode::Parallel,
             Some(wave2_barrier.clone()),
             trace.clone(),
         ));
@@ -2076,7 +2076,7 @@ async fn mid_loop_critical_budget_triggers_compaction_while_preserving_active_tu
                 prompt,
                 None,
                 &settings,
-                vox_lib::services::harness::LlmExecutionParams {
+                vox_lib::harness::LlmExecutionParams {
                     context_window: 8192,
                     max_output_tokens: 512,
                     temperature: 0.7,
@@ -3099,7 +3099,7 @@ async fn step_inbox_drains_immediate_messages_and_retains_turn_boundary_messages
     .expect("test timed out");
 }
 
-/// PURPOSE:  Deterministic lint-arch.sh enforces RULE-HARN-01: forbids services/harness/stages/tools/, forbids raw actor commands in loop.rs and steps.rs, and forbids stages/tools imports in loop.rs.
+/// PURPOSE:  Deterministic lint-arch.sh enforces RULE-HARN-01: forbids harness/stages/tools/, forbids raw actor commands in loop.rs and steps.rs, and forbids stages/tools imports in loop.rs.
 /// SCENARIO: Verify scripts/lint-arch.sh content and execution against RULE-HARN-01 specification.
 /// ASSERTS:  lint-arch.sh contains RULE-HARN-01 invariant check; checks stages/tools absence, actor command isolation, and loop.rs pure boundaries.
 /// CLASS:    contract
@@ -3117,8 +3117,8 @@ fn lint_arch_enforces_rule_harn_01_and_forbids_actor_commands_in_loop_and_steps(
         "scripts/lint-arch.sh must enforce RULE-HARN-01 invariant"
     );
     assert!(
-        script_content.contains("services/harness/stages/tools"),
-        "lint-arch.sh must verify that services/harness/stages/tools does not exist"
+        script_content.contains("harness/stages/tools"),
+        "lint-arch.sh must verify that harness/stages/tools does not exist"
     );
     assert!(
         script_content.contains("TtsCommand") && script_content.contains("LlmCommand") && script_content.contains("PersistenceEvent"),
@@ -3137,31 +3137,31 @@ fn lint_arch_enforces_rule_harn_01_and_forbids_actor_commands_in_loop_and_steps(
     );
 }
 
-/// PURPOSE:  Agentic tools operate as an isolated sibling module under services/harness/tools/, completely separate from pipeline stages at services/harness/stages/.
+/// PURPOSE:  Agentic tools operate as an isolated sibling module under harness/tools/, completely separate from pipeline stages at harness/stages/.
 /// SCENARIO: Verify filesystem topology of tools chassis and execute a tool batch through ToolRegistry.
-/// ASSERTS:  src/services/harness/tools directory exists; src/services/harness/stages/tools does NOT exist; tool chassis executes tools cleanly.
+/// ASSERTS:  src/harness/tools directory exists; src/harness/stages/tools does NOT exist; tool chassis executes tools cleanly.
 /// CLASS:    contract
 /// REQUIRES: none
 /// MUTANT:   Point ToolRegistry import or directory back to stages::tools.
 #[tokio::test]
 async fn sibling_tools_chassis_executes_isolated_from_stages() {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let sibling_tools_dir = manifest_dir.join("src/services/harness/tools");
-    let legacy_stages_tools_dir = manifest_dir.join("src/services/harness/stages/tools");
+    let sibling_tools_dir = manifest_dir.join("src/harness/tools");
+    let legacy_stages_tools_dir = manifest_dir.join("src/harness/stages/tools");
 
     // 1. Filesystem topology assertions
     assert!(
         sibling_tools_dir.exists(),
-        "services/harness/tools/ must exist as an isolated sibling directory under services/harness/"
+        "harness/tools/ must exist as an isolated sibling directory under harness/"
     );
     assert!(
         !legacy_stages_tools_dir.exists(),
-        "services/harness/stages/tools/ must NOT exist; tools must be promoted to sibling directory"
+        "harness/stages/tools/ must NOT exist; tools must be promoted to sibling directory"
     );
 
     // 2. Functional tool chassis execution check
-    let mut registry = vox_lib::services::harness::tools::ToolRegistry::new();
-    registry.register(Arc::new(vox_lib::services::harness::tools::MemorySearchTool));
+    let mut registry = vox_lib::harness::tools::ToolRegistry::new();
+    registry.register(Arc::new(vox_lib::harness::tools::MemorySearchTool));
 
     assert!(
         registry.get("search_memory").is_some(),

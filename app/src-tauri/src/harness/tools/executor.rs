@@ -11,7 +11,7 @@ use super::{
     ToolExecutionMode, ToolResult,
 };
 use crate::{
-    core::events::PipelineMode, services::harness::TOOL_EXECUTION_TIMEOUT,
+    core::events::PipelineMode, harness::TOOL_EXECUTION_TIMEOUT,
     services::llm::CanonicalToolCall,
 };
 
@@ -94,7 +94,7 @@ impl ToolExecutor {
 
         let max_tokens = ctx.max_observation_tokens.unwrap_or(2000);
         let (preview_content, truncated, spillover_path) =
-            crate::services::harness::stages::truncation::TruncationStage::apply(
+            crate::harness::stages::truncation::TruncationStage::apply(
                 ctx.session_id,
                 &call.id,
                 &call.name,

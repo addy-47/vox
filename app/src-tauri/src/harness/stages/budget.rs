@@ -1,6 +1,6 @@
-use crate::services::{
+use crate::{
     harness::{ChatMessage, ConversationHistoryStage, Role},
-    memory::ml::estimate_tokens,
+    services::memory::ml::estimate_tokens,
 };
 
 pub const SOFT_COMPACTION_THRESHOLD_PERCENT: usize = 65;

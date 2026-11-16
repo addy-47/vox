@@ -32,10 +32,10 @@ use crate::{
     pipeline::{
         dictation::DictationInteractionMode, spawn_idle_monitor, transition, RoutingContext,
     },
+    harness::{Harness, LlmExecutionParams},
     services::{
         self,
         audio::detect_audio_output_mode,
-        harness::{Harness, LlmExecutionParams},
         llm::{
             actor::{cool_down_llm, LlmCommand},
             catalog::{

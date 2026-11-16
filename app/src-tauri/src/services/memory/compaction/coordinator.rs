@@ -21,8 +21,8 @@ use crate::{
         sessions::fetch_session_by_id,
         TurnRow, VoxDb,
     },
+    harness::{ChatMessage, PromptTag, Role},
     services::{
-        harness::{ChatMessage, PromptTag, Role},
         llm::{
             actor::create_llm_provider_from_llm_settings, LlmProvider, LlmProvidersConfig,
             LlmSettings, QWEN_MODEL_DIR, QWEN_MODEL_FILE,

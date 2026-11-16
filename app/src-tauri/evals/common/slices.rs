@@ -21,9 +21,9 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use vox_lib::services::{
+use vox_lib::{
     harness::{ChatMessage, ContextBudgetStage, ContextStatus, PromptTag, Role},
-    memory::ml::estimate_tokens,
+    services::memory::ml::estimate_tokens,
 };
 
 use crate::common::datasets::SessionTurn;

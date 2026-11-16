@@ -2,7 +2,7 @@
 //! session_lifecycle_test.rs — the assistant session starts, continues, pauses, resumes and ends with the state, ownership, VAD mode, persistence and working memory all in agreement
 //! ============================================================================
 //! Category  : Integration (Seam 11 — voice session lifecycle)
-//! Component : src/pipeline/assistant/session.rs, src/pipeline/router.rs, src/persistence/worker.rs, src/services/harness/session.rs
+//! Component : src/pipeline/assistant/session.rs, src/pipeline/router.rs, src/persistence/worker.rs, src/harness/session.rs
 //! Binary    : session_lifecycle_test
 //! Prereqs   : none (isolated temporary VOX_HOME, Turso database and mock audio engine per test)
 //! Run       : cargo nextest run --test session_lifecycle_test --release --test-threads=1
@@ -1144,7 +1144,7 @@ async fn session_end_unmounts_the_harness_clears_the_accumulator_and_purges_the_
             settings.interaction.pipeline_mode = PipelineMode::Realtime;
         }
 
-        let harness = vox_lib::services::harness::Harness::new_realtime(
+        let harness = vox_lib::harness::Harness::new_realtime(
             Some(conv_id as i64),
             "System prompt".to_string(),
             None,
