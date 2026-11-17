@@ -1,158 +1,132 @@
 # Pipeline Refactor Checklist: Phase 14
 
-## Batch 0: Core Duplex State Machine, Hardware Cancellation & Staging Hygiene
-*Depends on: None (builds on checkpoint commit)*
-
-### `app/src-tauri/src/pipeline/atomics.rs`
-- `PipelineAtomics.hardware_cancel_flag`: Add `Arc<AtomicBool>` for low-level C++ thread cancellation.
-- `PipelineAtomics.llm_done`: Add `Arc<AtomicBool>` tracking cognitive completion for the active turn.
-- `PipelineAtomics.stream_cancel_token`: Add `Arc<parking_lot::Mutex<tokio_util::sync::CancellationToken>>` for in-flight stream pause.
-- `PipelineAtomics::cancel_active_turn`: Set `hardware_cancel_flag.store(true)` in lockstep with token cancel.
-- `PipelineAtomics::rearm_turn_cancel_token`: Reset `hardware_cancel_flag.store(false)` on token rotation.
-- `PipelineAtomics::cancel_active_stream`: Cancel in-flight model stream pass without cancelling turn.
-- `PipelineAtomics::rearm_stream_cancel_token`: Rearm stream cancellation token for next pass.
-- `PipelineAtomics::next_turn`: Reset `llm_done.store(false)`, rearm `turn_cancel_token`, and rearm `stream_cancel_token`.
-- `PipelineAtomics::is_llm_done`: Add getter for atomic `llm_done` flag.
-- `PipelineAtomics::set_llm_done`: Add setter for atomic `llm_done` flag.
-
-### `app/src-tauri/src/core/engine.rs`
-- `create_playback_engine`: Pass `Arc::clone(&state.pipeline.hardware_cancel_flag)` instead of dummy atomic.
-- `spawn_stt_worker`: Pass `Arc::clone(&state.pipeline.hardware_cancel_flag)` instead of dummy atomic.
-- `init_audio_stream`: Pass `Arc::clone(&state.pipeline.hardware_cancel_flag)` instead of dummy atomic.
-
-### `app/src-tauri/src/pipeline/router.rs`
-- `transition`: Retain `current_activity` when transitioning to `InteractionState::Speaking`.
-- `transition_harness_phase`: Implement guarded transition enforcing Epoch/Cancel and Duplex Audio Priority guards.
-
-### `app/src-tauri/src/pipeline/assistant/playback.rs`
-- `on_playback_started`: Transition `Thinking` or `Working` to `Speaking` without wiping `current_activity`.
-- `on_playback_finished`: Implement Duplex return to `Ready` (if `llm_done`), `Working` (if tool active), or `Thinking`.
-
-### `app/src-tauri/src/pipeline/assistant/llm.rs`
-- `on_llm_finished`: Set `state.pipeline.set_llm_done(true)`.
-- `evaluate_synthesis_latch`: Transition to `Ready` if audio idle, else remain/transition to `Speaking`.
-
-### `app/src-tauri/src/harness/chassis.rs`
-- `TurnPhase`: Delete redundant enum.
-- `Harness.turn_phase`: Remove field.
-- `Harness::take_staged_query`: Extract `pending_user_query` for continuation without history rollback.
-- `Harness::discard_pending_turn`: Discard `pending_user_query` when turn aborted.
-- `Harness.has_played_filler`: Remove session-level boolean field.
-
-### `app/src-tauri/src/harness/steps.rs`
-- `step1_intake`: Replace raw `transition` call with `transition_harness_phase`.
-- `enter_non_terminal_phase`: Replace raw `transition` call with `transition_harness_phase`.
-- `step6_await_and_drain_inbox`: Replace raw `transition` call with `transition_harness_phase`.
-
-### `app/src-tauri/src/pipeline/assistant/interrupt.rs` (Stage 1: SpeechStart)
-- `on_interrupt`: Mute audio immediately via `playback_engine.cancel()`.
-- `on_interrupt`: Cancel in-flight model stream pass via `cancel_active_stream()`.
-- `on_interrupt`: Transition immediately to `Listening`.
-- `on_interrupt`: Keep `turn_cancel_token` active; do NOT call `next_turn()`.
-- Sweep all `.turn_cancel_token().cancel()` call sites across `error.rs`, `interrupt.rs`, `ptt.rs`, and `session.rs` to use `cancel_active_turn()`.
-
-### `app/src-tauri/src/pipeline/assistant/transcript.rs` (Stage 2: TranscriptFinal)
-- `on_transcript_final`: On empty transcript, keep turn intact: transition to `Ready` if `llm_done`, `Working` if tool active, or `Thinking` (rearming `stream_cancel_token`).
-- `on_transcript_final`: On non-empty transcript, cancel prior turn via `cancel_active_turn()`, check Step 0 query concatenation, allocate `next_turn()`, and dispatch as brand new dialogue turn.
-
-### `app/src-tauri/src/pipeline/assistant/text.rs`
-- `on_text_input`: Synchronously call `harness.stage_user_query` on router thread before spawning task.
-
-### `app/src-tauri/src/services/audio/playback.rs`
-- `PlaybackEngine::ingest_chunk`: Store `sink_occupied.store(true)`.
-- `PlaybackEngine::cancel`: Store `sink_occupied.store(false)`.
-
-### `app/src-tauri/src/pipeline/assistant/playback.rs`
-- `on_playback_started`: Record TTFA metrics even if already in `Speaking` state (handles early `LlmFinished`).
-- `on_playback_finished`: Add `sink_occupied` early-return check to prevent premature drop while audio plays in sound card.
-
-### `app/src-tauri/src/persistence/steps.rs` & `app/src-tauri/src/harness/steps.rs`
-- `persistence/steps.rs`: Persist step `content` and execution metrics into `session_steps`. User utterances are stored strictly in `turns` table.
-- `harness/steps.rs` (`step3_execute_compaction`): Pass `turn_id` and `step_id` to `record_compaction_start` so `session_compactions` links directly to the triggering step.
-
-### `app/src-tauri/tests/playback_test.rs`
-- `test_playback_finished_transitions_speaking_to_ready`: Emit `VoxEvent::LlmFinished` before asserting `Ready`.
-- `test_underrun_recovers_when_next_chunk_arrives`: Emit `VoxEvent::LlmFinished` before asserting `Ready`.
-- `test_empty_playback_finished_on_zero_length_audio`: Emit `VoxEvent::LlmFinished` before asserting `Ready`.
-
-### `app/src-tauri/tests/playback/tts_to_playback.rs`
-- `tts_synthesis_streams_into_playback_engine_and_drains`: Emit `VoxEvent::LlmFinished` before asserting `Ready`.
+## T-01: Test Engineer Baseline (Forked Subagent)
+*Scope: `tests/`, `evals/`, `benches/` (Read-only on production source)*
+- [x] Read `.agents/rules/testing-style-guide.md` and `/create-test` skill.
+- [x] `tests/harness_loop_test.rs`: Prune/rewrite `TurnPhase` assertions at lines 2646, 2821, 2834 to check `pending_user_query.is_some()`.
+- [x] `tests/harness_loop_test.rs`: Delete legacy Step 0 history rollback assertion at line 2696 (`harness-spec.md:207`).
+- [x] `tests/harness_loop_test.rs`: Reconcile false-green intent blocks in lines 793 and 959 with body assertions.
+- [x] `tests/harness_loop_test.rs`: Purge `AudioIntent::TurnResponse` match at line 1013.
+- [x] `tests/harness_loop_test.rs`: Line 584: Update to assert `Working --> Speaking` on `PlaybackStarted`, and `Speaking --> Working` on `PlaybackFinished` when `llm_done == false`.
+- [x] `tests/harness_loop_test.rs`: Line 1388: Update so voice barge-in in `Working` tests turn advance and cancellation; test `StepInbox` via programmatic push per `RULE-HARN-18`.
+- [x] Update `tests/audio_capture/barge_in.rs:212`, `tests/e2e_voice_pipeline_test.rs:293`, and `tests/harness_loop_test.rs:1244` to assert `utterance_id` increments on `SpeechStart` and `turn_id` increments on non-empty `TranscriptFinal`.
+- [x] `tests/audio_capture/barge_in.rs`: Replace bare `sleep(300ms)` at line 162 with `vad_quiescence_barrier`.
+- [x] `tests/common/harness.rs`: Fix `let _ = handle.join()` swallowing panics at lines 1003, 1006, 1011; replace bare sleep at lines 342-343.
+- [x] `tests/common/harness.rs`: `AudioSceneRig::drop` (lines 582-593): assert `!res.is_err()` when `!std::thread::panicking()`.
+- [x] `tests/common/harness.rs`: `E2eVoiceRig` (lines 693, 703, 728, 732): wire cancel flags to `state.pipeline.hardware_cancel_flag`.
+- [x] `tests/stt_turn_identity_test.rs`: Fix `let _ = join.join()` at line 160.
+- [x] `tests/playback_test.rs`: Emit `VoxEvent::LlmFinished` before asserting `Ready` in:
+  - `playback_gates_thinking_to_speaking_and_speaking_to_ready` (line 47)
+  - `short_utterance_requires_a_flush_to_arm_the_pre_roll` (line 147)
+  - `playback_finished_is_deferred_while_a_job_is_pending` (line 208)
+- [x] `tests/playback/tts_to_playback.rs`: Emit `VoxEvent::LlmFinished` before asserting `Ready` in:
+  - `real_synthesis_is_ingested_and_arms_the_pre_roll` (line 42)
+- [x] Add Red-Seam Tests:
+  - Cognitive loop resumption on false barge-in (`Thinking --> Listening --> Thinking`).
+  - `llm_done` lifecycle: `PlaybackFinished` before `LlmFinished` returns `Thinking`/`Working`.
+  - Guard enforcement: `transition_harness_phase` blocks stale turns and preserves `Speaking`.
+  - Cancel flag re-arm: Second turn after barge-in produces audio chunks.
+  - Tool-active false barge-in: Stage 2 empty transcript restores `Working` with intact `current_activity`.
+  - Zero-audio fallback: Empty TTS synthesis emits fallback `PlaybackFinished` and closes quiescence latch.
+  - Utterance binding: VAD holds chunks pre-bind; STT resets on unknown utterance ID.
+- [x] Deliver baseline report artifact: `docs/plans/phase14/test-baseline-report.md`.
 
 ---
 
-## Batch 1: Audio Hot-Path Hygiene & Utterance Binding
-*Depends on: Batch 0*
-
-### `app/src-tauri/src/core/events.rs`
-- `VadCommand::BindUtterance`: Add command carrying `turn_id` and `utterance_id`.
-
-### `app/src-tauri/src/services/vad/actor.rs`
-- `VadActorState.binding`: Add `Option<(u32, u32)>` storage for bound IDs.
-- `VadActor::handle_command`: On `BindUtterance`, record binding and flush held pre-roll audio.
-
-### `app/src-tauri/src/services/vad/segmenter.rs`
-- `VadSegmenter::process_frame`: Delete speculative `wrapping_add(1)` prediction logic.
-- `VadSegmenter::resync`: Delete atomic re-sync logic at lines 251–254 and 388–392.
-
-### `app/src-tauri/src/services/stt/actor.rs`
-- `SttCommand::StreamChunk`: Add `utterance_id: u32` parameter.
-- `SttCommand::Partial`: Add `utterance_id: u32` parameter.
-- `SttCommand::Final`: Add `utterance_id: u32` parameter.
-- `SttActor::handle_stream`: Remove turn guessing; drop chunks with unknown binding.
-
-### `app/src-tauri/src/pipeline/assistant/speech.rs`
-- `on_speech_start`: Send `VadCommand::BindUtterance` with router-allocated IDs.
-
-### `app/src-tauri/src/pipeline/dictation/speech.rs`
-- `on_dictation_speech_start`: Send `VadCommand::BindUtterance` with router-allocated IDs.
-
-### `app/src-tauri/src/services/tts/actor.rs`
-- Delete lines 132–140 where TTS worker emits duplicate `VoxEvent::PlaybackFinished` (`T-AUDIO-02`).
-- Respect `engine_shutdown: Arc<AtomicBool>` in `spawn_tts_worker` loop (`T-AUDIO-03`).
-- In `cool_down_tts`, join the persistent worker thread handle stored in `handles.tts_handle` (`T-AUDIO-03`).
-
-### `app/src-tauri/src/services/audio/device.rs`
-- `SharedRingProducer`: Remove `Mutex` lock from real-time audio producer callback.
-- `SharedRingProducer::push`: Replace `log::warn!` with atomic dropped samples counter.
-
-### `app/src-tauri/src/services/audio/sink.rs`
-- `process_output_buffer`: Remove string allocations and `log::*` macros from CPAL output callback.
+## T-02: PipelineAtomics & Owned Hardware Cancel Flag
+- [ ] `pipeline/atomics.rs`: Add `hardware_cancel_flag: Arc<AtomicBool>` and `llm_done: Arc<AtomicBool>`.
+- [ ] `pipeline/atomics.rs`: Add `stream_cancel_token: parking_lot::Mutex<tokio_util::sync::CancellationToken>`, with `cancel_active_stream()` and `rearm_stream_cancel_token()`.
+- [ ] `pipeline/atomics.rs`: Update `cancel_active_turn` to store `hardware_cancel_flag = true`.
+- [ ] `pipeline/atomics.rs`: Update `rearm_turn_cancel_token` to store `hardware_cancel_flag = false`.
+- [ ] `pipeline/atomics.rs`: Update `next_turn` to reset `llm_done = false`, `hardware_cancel_flag = false`, and re-arm tokens.
+- [ ] `pipeline/atomics.rs`: Add `mark_llm_finished(turn_id)` with active `turn_id` validation.
+- [ ] `services/audio/playback.rs`: Split `PlaybackEngine::cancel()`: remove `self.cancel_flag.store(true)`. Strictly set `discard_request = true`, `turn_armed = false`, `sink_occupied = false`, flush remote sink.
+- [ ] `core/engine.rs`: Replace all 4 anonymous cancel flags with `Arc::clone(&state.pipeline.hardware_cancel_flag)`:
+  - `create_playback_engine` (line 184)
+  - `init_audio_stream` (line 417)
+  - `spawn_stt_worker` (line 586)
+  - `TtsWarmUpHandles` in `warm_up_tts`
+- [ ] Sweep direct `turn_cancel_token().cancel()` callers in `error.rs`, `interrupt.rs`, `ptt.rs`, `session.rs` to call `cancel_active_turn()`.
 
 ---
 
-## Batch 2: Remote Control Protocol, Leasing & Trust Decoupling
-*Depends on: Batch 0*
-
-### `app/src-tauri/src/services/remote/session/manager.rs`
-- `ControllerLease`: Add lease struct `(device_id, lease_id)`.
-- `RemoteSessionManager::try_reserve_controller`: Add atomic lease reservation.
-- `RemoteSessionManager::release_controller`: Add atomic lease release.
-
-### `app/src-tauri/src/services/remote/session/listener.rs`
-- `handle_hello`: Reserve controller lease before generating snapshot; return `LinkRefused` if busy.
-- `build_attach_snapshot`: Read canonical `StateChangedPayload` from router cache.
-
-### `app/src-tauri/src/services/remote/session/dialer.rs`
-- `handle_unknown_peer`: Remove `delete_paired_device` call on `UnknownPeer` error.
-- `RemoteFailureKind::UnknownPeer`: Add typed failure variant.
-
-### `app/src-tauri/src/services/remote/session/supervisor.rs`
-- `RemoteSupervisorState.current_pipeline_view`: Replace loose `RwLock<String>` with typed `PipelineView`.
-- `RemoteSupervisor::emit_disconnect_state`: Emit `state_changed` with true active `turn_id`.
-
-### `app/src-tauri/src/services/remote/audio/controller_runtime.rs`
-- `ControllerAudioWorker::run`: Replace detached `tauri::async_runtime::spawn` tasks with `blocking_send`.
-
-### `app/src/services/remoteService.ts`
-- `RemoteFailureKind`: Add `'UnknownPeer'` to TypeScript union type.
+## T-03: AudioIntent & TurnPhase Clean Sweep
+- [ ] `core/events.rs`: Delete `AudioIntent` enum; remove `intent` field from `PlaybackStarted` and `PlaybackFinished`.
+- [ ] `services/audio/mod.rs`: Delete `playback_intent: Arc<AtomicU8>`.
+- [ ] `services/tts/providers/`: Remove `intent` parameter from `edge_tts.rs`, `chatterbox_remote.rs`, and provider traits.
+- [ ] `pipeline/assistant/playback.rs`: Remove `intent` matches and imports.
+- [ ] `harness/chassis.rs`: Delete `TurnPhase` enum and `turn_phase` field.
+- [ ] `harness/mod.rs`: Remove `TurnPhase` re-export.
+- [ ] `pipeline/assistant/interrupt.rs`: Rewrite `has_committed` check to use `harness.pending_user_query.is_some()`.
+- [ ] Sweep evals (`evals/agentic-tool/tts_capture.rs`) and benches (`benches/common/tts_harness.rs`).
 
 ---
 
-## Batch 3: Verification & Cross-Target Regression Gate
-*Depends on: Batches 0, 1, 2*
+## T-04: Duplex Router & Activity Preservation
+- [ ] `pipeline/router.rs`: Update `transition()` to preserve `current_activity` on `Listening` and `Speaking`; clear only on other 7 states.
+- [ ] `pipeline/router.rs`: When `new_state == InteractionState::Working && activity.is_none()`, retain existing `state.pipeline.current_activity()`.
+- [ ] `pipeline/router.rs`: Implement `transition_harness_phase` with Epoch/Cancel and Duplex Audio Priority guards.
+- [ ] `harness/steps.rs`: Replace raw `transition()` calls with `transition_harness_phase`.
+- [ ] `pipeline/assistant/llm.rs::evaluate_synthesis_latch`: Invoke `mark_llm_finished(turn_id)`. Delete `if current_state != InteractionState::Speaking { transition(...) }`. If `!audio_active`, transition to `Ready`; if `audio_active`, do not call `transition(...)`.
 
-### Workspace Verification
-- `scripts/lint-arch.sh`: Verify backend architectural layering and forbid raw actor commands in loop/steps.
-- `cargo clippy --bin Vox --lib --release --no-default-features -D warnings`: Compile desktop library and binary.
-- `cargo clippy --target aarch64-linux-android --lib --release -D warnings -D clippy::disallowed_methods`: Android cross-compile gate.
-- `cargo nextest run --release --test-threads=1 --no-fail-fast`: Run full 65+ integration test suite to completion.
+---
+
+## T-05: Stage 2 Barge-In Hardening & Cognitive Loop Resumption
+- [ ] `harness/mod.rs`: Pass both `turn_cancel` and `stream_cancel` into `TurnExecutionRequest`.
+- [ ] `harness/stages/streaming/router.rs` & `harness/loop.rs`: Stream cancel halts token emission without exiting task; parks at `StepInbox::wait_if_speech_held()`. On real barge-in, exit via `step7_handle_cancelled`; on false barge-in, loop back to Step 4.
+- [ ] `harness/steps.rs`: In `step7_handle_cancelled`, if `!ctx.partial_text.trim().is_empty()`, commit turn via `harness.commit_completed_turn(ctx.partial_text.clone())`.
+- [ ] `pipeline/assistant/session.rs`: In `on_stop_turn`, only discard `pending_user_query` if `assistant_response` in `pipeline_accumulator` is empty.
+- [ ] `pipeline/assistant/interrupt.rs`: Stage 1 cancels stream pass and mutes audio; preserves turn token, hardware flag, and activity.
+- [ ] `pipeline/assistant/interrupt.rs`: Allocate `utterance_id` on speech onset and send `BindUtterance`.
+- [ ] `pipeline/assistant/transcript.rs`: Stage 2 empty transcript re-arms `hardware_cancel_flag = false`, releases speech hold, and restores state.
+- [ ] `pipeline/assistant/transcript.rs`: Stage 2 non-empty transcript releases speech hold, finalizes prior turn (`RULE-EVT-08B`), cancels prior turn, stashes Step 0 query via `stash_for_continuation()`, and calls `next_turn()`.
+- [ ] `pipeline/assistant/transcript.rs`: Key late-final check on `utterance_id < state.pipeline.peek_utterance_id()`.
+- [ ] `pipeline/assistant/text.rs`: If interrupting `Thinking`/`Speaking`/`Working`, call `cancel_active_turn()` and `next_turn()`. Stage query synchronously before spawning task.
+
+---
+
+## T-06: Playback Quiescence Law Completion
+- [ ] `pipeline/assistant/playback.rs`: `on_playback_started` accepts `Ready` state and records TTFA milestone.
+- [ ] `pipeline/assistant/playback.rs`: `on_playback_finished` narrowed to `Speaking`. In `Thinking`/`Working`, accept only when `llm_done && pending_tts_jobs == 0 && !sink_occupied` (zero-audio fallback).
+- [ ] `pipeline/assistant/playback.rs`: Implement Duplex return (`Ready` if `llm_done`, `Working` if activity active, else `Thinking`).
+- [ ] `services/audio/playback.rs`: `PlaybackEngine::ingest_chunk_with_threshold` sets `sink_occupied.store(true, Ordering::Release)` before `tts/actor.rs` decrements `pending_tts_jobs`.
+- [ ] `services/audio/playback.rs` & `sink.rs`: `cancel()` and buffer drain set `sink_occupied.store(false, Ordering::Release)`.
+
+---
+
+## T-07: Audio Hot-Path Hygiene & Utterance Binding
+- [ ] `core/events.rs`: Add `VadCommand::BindUtterance { turn_id, utterance_id }`.
+- [ ] `services/vad/actor.rs`: Add `awaiting_utterance_binding: bool` to `VadActorState`. Buffer pre-roll and incoming frames; flush when `BindUtterance` arrives. Purge speculative `wrapping_add(1)` prediction.
+- [ ] `services/stt/actor.rs`: Add `utterance_id` to commands; purge `wrapping_add(1)` branches; reset provider on unknown binding.
+- [ ] `pipeline/assistant/ptt.rs` & `dictation/ptt.rs`: Allocate `utterance_id` in `on_ptt_start`, pass through validation and `SttCommand::Final`.
+- [ ] `pipeline/assistant/speech.rs`: Dispatch `BindUtterance` upon speech onset.
+- [ ] `core/engine.rs`: In `SharedRingProducer`, use `try_lock()` on input capture frames, dropping on contention without blocking mutex locks.
+- [ ] `services/audio/sink.rs`: Delete string formatting and `log::*` macros from CPAL output callback.
+
+---
+
+## T-08: TTS Lifecycle Hygiene
+- [ ] `services/tts/actor.rs` & `core/engine.rs`: Add `pub engine_shutdown: Arc<AtomicBool>` to `TtsWorkerHandles` and `TtsWarmUpHandles`, wiring `Arc::clone(&state.pipeline.engine_shutdown)`.
+- [ ] `services/tts/actor.rs`: Worker loop checks `engine_shutdown`.
+- [ ] `services/tts/actor.rs`: Retain fallback `PlaybackFinished` emission strictly when `remaining_jobs == 0 && !playback.is_armed() && playback.occupied_len() == 0`.
+- [ ] `services/tts/mod.rs`: `cool_down_tts` joins `handles.tts_handle`.
+- [ ] Update `TtsWorkerHandles` struct literals in test harnesses.
+
+---
+
+## T-09: Remote Control Protocol
+- [ ] `services/remote/session/manager.rs`: Add `ControllerLease` with atomic reservation.
+- [ ] `services/remote/session/listener.rs`: `drive_tier2_handshake` reserves lease; returns `LinkRefusedReason::ControllerAttached` if busy.
+- [ ] `services/remote/session/dialer.rs`: Remove `delete_paired_device` on `UnknownPeer`; emit `RemoteFailureKind::UnknownPeer`.
+- [ ] `services/remote/session/supervisor.rs`: Upgrade `current_pipeline_state` to `current_pipeline_view: RwLock<PipelineView { state, turn_id }>`.
+- [ ] `services/remote/audio/controller_runtime.rs`: Replace detached async tasks with `blocking_send` on dedicated VAD thread.
+- [ ] `app/src/services/remoteService.ts`: Add `'UnknownPeer'` to union type.
+
+---
+
+## T-10: Cross-Target Verification Gate
+- [ ] `./scripts/verify-targets.sh` succeeds.
+- [ ] Desktop release Clippy passes with zero warnings.
+- [ ] Android cross-target Clippy passes with zero warnings.
+- [ ] `./scripts/lint-arch.sh` passes.
+- [ ] Full `cargo nextest` suite passes 100% green.

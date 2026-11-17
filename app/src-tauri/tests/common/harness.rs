@@ -339,7 +339,6 @@ pub fn collect_all_final_transcripts(
                     finals.push(trimmed.to_string());
                 }
                 if finals.len() >= expected_turns {
-                    std::thread::sleep(Duration::from_millis(200));
                     while let Ok(ev) = rx.try_recv() {
                         if let VoxEvent::TranscriptFinal { text: rem_text, .. } = ev {
                             let rem_trimmed = rem_text.trim();
@@ -1000,15 +999,24 @@ impl Drop for AudioSceneRig {
         if let Ok(mut guard) = self.state.engine.try_lock() {
             if let Some(ref mut engine) = *guard {
                 if let Some(handle) = engine.aec_handle.take() {
-                    let _ = handle.join();
+                    let res = handle.join();
+                    if !std::thread::panicking() {
+                        assert!(res.is_ok(), "aec worker thread panicked: {:?}", res.err());
+                    }
                 }
                 if let Some(handle) = engine.vad_handle.take() {
-                    let _ = handle.join();
+                    let res = handle.join();
+                    if !std::thread::panicking() {
+                        assert!(res.is_ok(), "vad worker thread panicked: {:?}", res.err());
+                    }
                 }
             }
         }
         if let Some(handle) = self.router_join.take() {
-            let _ = handle.join();
+            let res = handle.join();
+            if !std::thread::panicking() {
+                assert!(res.is_ok(), "router thread panicked: {:?}", res.err());
+            }
         }
     }
 }
@@ -1148,6 +1156,7 @@ impl E2eVoiceRig {
             create_headless_playback_with_aec_tap(&state, vox_event_tx.clone());
 
         let partial_emitter: Option<Arc<dyn Fn(u32, String) + Send + Sync>> = None;
+        let hardware_cancel_flag = Arc::new(AtomicBool::new(false));
 
         let nemotron_dir = super::paths::get_nemotron_model_dir();
         let stt_provider = Box::new(
@@ -1160,7 +1169,7 @@ impl E2eVoiceRig {
             partial_emitter,
         };
         let stt_handles = SttActorHandles {
-            cancel_flag: Arc::new(AtomicBool::new(false)),
+            cancel_flag: Arc::clone(&hardware_cancel_flag),
             engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
         };
         spawn_stt_worker(stt_channels, stt_provider, stt_handles)
@@ -1195,7 +1204,7 @@ impl E2eVoiceRig {
             let tts_handles = TtsWorkerHandles {
                 playback: Arc::clone(&engine),
                 event_tx: vox_event_tx.clone(),
-                cancel_flag: Arc::new(AtomicBool::new(false)),
+                cancel_flag: Arc::clone(&hardware_cancel_flag),
                 pending_synthesis_jobs: Some(Arc::clone(&state.pipeline.pending_tts_jobs)),
                 telemetry_rtf: None,
                 turn_metrics: Some(Arc::clone(&state.turn_metrics)),

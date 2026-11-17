@@ -408,7 +408,7 @@ pub fn on_pause<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingC
         return;
     }
 
-    state.pipeline.turn_cancel_token().cancel();
+    state.pipeline.cancel_active_turn();
     state.pipeline_accumulator.lock().clear();
 
     if let Ok(guard) = state.engine.try_lock() {
@@ -570,7 +570,7 @@ pub fn on_stop_turn<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rout
         }
     }
 
-    state.pipeline.turn_cancel_token().cancel();
+    state.pipeline.cancel_active_turn();
     state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
 
     state.pipeline_accumulator.lock().clear();
@@ -595,7 +595,7 @@ pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingCon
         return;
     }
 
-    state.pipeline.turn_cancel_token().cancel();
+    state.pipeline.cancel_active_turn();
     state.pipeline_accumulator.lock().clear();
     state.harness.lock().take();
 

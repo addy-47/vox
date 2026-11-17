@@ -33,6 +33,8 @@ These invariants govern the entire Vox runtime across Rust (`app/src-tauri/`), R
    - The React frontend may hydrate initial state once on mount (`get_link_state`, `get_settings`), then reacts strictly to pushed events.
    - **Frontend Anti-Pattern Ban:** The UI must NEVER join a database query (`pairedDevices.length > 0`) with a runtime transport state to guess what screen or label to render. If the UI needs to know a state, the canonical state payload must carry it.
 5. **Discrete State Verbs (No Toggle Commands):** Never expose `toggle_*` functions or IPC commands. Always use explicit, idempotent state-transition verbs (`engage_session` / `disengage_session`, `connect_host` / `disconnect_host`).
+6. **Single Canonical State Enum Per Domain Entity (No Fragmented Sub-Phases):** Submodules (`charness/chassis.rs`, `pipeline/assistant/playback.rs`, `loop.rs`, `stages/`) MUST NOT define local lifecycle enums (`TurnPhase`, `CognitivePhase`, `TurnState`, `OutputPhase`) to track sub-phases of a turn. A domain entity's lifecycle state belongs exclusively to canonical `InteractionState`. If coordination requires tracking completion, use explicit router-owned latches or flags (`llm_done`).
+7. **Relational Direction Invariant (Strict Downward Foreign Keys):** Child execution records (`session_steps`, `session_tool_calls`) MUST NOT store status booleans (`is_compacted`) tracking operations performed on them by parent lifecycle processes. Parent lifecycle ledger tables (`session_compactions`) must reference child rows downward via foreign keys (`step_id`).
 
 ---
 

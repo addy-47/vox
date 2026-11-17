@@ -78,7 +78,7 @@ pub fn on_interrupt<R: tauri::Runtime>(
         match prior_state {
             InteractionState::Thinking => {
                 // Cancel turn token for Thinking
-                state.pipeline.turn_cancel_token().cancel();
+                state.pipeline.cancel_active_turn();
                 state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
 
                 let has_committed = {
@@ -129,7 +129,7 @@ pub fn on_interrupt<R: tauri::Runtime>(
             }
             _ => {
                 // Speaking or other states: genuine barge-in
-                state.pipeline.turn_cancel_token().cancel();
+                state.pipeline.cancel_active_turn();
                 state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
 
                 state.pipeline_accumulator.lock().clear();

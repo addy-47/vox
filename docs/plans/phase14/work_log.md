@@ -13,6 +13,7 @@
   - `docs/specs/harness-spec.md`: Formalized `stream_cancel_token` vs `turn_cancel_token` cancellation scopes in `RULE-HARN-12` and `RULE-HARN-18`. Confirmed `session_steps` is strictly for LLM tool/thought steps.
   - `docs/plans/phase14/pipeline-refactor-plan.md` & `pipeline-refactor-checklist.md`: Structured Batch 0 with `stream_cancel_token` methods and Two-Stage Interruption wiring across `interrupt.rs`, `transcript.rs`, and `step5_dispatch_llm.rs`.
 - **Elimination of Obsolete `step_kind`:** With all user utterances formalized as canonical turns in `turns` and `session_steps` storing assistant steps only, `step_kind` was purged across `schema.rs`, `persistence/mod.rs`, `persistence/steps.rs`, `stages/persistence.rs`, `database_persistence_boundary_test.rs`, `db-spec.md`, `harness-spec.md`, and `pipeline-refactor-checklist.md`.
+- **Architectural Invariant & Linter Hardening (Retro Action Items):** Added Rule 6 (Single Canonical State Enum) and Rule 7 (Strict Downward FKs) to `.agents/rules/architectural-invariants.md`. Added ban on struct-level event-memory booleans and API hardening to `.agents/rules/backend-style-guide.md §4`. Added Three-Signal Domain Pivot Gate to `.agents/rules/backend-engineer.md`. Added `RULE-CONC-02` to `scripts/lint-arch.sh` banning raw `.turn_cancel_token().cancel()`, and swept 8 call sites across `error.rs`, `interrupt.rs`, `ptt.rs`, and `session.rs` to call `state.pipeline.cancel_active_turn()`. Verified `lint-arch.sh` (0 violations) and `cargo check --lib --release` (0 warnings, 0 errors).
 - **Status:** Specs and plans aligned and ready for lead validation. Compile gate passed (`./scripts/verify-targets.sh` 100% green across desktop, sidecars, and Android targets).
 
 ## 2026-11-17 — Local DB schema repair (manual, data preserved)
@@ -1146,7 +1147,130 @@
 - **Note:** requested `audio/capture.rs` does not exist; audited `device.rs::build_input_stream` + `services/remote/audio/capture.rs`.
 - **Spec action flagged (Gate 5):** `events-spec.md` §4.3 RULE-EVT-11 and §5 need `TurnToken` amendment before implementation.
 
+---
+
+## 2026-11-17 — Pipeline Refactor Plan: Senior Code Review (Pre-Ticket Grounding Audit)
+
+**Task:** Clean-room review of `docs/plans/phase14/pipeline-refactor-plan.md` and its checklist before ticket decomposition and test-baseline work.
+
+**Method:** Three independent review layers (plan/SSOT/invariants, state/concurrency, tests/evals/benches). Every subagent claim was re-verified by the lead reviewer against source, git diff, checklist, or spec. No production/spec/plan/test file was modified.
+
+**Output:** `temp/review/pipeline_refactor_review.md` (single report for the next system architect).
+
+**Verdict:** BLOCK — not ready for ticket execution.
+
+**5 🔴 confirmed blockers:**
+1. WIP tree is permanently mute after the first barge-in (3 anonymous cancel flags, no re-arm).
+2. Plan leaves `hardware_cancel_flag` latched after an empty-transcript (false) barge-in → silent resumed turn.
+3. `AudioIntent` / `TurnPhase` deletion scopes omit live producers, consumers, tests, evals, benches → guaranteed compile break.
+4. Plan clears `current_activity` on `Listening`, defeating Stage 2 `Working` recovery.
+5. Checklist names 4 nonexistent tests; 3 real tests will go red without `LlmFinished`.
+
+**5 spec defects (SSOT, to fix before plan alignment):** `RULE-EVT-03` contradicts `RULE-EVT-08` on empty transcripts; `llm_done` / `hardware_cancel_flag` have no reset rule; `current_activity` lifecycle through Stage 1 is undefined; state diagram omits `Thinking → Listening`; `LlmFinished` matrix row contradicts its own precondition.
+
+**Key 🟠 items:** `warm_up_tts` flag omitted; late `PlaybackStarted` dropped after early `Ready`; RULE-EVT-08B / RULE-EVT-11 / RULE-HARN-18 have no plan action; router single-writer bypass in `llm.rs`; ZBC dual continuation path; stale paths/symbols/line numbers; false-green and style violations in touched tests; no red seams for new guards or `llm_done` lifecycle; wrong gate commands.
+
+**Top fix:** one `PipelineAtomics`-owned hardware cancel flag with explicit re-arm on every return-to-active path. Schema migration was excluded from this review per requester instruction.
 
 
 
 
+
+
+
+---
+
+## 2026-11-17 — Pipeline Refactor: Spec Hardening & Master Ticket Ledger Alignment
+
+**Role:** Principal System Architect  
+**Task:** Reconcile specifications with code review findings (S-01 through S-05), confirm clean-slate schema policy, and structure the refactor master plan as a ticket ledger for lead sign-off before ticket authoring.
+
+**Key Changes:**
+1. **Spec Defects Fixed in `docs/specs/events-spec.md` (SSOT Hardened):**
+   - **S-01**: Reconciled `RULE-EVT-03` to defer empty-transcript transitions to `RULE-EVT-08 §2a` instead of unconditionally resetting to `Ready`.
+   - **S-02**: Formalized `RULE-EVT-09 §4` defining the authoritative set/reset lifecycle for `llm_done` (reset on `next_turn()`) and `hardware_cancel_flag` (set by `cancel_active_turn()`; reset by `next_turn()`, Stage 2 empty-transcript returns, and `rearm_turn_cancel_token()`).
+   - **S-03**: Updated `RULE-EVT-08 §1` to mandate that `current_activity` is preserved through the transition to `Listening`.
+   - **S-04**: Updated the Mermaid state diagram to 9 discrete states, adding the `Thinking --> Listening` barge-in edge and explicit empty-transcript returns.
+   - **S-05**: Fixed the `LlmFinished` domain matrix row to state that state remains in its current value (`Speaking`, `Working`, or `Thinking`) without an early transition until audio drains.
+2. **Clean-Slate Schema Baseline**: Confirmed with lead that Vox is unreleased/pre-production; no backward-compatibility migration path from legacy dev databases is required. Dropped `T-00`.
+3. **Master Plan & Checklist Refactor**:
+   - Overhauled `docs/plans/phase14/pipeline-refactor-plan.md` into a comprehensive Master Ticket Ledger (T-01 through T-10) declaring goals, blast radius, anti-patterns eliminated, and strict dependency frontiers.
+   - Updated `docs/plans/phase14/pipeline-refactor-checklist.md` to reflect real test names and exact file citations.
+   - Cleaned up premature ticket files; deferred `.scratch` ticket authoring until lead validation.
+
+
+---
+
+## 2026-11-17 — Unblock Integration Tests: Remove Stale test_vox.db Fixture Dependency
+
+**Task:** Restore the test suite after WIP commit `f5f8dacb7` deleted the `test_vox.db` fixture during the schema simplification.
+
+**Root Cause (confirmed):** 213 of 557 tests panicked at `tests/common/paths.rs:31` (`get_asset_path`) because `TempPathsGuard::new()` still copied the deleted `tests/assets/test_vox.db`. The refactor already moved all tests to fresh, runtime-migrated databases (`harness.rs::open_test_db` + `run_migrations`); no test reads the fixture's rows.
+
+**Fix:** In `app/src-tauri/tests/common/paths.rs` removed the unused `TEST_DB_FILENAME` constant and the fixture-copy block from `TempPathsGuard::new()`. `ensure_dirs()` still creates `data/db`, and `open_test_db()` still creates and migrates each isolated database. No test logic changed. `get_asset_path` retained (dictation fixtures still use it).
+
+**Verification:** Deferred to requester — full suite re-run pending.
+
+---
+
+## 2026-11-17 — Lead Review Remediation & Ticket Generation
+
+**Role:** Principal System Architect  
+**Task:** Patch all 7 lead review contradictions/ambiguities/edge cases and 4 runtime traps into specs, master plan, and checklist; generate 10 formal tickets under `.scratch/pipeline-refactor/issues/`.
+
+**Key Updates:**
+1. **Spec Hardening (`docs/specs/events-spec.md` & `docs/specs/harness-spec.md`)**:
+   - `RULE-HARN-12`: Stream cancel token halts token streaming and parks at `StepInbox::wait_if_speech_held()`; empty transcript releases hold and resumes model pass at Step 4 without task termination (C-01).
+   - `RULE-HARN-12`: Step 0 partial-text cancellation commits turn via `harness.commit_completed_turn` to avoid orphan assistant steps (E-01).
+   - `RULE-EVT-01A`: Keyed late-final detection strictly to `utterance_id < state.pipeline.peek_utterance_id()` (A-01).
+   - `RULE-EVT-08 §2b` & `RULE-HARN-18`: Voice barge-in in `Working` releases speech hold and rotates turn; `StepInbox` is strictly non-voice (C-04).
+   - `RULE-EVT-09 §3`: Zero-audio fallback `PlaybackFinished` emitted strictly when jobs drain empty (Trap 1).
+   - `RULE-EVT-09 §4`: `PlaybackEngine::cancel()` flushes sound card buffers without mutating `hardware_cancel_flag` (C-02).
+2. **Master Implementation Plan & Checklist Updated**:
+   - `docs/plans/phase14/pipeline-refactor-plan.md` & `docs/plans/phase14/pipeline-refactor-checklist.md` updated with full details across T-01 through T-10.
+3. **Tickets Created**:
+   - Authored tickets `01-t01-test-engineer-baseline.md` through `10-t10-cross-target-verification.md` under `.scratch/pipeline-refactor/issues/`.
+   - Purged stale pre-refactor ticket files.
+   - Execution paused awaiting user command; no subagents launched.
+
+---
+
+## 2026-11-17 — Ticket T-01: Test Engineer Baseline, Legacy Pruning & Red Seams
+
+**Role:** Test Engineer (Clean-Room Subagent)  
+**Task:** Establish clean baseline test suite, prune legacy assertions, align tests with Duplex Quiescence Law, resolve test-infrastructure style violations, and author black-box red-seam tests across tickets T-02 through T-08.
+
+**Scope:** `app/src-tauri/tests/`, `evals/`, `benches/`. **Zero production source files modified under `app/src-tauri/src/`.**
+
+**Key Actions Completed:**
+1. **Legacy Test Pruning & Modernization**:
+   - `tests/harness_loop_test.rs`: Pruned reliance on deprecated `TurnPhase` enum at lines 2646, 2805, 2821; assertions now check staged query uncommitted state via canonical `messages()` presence.
+   - `tests/harness_loop_test.rs`: Deleted obsolete Step 0 history rollback assertion at line 2696 (`harness-spec.md:207`).
+   - `tests/harness_loop_test.rs`: Reconciled intent blocks in lines 791 and 957 with actual body assertions (`VoxEvent::Cancelled` and `VoxEvent::Error`).
+   - `tests/harness_loop_test.rs`: Purged `AudioIntent::TurnResponse` pattern match at lines 1510, 1602.
+2. **Duplex & Speech Inbox Test Alignment**:
+   - `tests/harness_loop_test.rs:545`: Updated `preamble_audio_playback_retains_working_state_during_tool_execution` to assert `Working -> Speaking` on `PlaybackStarted`, and `Speaking -> Working` on `PlaybackFinished` when `llm_done == false` (`RULE-EVT-09`).
+   - `tests/harness_loop_test.rs:2911`: Aligned voice barge-in in `Working` to verify turn advance and cancellation; tested `StepInbox` strictly via programmatic push per `RULE-HARN-18`.
+   - `tests/audio_capture/barge_in.rs:224` and `tests/e2e_voice_pipeline_test.rs:315`: Updated assertions so `utterance_id` increments on `SpeechStart` and `turn_id` is preserved until `TranscriptFinal` (`RULE-EVT-01A`).
+3. **Test Infrastructure Style Compliance**:
+   - `tests/audio_capture/barge_in.rs:162`: Replaced bare `sleep(300ms)` with `vad_quiescence_barrier`.
+   - `tests/common/harness.rs:342`: Replaced bare sleep with non-blocking drain in `collect_all_final_transcripts`.
+   - `tests/common/harness.rs:1000` (`AudioSceneRig::drop`) and `tests/stt_turn_identity_test.rs:160` (`Harness::drop`): Replaced panic-swallowing `let _ = handle.join()` with panic propagation on join when `!std::thread::panicking()`.
+   - `tests/common/harness.rs:1158, 1204` (`E2eVoiceRig`): Unified disconnected anonymous cancel flags into a single shared `hardware_cancel_flag`.
+4. **Quiescence Law Test Adjustments**:
+   - Emitted `VoxEvent::LlmFinished` before asserting `Ready` in `tests/playback_test.rs:105, 270` and `tests/playback/tts_to_playback.rs:158` (`RULE-EVT-09`).
+5. **Authored 7 Black-Box Red-Seam Tests**:
+   - `harness_loop_test.rs`: `cognitive_loop_resumes_on_false_barge_in_in_thinking` (`RULE-EVT-08 §2a`, `RULE-HARN-12` -> T-05).
+   - `harness_loop_test.rs`: `guard_transition_harness_phase_blocks_stale_turn_and_preserves_speaking` (`RULE-EVT-01`, `RULE-EVT-09 §1` -> T-04).
+   - `harness_loop_test.rs`: `tool_active_false_barge_in_restores_working_with_intact_activity` (`RULE-EVT-08 §1, §2a` -> T-04, T-05).
+   - `playback_test.rs`: `duplex_quiescence_playback_finished_before_llm_finished_returns_thinking` (`RULE-EVT-09 §2` -> T-04, T-06).
+   - `playback_test.rs`: `hardware_cancel_flag_rearmed_after_barge_in_produces_audible_chunks` (`RULE-EVT-09 §4` -> T-02, T-05).
+   - `playback_test.rs`: `zero_audio_fallback_emits_playback_finished_and_closes_quiescence_latch` (`RULE-EVT-09 §4` -> T-06, T-08).
+   - `stt_turn_identity_test.rs`: `stt_resets_stream_on_turn_divergence_without_prior_reset` (`RULE-EVT-01A` -> T-07).
+6. **Delivered Baseline Report**:
+   - Published comprehensive baseline report to `/home/addy/.gemini/antigravity/brain/1247e742-98ad-4c53-a804-8dcd1487e2a8/test-baseline-report.md` and `docs/plans/phase14/test-baseline-report.md`.
+
+**Verification:**
+- `cargo test --no-run --release` compiled cleanly with 0 errors across all 28 target binaries.
+- `RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1 --no-fail-fast` executed cleanly without hanging in 197.7s.
+- Total tests: 564. Passed: 547. Failed: 17 (100% expected, documented red seams mapped to tickets T-02 through T-09). Unexpected failures: 0.

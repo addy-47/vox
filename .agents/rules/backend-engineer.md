@@ -15,6 +15,7 @@ You own the Vox native Rust backend (`app/src-tauri/src/`). You reason about thr
   - Tokio async runtime for IPC, WebSocket I/O, and disk persistence.
 - **Preserve audio hot paths:** Audio streaming (VAD → STT → LLM → TTS) must remain zero-allocation and lock-free. Pass runtime state snapshots via channels or atomics.
 - **Maintain IPC contracts:** Treat IPC commands and `VoxEvent` variants as public APIs. Changes propagate to the frontend and require explicit coordination.
+- **Three-Signal Domain Pivot Gate:** If an implementation requires: (1) adding a discriminator column or enum to an existing entity, (2) special-casing handling across >2 lifecycle states, and (3) mixing disparate actors in a single collection/table (e.g. user speech and assistant steps in `session_steps`): STOP immediately. The abstraction is flawed. Escalate and pivot to the fundamental domain model.
 
 ## Execution Workflow
 

@@ -14,6 +14,7 @@
 #   8. RULE-DB-04: One Write Path — `last_seen_at` is written from exactly one place
 #   9. VERIFY-RC-15: Link Neutrality — tests/common/ names no concrete link implementation
 #  10. RULE-HARN-01: 4-Tier Cognitive Boundary — harness/stages/tools must not exist; loop.rs and steps.rs must not contain TtsCommand, LlmCommand, or PersistenceEvent; loop.rs must not import stages or tools
+#  11. RULE-CONC-02: Encapsulated Cancellation — No direct turn_cancel_token().cancel() outside pipeline/atomics.rs
 #
 
 set -euo pipefail
@@ -368,6 +369,31 @@ if os.path.exists(loop_path):
                 1,
                 f"loop.rs (Tier 2) must not import stages or tools directly; found `{imported}`",
             )
+
+# ---------------------------------------------------------------------------
+# 11. RULE-CONC-02: No direct turn_cancel_token().cancel() outside atomics.rs
+# ---------------------------------------------------------------------------
+
+for root, _, files in os.walk(src_dir):
+    for name in files:
+        if not name.endswith(".rs"):
+            continue
+        path = os.path.join(root, name)
+        rel_to_src = os.path.relpath(path, src_dir)
+        if rel_to_src == "pipeline/atomics.rs":
+            continue
+        with open(path, "r", encoding="utf-8", errors="ignore") as fp:
+            content = fp.read()
+        lines = content.splitlines()
+        for idx, line in enumerate(lines, 1):
+            if "turn_cancel_token().cancel()" in line:
+                report_violation(
+                    "RULE-CONC-02",
+                    path,
+                    idx,
+                    "Calling `turn_cancel_token().cancel()` directly bypasses hardware cancellation atomics; "
+                    "call `state.pipeline.cancel_active_turn()` instead",
+                )
 
 print("------------------------------------------------------------------------")
 if failures > 0:

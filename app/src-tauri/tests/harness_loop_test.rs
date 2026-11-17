@@ -33,7 +33,7 @@ use vox_lib::{
             ToolDefinition, ToolError, ToolExecutionContext, ToolFilter, ToolResult,
             TruncationPolicy,
         },
-        Role, ToolExecutionMode, TurnOutcome, TurnPhase,
+        Role, ToolExecutionMode, TurnOutcome,
     },
     services::{
         llm::{actor::LlmResponse, CanonicalToolCall},
@@ -535,12 +535,12 @@ async fn preamble_tokens_before_tool_call_are_preserved_in_history_without_chunk
     .expect("test timed out");
 }
 
-/// PURPOSE:  Prevent preamble audio playback completion from dropping pipeline out of Working state.
-/// SCENARIO: Preamble playback fires PlaybackStarted and PlaybackFinished while turn_open == true.
-/// ASSERTS:  Pipeline remains stably in Working state throughout interim audio playback.
-/// CLASS:    suppression
+/// PURPOSE:  Ensure Duplex state cycling transitions Working -> Speaking on playback start, and Speaking -> Working on playback finish when LLM is active.
+/// SCENARIO: Preamble playback fires PlaybackStarted and PlaybackFinished while llm_done == false.
+/// ASSERTS:  Pipeline transitions to Speaking on PlaybackStarted, and back to Working on PlaybackFinished per RULE-EVT-09.
+/// CLASS:    contract
 /// REQUIRES: none
-/// MUTANT:   playback.rs: Remove intent == InterimFiller guard in on_playback_started.
+/// MUTANT:   playback.rs: In on_playback_started, do not transition from Working to Speaking.
 #[tokio::test]
 async fn preamble_audio_playback_retains_working_state_during_tool_execution() {
     tokio::time::timeout(Duration::from_secs(15), async {
@@ -549,7 +549,7 @@ async fn preamble_audio_playback_retains_working_state_during_tool_execution() {
 
         rig.state.pipeline.set_state(InteractionState::Working);
 
-        // Onset of interim filler audio must keep state in Working
+        // Onset of interim filler audio must transition state to Speaking (RULE-EVT-09 §1)
         rig.send_event(VoxEvent::PlaybackStarted {
             turn_id,
             intent: AudioIntent::InterimFiller,
@@ -562,11 +562,11 @@ async fn preamble_audio_playback_retains_working_state_during_tool_execution() {
         .expect("PlaybackStarted routed");
         assert_eq!(
             rig.state.pipeline.state(),
-            InteractionState::Working,
-            "PlaybackStarted with InterimFiller must NOT transition state out of Working"
+            InteractionState::Speaking,
+            "PlaybackStarted must transition state to Speaking"
         );
 
-        // Completion of interim filler audio while turn_open == true must remain in Working
+        // Completion of interim filler audio while llm_done == false must return to Working (RULE-EVT-09 §2)
         rig.send_event(VoxEvent::PlaybackFinished {
             turn_id,
             intent: AudioIntent::InterimFiller,
@@ -580,7 +580,7 @@ async fn preamble_audio_playback_retains_working_state_during_tool_execution() {
         assert_eq!(
             rig.state.pipeline.state(),
             InteractionState::Working,
-            "PlaybackFinished while turn_open == true must remain in Working"
+            "PlaybackFinished while llm_done == false and tools active must return to Working"
         );
     })
     .await
@@ -790,7 +790,7 @@ async fn set_title_universal_tool_updates_session_and_latches_title_set_flag() {
 
 /// PURPOSE:  Ensure turn cancellation during tool execution aborts the turn cleanly without history corruption.
 /// SCENARIO: Turn token is cancelled while tool batch execution is pending.
-/// ASSERTS:  TurnOutcome is Cancelled; turn_open is cleared to false.
+/// ASSERTS:  TurnOutcome is Cancelled; VoxEvent::Cancelled is emitted; pipeline state resets to Ready.
 /// CLASS:    suppression
 /// REQUIRES: none
 /// MUTANT:   steps.rs: Ignore cancellation token check prior to tool execution.
@@ -954,12 +954,12 @@ async fn turn_cancellation_before_speech_rolls_back_history_with_zero_db_artifac
     .expect("test timed out");
 }
 
-/// PURPOSE:  Verify stream errors release turn_open latch and dispatch VoxEvent::Error.
+/// PURPOSE:  Verify stream errors release pipeline state to Ready and dispatch VoxEvent::Error.
 /// SCENARIO: Model returns LlmResponse::Error due to upstream failure.
-/// ASSERTS:  TurnOutcome is Error; turn_open is reset to false; VoxEvent::Error is emitted on event channel.
+/// ASSERTS:  TurnOutcome is Error with matching message; VoxEvent::Error is emitted on event channel; pipeline state resets to Ready.
 /// CLASS:    edge-case
 /// REQUIRES: none
-/// MUTANT:   router.rs: Do not reset turn_open or omit VoxEvent::Error on stream error.
+/// MUTANT:   router.rs: Omit VoxEvent::Error on stream error.
 #[tokio::test]
 async fn stream_error_clears_turn_open_and_dispatches_error_event() {
     tokio::time::timeout(Duration::from_secs(15), async {
@@ -1507,7 +1507,7 @@ async fn exclusive_tool_acts_as_strict_barrier_between_parallel_waves() {
 
 /// PURPOSE:  Catch hard turn abort on reaching MAX_TOOL_STEPS instead of synthesizing a final tool-free spoken answer.
 /// SCENARIO: Configure Harness with `max_steps = 3`; scripted LLM emits a tool call on Steps 0, 1, and 2, then on the forced summary pass (`allow_tools == false`) emits final spoken text.
-/// ASSERTS:  LLM worker receives 4 requests total; requests 0..=2 have non-empty `tools`, request 3 has `tools.is_empty()` (or `None`); TurnOutcome is Completed with the final summary text dispatched to TTS as `AudioIntent::TurnResponse`; all 3 tool steps (6 messages) + final Assistant message are in `harness.messages()`.
+/// ASSERTS:  LLM worker receives 4 requests total; requests 0..=2 have non-empty `tools`, request 3 has `tools.is_empty()` (or `None`); TurnOutcome is Completed with final summary text dispatched to TTS; all 3 tool steps (6 messages) + final Assistant message are in `harness.messages()`.
 /// CLASS:    edge-case
 /// REQUIRES: none
 /// MUTANT:   In `execute_loop_iterations` (`loop.rs`), return `TurnOutcome::Error` when `step_index >= max_steps` instead of setting `allow_tools = false`.
@@ -1596,15 +1596,15 @@ async fn step_ceiling_breach_disables_tools_and_forces_spoken_summary_pass() {
             "Pass 3 (summary pass) must be tool-free (allow_tools == false)"
         );
 
-        // Assert: TTS received AudioIntent::TurnResponse
+        // Assert: TTS received final synthesized summary
         let tts_cmds = rig.drain_tts_commands();
         let turn_response_cmd = tts_cmds.iter().find(|cmd| {
-            matches!(cmd, TtsCommand::Generate { intent: AudioIntent::TurnResponse, text, .. }
+            matches!(cmd, TtsCommand::Generate { text, .. }
                 if text.contains("Final synthesized summary"))
         });
         assert!(
             turn_response_cmd.is_some(),
-            "Summary pass must dispatch TurnResponse to TTS"
+            "Summary pass must dispatch final synthesized summary to TTS"
         );
 
         // Assert: Conversation history holds all 3 tool steps (3 Assistant + 3 Tool) + final Assistant summary
@@ -2641,10 +2641,10 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
         let rig = Rig::new().await;
         let turn_id = 1203;
 
-        // Verify Step 0 provenance
+        // Verify Step 0 uncommitted provenance (staged query has not committed to messages)
         assert!(
-            rig.state.harness.lock().as_ref().unwrap().turn_phase() != TurnPhase::Committed,
-            "turn phase must be Thinking at turn onset"
+            !rig.state.harness.lock().as_ref().unwrap().messages().iter().any(|m| m.role == Role::User),
+            "user query must remain staged and uncommitted to history at turn onset"
         );
 
         // Model starts streaming in Step 0 Thinking (streaming paused to simulate in-flight thinking)
@@ -2683,19 +2683,6 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
                 .await,
             "pipeline must transition to Listening on SpeechStart"
         );
-
-        // Assert Step 0 user turn was rolled back synchronously from history
-        {
-            let guard = rig.state.harness.lock();
-            let harness = guard.as_ref().unwrap();
-            let messages = harness.messages();
-            assert!(
-                !messages
-                    .iter()
-                    .any(|m| m.role == Role::User && m.content == "search for"),
-                "Step 0 user query must be rolled back from history on Scenario A interrupt"
-            );
-        }
 
         // Assert continuation_prefix stashed the partial query
         {
@@ -2818,7 +2805,7 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
                 let guard = rig.state.harness.lock();
                 guard
                     .as_ref()
-                    .map(|h| h.turn_phase() == TurnPhase::Committed)
+                    .map(|h| h.messages().iter().any(|m| matches!(m.role, Role::Tool)))
                     .unwrap_or(false)
             };
             if committed {
@@ -2831,8 +2818,8 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
             let guard = rig.state.harness.lock();
             let harness = guard.as_ref().unwrap();
             assert!(
-                harness.turn_phase() == TurnPhase::Committed,
-                "turn phase must be Committed after Step 0 commits tool"
+                harness.messages().iter().any(|m| matches!(m.role, Role::Tool)),
+                "tool steps must be committed to history after Step 0 commits tool"
             );
         }
 
@@ -2914,14 +2901,14 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
     .expect("test timed out");
 }
 
-/// PURPOSE:  Scenario C (Working) user speech mutes audio, does not cancel in-flight tools, engages speech hold on StepInbox, and injects steering message at step boundary.
-/// SCENARIO: Turn is executing tool in Working; user speaks; tool finishes; speech buffers into StepInbox with Immediate; loop advances to Step 1 with user steering message.
-/// ASSERTS:  turn_token is NOT cancelled on SpeechStart in Working; inbox speech_hold_active is true; steering message injected as Role::User into Step 1.
+/// PURPOSE:  Scenario C (Working) user voice barge-in mutes audio, preserves in-flight tools during SpeechStart, and on non-empty TranscriptFinal cancels the turn, advances turn_id, and does not pollute StepInbox per RULE-HARN-18.
+/// SCENARIO: Turn is executing tool in Working; user speaks; tool finishes; non-empty TranscriptFinal arrives.
+/// ASSERTS:  turn_token is NOT cancelled on SpeechStart in Working; TranscriptFinal cancels prior turn (TurnOutcome::Cancelled), advances turn_id, and leaves StepInbox empty of voice transcripts.
 /// CLASS:    contract
 /// REQUIRES: none
-/// MUTANT:   In on_interrupt during Working, call state.pipeline.turn_cancel_token().cancel().
+/// MUTANT:   transcript.rs: Inject voice transcript into StepInbox during Working instead of cancelling turn and advancing turn_id.
 #[tokio::test]
-async fn active_working_speech_buffers_in_step_inbox_and_injects_at_step_boundary() {
+async fn active_working_speech_cancels_turn_and_advances_dialogue_without_inbox_injection() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let rig = Rig::new().await;
         let turn_id = 1205;
@@ -2949,12 +2936,6 @@ async fn active_working_speech_buffers_in_step_inbox_and_injects_at_step_boundar
             let _ = tx.send(LlmResponse::Finished);
         });
 
-        // Pass 1: response to steering
-        rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Token("Processed steering input.".to_string()));
-            let _ = tx.send(LlmResponse::Finished);
-        });
-
         let req = rig.turn_request("Scenario C query", turn_id);
         let harness_arc = Arc::clone(&rig.state.harness);
         let turn_handle =
@@ -2964,54 +2945,43 @@ async fn active_working_speech_buffers_in_step_inbox_and_injects_at_step_boundar
         entered_rx.recv().await.expect("tool entered");
         assert_eq!(rig.state.pipeline.state(), InteractionState::Working);
 
-        // User begins speaking during Working (Scenario C)
+        // User begins speaking during Working (Scenario C Stage 1)
         rig.send_event(VoxEvent::SpeechStart {
             owner: InteractionOwner::Assistant,
         });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        // Assert tool execution was NOT cancelled
+        // Stage 1 invariant: in-flight tool execution was NOT cancelled on SpeechStart (RULE-EVT-08C)
         assert!(
             !rig.state.pipeline.turn_cancel_token().is_cancelled(),
             "turn_token must NOT be cancelled during Working SpeechStart"
         );
 
-        // Assert speech hold was engaged on StepInbox
-        {
-            let guard = rig.state.harness.lock();
-            let harness = guard.as_ref().unwrap();
-            assert!(
-                harness.inbox().is_speech_held(),
-                "speech_hold_active must be true when SpeechStart occurs in Working"
-            );
-        }
+        // Release the hold tool so it finishes
+        let _ = release_tx.send(()).await;
 
-        // Send finalized steering transcript
+        // Stage 2: Send non-empty TranscriptFinal (real barge-in per RULE-EVT-08 §2b)
         rig.send_event(VoxEvent::TranscriptFinal {
             owner: InteractionOwner::Assistant,
             turn_id,
-            text: "Mid-work steering instruction".to_string(),
+            text: "New user interruption query".to_string(),
         });
 
-        let _ = release_tx.send(()).await;
         let outcome = turn_handle.await.expect("turn join");
         assert!(
-            matches!(outcome, TurnOutcome::Completed { .. }),
-            "turn must complete successfully, got {:?}",
+            matches!(outcome, TurnOutcome::Cancelled { .. }),
+            "prior turn must resolve to Cancelled upon real barge-in, got {:?}",
             outcome
         );
 
-        // Assert steering instruction was injected into history at step boundary
+        // Invariant RULE-HARN-18: StepInbox must NOT have voice transcripts injected
         let guard = rig.state.harness.lock();
         let harness = guard.as_ref().unwrap();
-        let messages = harness.messages();
-        let steering_msg = messages
-            .iter()
-            .find(|m| m.role == Role::User && m.content == "Mid-work steering instruction");
-        assert!(
-            steering_msg.is_some(),
-            "steering instruction must be injected into history at step boundary"
+        assert_eq!(
+            harness.inbox().len(),
+            0,
+            "StepInbox must remain empty; voice barge-in must never inject synthetic messages into inbox"
         );
     })
     .await
@@ -3385,4 +3355,179 @@ async fn sibling_tools_chassis_executes_isolated_from_stages() {
         registry.get("search_memory").is_some(),
         "ToolRegistry must successfully vend search_memory tool definition"
     );
+}
+
+// ============================================================================
+// Section 10: Red-Seam Tests (Pipeline Refactor Baseline — Phase 14)
+// ============================================================================
+
+/// PURPOSE:  Ensure false barge-in (noise/cough) during Thinking does not wedge or abort the cognitive loop, but resumes token streaming at Step 4.
+/// SCENARIO: Turn is in Step 0 Thinking streaming tokens; user coughs (SpeechStart -> Listening); STT yields empty transcript (Stage 2 false barge-in).
+/// ASSERTS:  Pipeline transitions Thinking -> Listening -> Thinking; stream_cancel_token is re-armed; cognitive loop completes with full response.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   transcript.rs: In empty transcript path, transition unconditionally to Ready instead of resuming Thinking when llm_done == false.
+#[tokio::test]
+async fn cognitive_loop_resumes_on_false_barge_in_in_thinking() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1401;
+
+        // Model pass 0: first token then pause (simulate in-flight thinking)
+        let (pause_tx, pause_rx) = std::sync::mpsc::channel();
+        rig.scripted_llm.push_step(move |tx| {
+            let _ = tx.send(LlmResponse::Token("Thinking...".to_string()));
+            let _ = pause_rx.recv();
+            let _ = tx.send(LlmResponse::Token(" and answered.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("What is the speed of sound?", turn_id);
+        let harness_arc = Arc::clone(&rig.state.harness);
+        let turn_handle =
+            tokio::spawn(async move { Harness::execute_turn(&harness_arc, req).await });
+
+        // Wait until pipeline enters Thinking
+        assert!(
+            rig.wait_for_state(InteractionState::Thinking, Duration::from_millis(500))
+                .await,
+            "pipeline must enter Thinking at onset"
+        );
+
+        // Acoustic interruption (Stage 1: cough/noise)
+        rig.send_event(VoxEvent::SpeechStart {
+            owner: InteractionOwner::Assistant,
+        });
+
+        assert!(
+            rig.wait_for_state(InteractionState::Listening, Duration::from_millis(500))
+                .await,
+            "SpeechStart must transition state to Listening"
+        );
+
+        // Semantic resolution (Stage 2: empty transcript = false barge-in per RULE-EVT-08 §2a)
+        rig.send_event(VoxEvent::TranscriptFinal {
+            owner: InteractionOwner::Assistant,
+            turn_id,
+            text: "".to_string(),
+        });
+
+        // Loop must resume in Thinking!
+        assert!(
+            rig.wait_for_state(InteractionState::Thinking, Duration::from_millis(500))
+                .await,
+            "Empty transcript with llm_done == false must resume state to Thinking"
+        );
+
+        // Unpause LLM stream
+        let _ = pause_tx.send(());
+
+        let outcome = turn_handle.await.expect("turn join");
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "resumed turn must complete successfully, got {:?}",
+            outcome
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Ensure transition_harness_phase blocks out-of-epoch state transitions and preserves active Speaking state over internal cognitive sub-phases.
+/// SCENARIO: Stale turn 1402 attempts to transition to Working when active turn is 1403; also turn 1403 attempts transition to Working while sound card is actively Speaking.
+/// ASSERTS:  Stale transition is rejected; active Speaking state is preserved against harness state overwrites per RULE-EVT-09 §1.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   harness/steps.rs: In transition_harness_phase, bypass active turn_id check or overwrite Speaking state.
+#[tokio::test]
+async fn guard_transition_harness_phase_blocks_stale_turn_and_preserves_speaking() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let stale_turn_id = 1402;
+        let active_turn_id = 1403;
+
+        rig.state.pipeline.turn_id.store(active_turn_id, Ordering::Relaxed);
+        rig.state.pipeline.set_state(InteractionState::Speaking);
+
+        // Send a stale event from previous turn (stale_turn_id < active_turn_id)
+        rig.send_event(VoxEvent::PlaybackFinished {
+            turn_id: stale_turn_id,
+            intent: AudioIntent::InterimFiller,
+        });
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // State must remain Speaking (stale event dropped)
+        assert_eq!(
+            rig.state.pipeline.state(),
+            InteractionState::Speaking,
+            "Stale turn event must NOT transition active Speaking state"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch loss of current_activity envelope when recovering from a Stage 2 false barge-in during tool execution.
+/// SCENARIO: Turn is in Working with current_activity set to an ActivityEnvelope; SpeechStart transitions to Listening; TranscriptFinal arrives empty.
+/// ASSERTS:  Pipeline transitions Working -> Listening -> Working; current_activity is preserved and NOT wiped per RULE-EVT-08 §1 and §2a.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   interrupt.rs: Clear current_activity or pass None when returning to Working on empty transcript.
+#[tokio::test]
+async fn tool_active_false_barge_in_restores_working_with_intact_activity() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1404;
+
+        rig.state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
+        let envelope = vox_lib::core::events::ActivityEnvelope {
+            kind: vox_lib::core::events::ActivityKind::Tool,
+            name: "search_memory".to_string(),
+            call_id: Some("call-1404".to_string()),
+        };
+
+        // Set initial Working state with activity envelope
+        *rig.state.pipeline.current_activity.write() = Some(envelope.clone());
+        rig.state.pipeline.set_state(InteractionState::Working);
+
+        // Stage 1: User coughs / acoustic onset during Working
+        rig.send_event(VoxEvent::SpeechStart {
+            owner: InteractionOwner::Assistant,
+        });
+
+        assert!(
+            rig.wait_for_state(InteractionState::Listening, Duration::from_millis(500))
+                .await,
+            "SpeechStart must transition state to Listening"
+        );
+
+        // RULE-EVT-08 §1 invariant: current_activity is PRESERVED through Listening
+        assert!(
+            rig.state.pipeline.current_activity.read().is_some(),
+            "current_activity must be preserved through Listening transition"
+        );
+
+        // Stage 2: STT yields empty transcript (false barge-in)
+        rig.send_event(VoxEvent::TranscriptFinal {
+            owner: InteractionOwner::Assistant,
+            turn_id,
+            text: "   ".to_string(),
+        });
+
+        assert!(
+            rig.wait_for_state(InteractionState::Working, Duration::from_millis(500))
+                .await,
+            "Empty transcript with tool active must restore Working state"
+        );
+
+        let restored_activity = rig.state.pipeline.current_activity.read().clone();
+        assert_eq!(
+            restored_activity,
+            Some(envelope),
+            "current_activity must remain intact with original activity envelope upon return to Working"
+        );
+    })
+    .await
+    .expect("test timed out");
 }

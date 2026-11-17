@@ -11,8 +11,6 @@ use vox_lib::services::{
     vad::{MODEL_DIR_VAD, MODEL_FILE_VAD, MODEL_FILE_VAD_SILERO},
 };
 
-const TEST_DB_FILENAME: &str = "test_vox.db";
-
 /// Resolves path to a test asset in `tests/assets/` directory.
 /// Self-containment rule: integration tests may ONLY use clips shipped in
 /// `tests/assets/` (the 4 golden clips). No fallback outside `tests/` —
@@ -166,15 +164,6 @@ impl TempPathsGuard {
     pub fn new() -> Self {
         let dir = tempfile::tempdir().expect("Failed to create temporary directory for test");
         let temp_path = dir.path().to_path_buf();
-
-        // Seed test database from tests/assets/test_vox.db into canonical data/db/
-        let asset_db = get_asset_path(TEST_DB_FILENAME);
-        let data_db_dir = temp_path.join("data").join("db");
-        let _ = std::fs::create_dir_all(&data_db_dir);
-        if asset_db.exists() {
-            let target_db = data_db_dir.join(vox_lib::utils::paths::DB_FILENAME);
-            let _ = std::fs::copy(&asset_db, &target_db);
-        }
 
         // Prepare clean data/history/ directory for test dictation output
         let data_history_dir = temp_path.join("data").join("history");

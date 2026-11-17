@@ -49,7 +49,7 @@ pub fn on_error<R: tauri::Runtime + 'static>(
                     engine.playback_engine.cancel();
                 }
             }
-            state.pipeline.turn_cancel_token().cancel();
+            state.pipeline.cancel_active_turn();
             state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
             transition(InteractionState::Ready, None, ctx, app, state);
         }
@@ -59,7 +59,7 @@ pub fn on_error<R: tauri::Runtime + 'static>(
                     engine.playback_engine.cancel();
                 }
             }
-            state.pipeline.turn_cancel_token().cancel();
+            state.pipeline.cancel_active_turn();
             state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
             transition(InteractionState::Error, None, ctx, app, state);
         }

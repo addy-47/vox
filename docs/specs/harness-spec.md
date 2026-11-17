@@ -197,7 +197,7 @@ flowchart TD
 - **RULE-HARN-12 (Interruption, Cancellation & Non-Rollback Invariant)**:
   - Interruption and steering lifecycle transitions are governed authoritatively by `docs/specs/events-spec.md §4.3` (SSOT: `RULE-EVT-08`, `RULE-EVT-08A`, `RULE-EVT-08B`, `RULE-EVT-08C`).
   - **Cancellation Tokens & Scopes**:
-    - `stream_cancel_token`: Scoped to the individual in-flight LLM streaming pass. Cancelled immediately upon `SpeechStart` across all states to stop model token generation with zero latency.
+    - `stream_cancel_token`: Scoped to the individual in-flight LLM streaming pass. Cancelled immediately upon `SpeechStart` across all states to stop model token generation with zero latency. When `stream_cancel_token` fires while `turn_cancel_token` is NOT cancelled, the streaming stage halts token emission but the cognitive loop task does NOT terminate; it parks at `StepInbox::wait_if_speech_held()`. If `turn_cancel_token` fires (real barge-in), the turn terminates via `step7_handle_cancelled`; if Stage 2 empty transcript arrives (false barge-in), speech hold is released, `stream_cancel_token` is rearmed, and the loop resumes model dispatch at Step 4.
     - `turn_cancel_token`: Scoped to the active conversational turn. Cancelled only upon terminal abort (`stop_turn`) or upon non-empty `TranscriptFinal` confirming real user barge-in.
   - **Tool Task Cancellation Boundaries**:
     - Terminal Turn Abort (`stop_turn` or barge-in on non-empty `TranscriptFinal` per `RULE-EVT-08`): Active tool execution tasks and child futures MUST be aborted via `turn_cancel_token`.
@@ -205,6 +205,7 @@ flowchart TD
   - **User Query Staging & Non-Rollback Law**:
     - User query staging (`pending_user_query: Option<(u32, String)>`) guarantees that uncommitted Step 0 user queries never pollute `ConversationHistoryStage`.
     - Interrupted Step 0 turns (`RULE-EVT-08A`) extract the staged query via `take_staged_query(turn_id)` into continuation prefix (`stash_for_continuation`). Positional rollback from history (`rollback_last_user_turn`) is permanently eliminated.
+    - Step 0 Partial-Text Cancellation Hygiene: In `step7_handle_cancelled`, if `!ctx.partial_text.trim().is_empty()`, the coordinator commits the turn via `harness.commit_completed_turn(ctx.partial_text)` rather than naked history push. This commits `pending_user_query` first, preventing dangling queries and orphan `Role::Assistant` records without matching `Role::User`.
     - Once Step 0 tools commit (`commit_tool_step`), preceding tool observations remain permanently preserved in history. Query discarding is strictly forbidden.
     - Mid-turn barge-in in Step $K \ge 1$ (`RULE-EVT-08B`) preserves all committed tool steps, re-prompting Step $K$ on empty speech or committing a brand new dialogue turn with `user_text` on non-empty speech.
 - **RULE-HARN-13 (Zero Unbounded Observations & Safe Truncation)**:

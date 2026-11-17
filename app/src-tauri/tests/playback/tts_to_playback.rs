@@ -156,7 +156,9 @@ async fn real_synthesis_is_ingested_and_arms_the_pre_roll() {
         );
 
         // Observable Exit 5: Audio completes the full lifecycle through the real sink —
-        // PlaybackStarted arms Speaking on the router, PlaybackFinished returns it to Ready.
+        // PlaybackStarted arms Speaking on the router, PlaybackFinished returns it to Ready
+        // when llm_done == true per Duplex Quiescence Law (RULE-EVT-09).
+        let _ = event_tx.send(VoxEvent::LlmFinished { turn_id });
         let drained = common::harness::pump_playback_sink_until_finished(&mut sink_ctx, 100_000);
         assert!(
             !drained.is_empty(),

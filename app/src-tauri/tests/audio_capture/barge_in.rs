@@ -158,8 +158,8 @@ async fn solo_playback_over_six_seconds_never_interrupts_with_pipewire_delay() {
         let trailing_silence = vec![0.0f32; 32_000];
         scene.feed_mixed(&trailing_silence);
         let _ = scene.drain_sink(3_000);
-        // Give the router a moment to process PlaybackFinished if it was emitted.
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        // Quiescence barrier: ensure VAD pipeline has completely processed all audio frames.
+        common::harness::vad_quiescence_barrier(&scene.rig.vad_tx);
 
         assert_eq!(
             scene.state.pipeline.turn_id.load(Ordering::Relaxed),
@@ -221,10 +221,14 @@ async fn double_talk_barge_in_cancels_the_playback_and_opens_listening() {
             InteractionState::Listening,
             "double-talk during Speaking must barge in and switch to Listening"
         );
+        assert!(
+            scene.state.pipeline.utterance_id.load(Ordering::Relaxed) >= 1,
+            "barge-in must allocate an utterance_id on SpeechStart"
+        );
         assert_eq!(
             scene.state.pipeline.turn_id.load(Ordering::Relaxed),
-            TURN + 1,
-            "barge-in must open a new turn"
+            TURN,
+            "barge-in on SpeechStart must NOT advance turn_id before semantic resolution"
         );
         assert!(
             scene

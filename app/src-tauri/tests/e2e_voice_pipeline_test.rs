@@ -315,8 +315,13 @@ async fn true_acoustic_barge_in_during_speaking_cancels_and_completes() {
             "user speech during assistant Speaking must barge in"
         );
         assert!(
-            state.pipeline.turn_id.load(Ordering::Relaxed) > turn_before,
-            "barge-in must open a new turn"
+            state.pipeline.utterance_id.load(Ordering::Relaxed) >= 1,
+            "barge-in must allocate an utterance_id on SpeechStart"
+        );
+        assert_eq!(
+            state.pipeline.turn_id.load(Ordering::Relaxed),
+            turn_before,
+            "barge-in on SpeechStart must NOT advance turn_id before semantic resolution"
         );
 
         // The interrupt discard path must flush the playback buffer.

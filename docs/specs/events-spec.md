@@ -31,7 +31,7 @@ Vox coordinates low-latency voice interaction and operating system dictation acr
 
 ## 3. Interaction State Machine
 
-The interaction state machine transitions across eight discrete states:
+The interaction state machine transitions across nine discrete states:
 
 ```mermaid
 stateDiagram-v2
@@ -42,6 +42,7 @@ stateDiagram-v2
     Thinking --> Working: Intermediate Phase (Tool / Compaction)
     Working --> Working: Next Intermediate Step
     Working --> Listening: Mid-Work Speech Hold
+    Thinking --> Listening: Barge-In (SpeechStart during Thinking)
     Thinking --> Speaking: Audio Playback Starts
     Working --> Speaking: Audio Playback Starts
     Speaking --> Thinking: Audio Drains (LLM Active, No Tool)
@@ -49,8 +50,10 @@ stateDiagram-v2
     Speaking --> Working: Tool Dispatched During Playback
     Speaking --> Listening: User Barge-In
     Speaking --> Ready: Audio Playback Complete (LLM Done)
-    Thinking --> Ready: Empty Speech / Turn Abort / LLM Done (0 Audio)
-    Listening --> Ready: Stop Turn
+    Thinking --> Ready: LLM Done (0 Audio) / Turn Abort
+    Listening --> Ready: Stop Turn / Empty Transcript (llm_done true)
+    Listening --> Working: Empty Transcript (llm_done false, tool active)
+    Listening --> Thinking: Empty Transcript (llm_done false, no tool)
     Working --> Ready: Stop Turn
     Speaking --> Ready: Stop Turn
     Ready --> Paused: Pause Session / 7m Inactivity
@@ -74,10 +77,11 @@ stateDiagram-v2
   - `turn_id` (monotonic `AtomicU32`): Identifies the logical conversational dialogue turn. Allocated by the router exclusively on `next_turn()` when user speech text is verified (`TranscriptFinal` is non-empty) or text input is received.
   - `utterance_id` (monotonic `AtomicU32`): Identifies the physical speech segment and audio capture buffer. Allocated on `SpeechStart` across all states.
   - `SpeechStart` increments `utterance_id` to bound the incoming physical audio frames, but MUST NOT increment `turn_id`. Monotonic turn rotation occurs strictly upon semantic resolution (`TranscriptFinal`).
+  - Late-final detection is keyed strictly on `utterance_id < state.pipeline.peek_utterance_id()` (or epoch mismatch), NEVER on `turn_id + 1 == peek_turn_id()`. Because `turn_id` remains unincremented during Stage 1 `Listening`, relying on turn adjacency drops valid late finals; physical utterance tracking resolves late segments deterministically.
 - **RULE-EVT-02 (High-Frequency Stream Isolation)**: Real-time text tokens, interim subtitle updates, audio energy levels, and latency milestone metrics MUST bypass the central router queue and stream directly to the user interface. Central event volume MUST remain under 10 events per minute.
 - **RULE-EVT-03 (Immediate Speech-End Response)**: When user speech concludes (speech detection silence cutoff or push-to-talk key release), the system MUST transition immediately from `Listening` to `Thinking`.
   - If speech-to-text yields recognized words, processing continues to response generation.
-  - If speech-to-text yields empty text, the pipeline MUST recover immediately from `Thinking` to `Ready` and display an informative notice.
+  - If speech-to-text yields empty text, the pipeline evaluates the **Stage 2 empty-transcript paths** governed by `RULE-EVT-08 §2a`: if `llm_done == true` → `Ready`; if `llm_done == false` and `current_activity.is_some()` → `Working`; otherwise rearm the stream token and resume `Thinking`. An informative notice MUST be displayed in all three cases. `RULE-EVT-03` does NOT unconditionally transition to `Ready`; the full Stage 2 resolution in `RULE-EVT-08 §2a` determines the destination state.
 
 ### 4.2 Audio Hardware Lifecycle & Sleep Standby
 - **RULE-EVT-04 (Warm Pause Contract)**: When a session is paused:
@@ -101,7 +105,7 @@ stateDiagram-v2
      Whenever user speech starts or a push-to-talk trigger arrives while the assistant is in `Speaking`, `Thinking`, or `Working`:
      a. Sound card audio playback MUST mute immediately via `playback_engine.cancel()`.
      b. Active LLM token streaming MUST be cancelled immediately via `stream_cancel_token.cancel()`.
-     c. State MUST transition immediately to `Listening`.
+     c. State MUST transition immediately to `Listening`. The `current_activity` field MUST be preserved through this transition — it is NOT cleared on `Listening`. This guarantees that Stage 2 empty-transcript recovery can restore `Working` with the original tool envelope intact.
      d. The active conversational turn MUST NOT be cancelled (`turn_cancel_token` is preserved; `turn_id` is NOT incremented).
      e. Active background tool execution tasks MUST NOT be aborted.
   2. **Stage 2 — Semantic Resolution (`TranscriptFinal`)**:
@@ -117,6 +121,8 @@ stateDiagram-v2
         - If partial assistant text was already spoken or generated, it MUST be saved to history as an interrupted turn.
         - All committed tool steps from preceding iterations ($0 \dots K-1$) MUST remain permanently preserved in history (`RULE-HARN-12`).
         - A new turn token and utterance ID MUST be generated via `next_turn()`.
+        - If speech hold was active in `Working`, speech hold MUST be released before cancelling the turn.
+        - User voice barge-in creates standard dialogue turns in `turns` table and NEVER injects synthetic user messages into `StepInbox` or `session_steps` (`RULE-HARN-18`).
         - State transitions to `Thinking`, and the new user transcript is dispatched as the `user_text` of the brand new dialogue turn!
 - **RULE-EVT-08A (Rapid Query Burst Concatenation)**:
   When non-empty `TranscriptFinal` arrives following an interruption in `Thinking` on Step 0 before any tool execution or assistant tokens have been generated (`pending_user_query.is_some()`):
@@ -137,9 +143,13 @@ stateDiagram-v2
      - If `llm_done == false` AND `current_activity.is_some()`: audio has drained while tool execution remains active; the pipeline transitions `Speaking` $\to$ `Working` restoring the active activity envelope.
      - If `llm_done == false` AND `current_activity.is_none()`: audio has drained (e.g. intermediate clause) while the model continues generating; the pipeline transitions `Speaking` $\to$ `Thinking`.
   3. **Cognitive Loop Completion (`LlmFinished`)**: When the cognitive loop completes with zero remaining tool steps, `loop.rs` emits `VoxEvent::LlmFinished { turn_id }`.
-     - If audio is currently playing or queued (`pending_tts_jobs > 0 || sink_occupied`): the router marks `llm_done = true` and state remains `Speaking` until the final audio buffer drains.
+     - If audio is currently playing or queued (`pending_tts_jobs > 0 || sink_occupied`): the router marks `llm_done = true`; state remains in its current value (`Speaking`, `Working`, or `Thinking`) — no transition fires until audio drains.
      - If audio is already completely drained (`pending_tts_jobs == 0 && !sink_occupied`): the pipeline transitions immediately to `Ready`.
-  4. **Elimination of AudioIntent from State Gating**: `on_playback_finished` never inspects audio intent tags. Quiescence is determined strictly by the conjunction of cognitive completion (`llm_done == true`) and acoustic completion (`pending_tts_jobs == 0` with sound card buffer drained).
+  4. **Atomic Flag Lifecycle — Set, Reset, and Epoch Authority**:
+     - `llm_done` is **set** (`true`) exclusively by `mark_llm_finished(turn_id)` on the `vox-router` thread upon `VoxEvent::LlmFinished`, after an epoch guard confirms `turn_id` matches the active turn. It is **reset** (`false`) exclusively by `next_turn()` at the start of every new dialogue turn. No other path may set or clear this flag.
+     - Zero-Audio Playback Fallback: If TTS produces zero audio samples for a clause (e.g. whitespace or unsupported punctuation), `tts/actor.rs` emits a fallback `PlaybackFinished` if and only if `remaining_jobs == 0 && !playback.is_armed() && playback.occupied_len() == 0`, ensuring the quiescence latch does not deadlock.
+     - `PlaybackEngine::cancel()` flushes queued sound card audio and clears `sink_occupied`, but MUST NOT mutate `hardware_cancel_flag`. `hardware_cancel_flag` is **set** (`true`) exclusively by `cancel_active_turn()`. It is **reset** (`false`) by: (a) `next_turn()` on every real barge-in; (b) every Stage 2 empty-transcript return-to-active path (`Working`, `Thinking`, `Ready`) via `rearm_turn_cancel_token()`; and (c) any other return-to-ready path (e.g. `StopTurn`). Stage 1 (`on_interrupt`) MUST NOT set `hardware_cancel_flag`; it cancels only the stream token (`stream_cancel_token`) and mutes audio. Setting the hardware flag is strictly the authority of `cancel_active_turn()`.
+  5. **Elimination of AudioIntent from State Gating**: `on_playback_finished` never inspects audio intent tags. Quiescence is determined strictly by the conjunction of cognitive completion (`llm_done == true`) and acoustic completion (`pending_tts_jobs == 0` with sound card buffer drained).
 - **RULE-EVT-10 (Error Impact Classification)**: Errors MUST carry explicit impact levels:
   - `Degraded`: The turn continues with reduced fidelity; state does not change.
   - `TurnAborted`: The active turn fails cleanly; state resets directly to `Ready`.
@@ -196,7 +206,7 @@ Vox operates across three primary domain topologies:
 | **`TextInput`** | `Ready` or `Paused` | Auto-resumes if paused, sets query in dialogue history, transitions to `Thinking`, generates response. | Auto-resumes if paused, sends text frame directly to WebSocket, transitions to `Thinking`. | Dropped (Dictation accepts voice input only). |
 | **`PlaybackStarted`** | `Thinking` or `Working` | Transitions to `Speaking`. Retains `current_activity` intact (does NOT wipe tool envelope). | Transitions to `Speaking`. | N/A (Dictation produces no audio output). |
 | **`PlaybackFinished`** | `Speaking` | **Duplex Quiescence Evaluation**: If `llm_done == true`, transitions to `Ready`. If `llm_done == false`, transitions back to `Working` (if `current_activity.is_some()`) or `Thinking`. | Transitions to `Ready` when server audio stream finishes playing. | N/A |
-| **`LlmFinished`** | `Thinking`, `Working`, or `Speaking` | If audio still playing/queued (`pending_tts_jobs > 0 || sink_occupied`): marks `llm_done = true`, stays in current state (`Speaking`). If audio already drained: transitions to `Ready`. | Evaluates turn completion. | N/A |
+| **`LlmFinished`** | `Thinking`, `Working`, or `Speaking` | Calls `mark_llm_finished(turn_id)` (epoch-guarded). If audio still playing or queued (`pending_tts_jobs > 0 || sink_occupied`): marks `llm_done = true`; state remains in its current value (`Speaking`, `Working`, or `Thinking`) — no transition fires. If audio already drained (`pending_tts_jobs == 0 && !sink_occupied`): transitions immediately to `Ready`. | Evaluates turn completion. | N/A |
 | **`TurnAborted`** | Any active state | Cancels audio, resets state directly to `Ready`. | Cancels audio, resets state directly to `Ready`. | Discards audio buffer, resets state directly to `Ready`. |
 
 ---

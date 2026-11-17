@@ -105,6 +105,9 @@ async fn playback_gates_thinking_to_speaking_and_speaking_to_ready() {
         // Autonomous sink completion:
         // Calling process_output_buffer with empty consumer and pending_jobs == 0
         // autonomously sets turn_armed = false and emits PlaybackFinished to event_tx!
+        // Under Duplex Quiescence Law (RULE-EVT-09), PlaybackFinished resolves to Ready
+        // only when llm_done == true. We emit LlmFinished before sinking completes.
+        let _ = event_tx.send(VoxEvent::LlmFinished { turn_id });
         sink_ctx.process_output_buffer(&mut out);
 
         // Observable Exit 2: Central router receives PlaybackFinished from sink callback
@@ -265,8 +268,9 @@ async fn playback_finished_is_deferred_while_a_job_is_pending() {
         )
         .await;
 
-        // 3. Decrement pending_jobs to 0 and send PlaybackFinished again
+        // 3. Decrement pending_jobs to 0, emit LlmFinished, and send PlaybackFinished again
         pending_jobs.store(0, Ordering::Relaxed);
+        let _ = event_tx.send(VoxEvent::LlmFinished { turn_id });
         event_tx
             .send(VoxEvent::PlaybackFinished {
                 turn_id,
@@ -571,4 +575,161 @@ async fn barge_in_cancels_the_turn_and_advances_it() {
     })
     .await
     .expect("test_barge_in_cancels_and_advances_turn timed out");
+}
+
+// ============================================================================
+// Section 4: Red-Seam Tests (Pipeline Refactor Baseline — Phase 14)
+// ============================================================================
+
+/// PURPOSE:  Ensure PlaybackFinished returns to Thinking (or Working) when the LLM is still generating, not prematurely to Ready.
+/// SCENARIO: Turn is in Speaking; intermediate audio clause finishes playing (PlaybackFinished); llm_done is false; current_activity is None.
+/// ASSERTS:  Pipeline transitions Speaking -> Thinking; does NOT transition to Ready per RULE-EVT-09 §2.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   playback.rs: In on_playback_finished, ignore llm_done and unconditionally transition to Ready.
+#[tokio::test]
+async fn duplex_quiescence_playback_finished_before_llm_finished_returns_thinking() {
+    let test_timeout = Duration::from_secs(10);
+    tokio::time::timeout(test_timeout, async {
+        let _guard = common::paths::TempPathsGuard::new();
+        vox_lib::utils::paths::init();
+        let (app, state) = common::harness::get_test_app_and_state().await;
+
+        let turn_id = 905;
+        state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
+        state.pipeline.set_state(InteractionState::Speaking);
+        state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
+
+        let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
+        let router_handle = spawn_router(app.clone(), event_rx).expect("spawn router");
+
+        // Send PlaybackFinished while llm_done == false (LlmFinished has NOT been emitted)
+        event_tx
+            .send(VoxEvent::PlaybackFinished {
+                turn_id,
+                intent: AudioIntent::TurnResponse,
+            })
+            .expect("send PlaybackFinished");
+
+        // Under RULE-EVT-09 §2:
+        // When llm_done == false and current_activity is None: Speaking -> Thinking
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if state.pipeline.state() == InteractionState::Thinking {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        assert_eq!(
+            state.pipeline.state(),
+            InteractionState::Thinking,
+            "PlaybackFinished while llm_done == false must transition Speaking -> Thinking, NOT Ready"
+        );
+
+        let _ = event_tx.send(VoxEvent::Shutdown);
+        let _ = tokio::task::spawn_blocking(move || router_handle.join()).await;
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Ensure hardware cancel flag is properly re-armed after barge-in so the second turn produces audible audio instead of permanent mute.
+/// SCENARIO: Turn 1 is cancelled via barge-in (setting hardware cancel flag); turn 2 is started via next_turn; audio chunks for turn 2 are ingested.
+/// ASSERTS:  Turn 2 chunks are accepted into the playback buffer without being dropped by a latched cancel flag per RULE-EVT-09 §4.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   engine.rs: Do not rearm hardware_cancel_flag on next_turn.
+#[tokio::test]
+async fn hardware_cancel_flag_rearmed_after_barge_in_produces_audible_chunks() {
+    let test_timeout = Duration::from_secs(10);
+    tokio::time::timeout(test_timeout, async {
+        let _guard = common::paths::TempPathsGuard::new();
+        vox_lib::utils::paths::init();
+        let (app, state) = common::harness::get_test_app_and_state().await;
+
+        let turn_1 = 906;
+        state.pipeline.turn_id.store(turn_1, Ordering::Relaxed);
+        state.pipeline.set_state(InteractionState::Speaking);
+
+        let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
+        let (playback_engine, _sink_ctx, _ref_cons) =
+            common::harness::create_headless_playback_with_aec_tap(&state, event_tx.clone());
+
+        let router_handle = spawn_router(app.clone(), event_rx).expect("spawn router");
+
+        // Simulate barge-in on Turn 1
+        playback_engine.cancel();
+
+        // Turn 2 commences
+        let (turn_2, _token) = state.pipeline.next_turn();
+        assert_eq!(turn_2, turn_1 + 1, "next_turn must advance turn_id");
+
+        // Ingest audio chunk for Turn 2
+        let chunk = vec![0.1f32; 4800];
+        playback_engine.ingest_chunk(&chunk);
+
+        // Turn 2 audio must NOT be dropped by latched cancel flag
+        assert!(
+            playback_engine.buffer_len() > 0,
+            "Playback buffer must accept Turn 2 chunks after barge-in (cancel flag must be re-armed)"
+        );
+
+        let _ = event_tx.send(VoxEvent::Shutdown);
+        let _ = tokio::task::spawn_blocking(move || router_handle.join()).await;
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Ensure zero-audio TTS synthesis emits a fallback PlaybackFinished event to close the quiescence latch and prevent pipeline hang.
+/// SCENARIO: Turn is in Thinking; TTS completes a clause with zero audio samples; pending_tts_jobs drops to 0; sink buffer is empty.
+/// ASSERTS:  Pipeline reaches Ready after LlmFinished and fallback PlaybackFinished per RULE-EVT-09 §4.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   tts/actor.rs: Delete fallback PlaybackFinished when remaining_jobs == 0 and buffer is empty.
+#[tokio::test]
+async fn zero_audio_fallback_emits_playback_finished_and_closes_quiescence_latch() {
+    let test_timeout = Duration::from_secs(10);
+    tokio::time::timeout(test_timeout, async {
+        let _guard = common::paths::TempPathsGuard::new();
+        vox_lib::utils::paths::init();
+        let (app, state) = common::harness::get_test_app_and_state().await;
+
+        let turn_id = 907;
+        state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
+        state.pipeline.set_state(InteractionState::Thinking);
+        state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
+
+        let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
+        let router_handle = spawn_router(app.clone(), event_rx).expect("spawn router");
+
+        // LLM finishes (emits LlmFinished)
+        let _ = event_tx.send(VoxEvent::LlmFinished { turn_id });
+
+        // Zero-audio clause: zero samples generated, fallback PlaybackFinished emitted
+        let _ = event_tx.send(VoxEvent::PlaybackFinished {
+            turn_id,
+            intent: AudioIntent::TurnResponse,
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if state.pipeline.state() == InteractionState::Ready {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        assert_eq!(
+            state.pipeline.state(),
+            InteractionState::Ready,
+            "Fallback PlaybackFinished with LlmFinished must resolve quiescence to Ready"
+        );
+
+        let _ = event_tx.send(VoxEvent::Shutdown);
+        let _ = tokio::task::spawn_blocking(move || router_handle.join()).await;
+    })
+    .await
+    .expect("test timed out");
 }

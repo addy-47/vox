@@ -157,7 +157,10 @@ impl Drop for Harness {
         self.shutdown.store(true, Ordering::SeqCst);
         let _ = self.tx.send(SttCommand::Shutdown);
         if let Some(join) = self.join.take() {
-            let _ = join.join();
+            let res = join.join();
+            if !std::thread::panicking() {
+                assert!(res.is_ok(), "STT worker thread panicked: {:?}", res.err());
+            }
         }
     }
 }
@@ -479,4 +482,37 @@ fn shutdown_terminates_the_worker_within_deadline() {
     done_rx
         .recv_timeout(DEADLINE)
         .expect("worker must exit after Shutdown");
+}
+
+/// PURPOSE:  Ensure STT stream resets its decoder state when a new turn arrives without a prior ResetStream command, preventing acoustic bleeding across turns.
+/// SCENARIO: Turn 1 streams audio chunks; Turn 2 stream chunk arrives without explicit ResetStream command.
+/// ASSERTS:  STT worker detects turn identity divergence, resets internal stream decoder, and records audio cleanly for Turn 2 per RULE-EVT-01A.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   stt/actor.rs: Adopt adjacent turn_id + 1 without checking utterance_id or resetting decoder state.
+#[test]
+fn stt_resets_stream_on_turn_divergence_without_prior_reset() {
+    let h = Harness::new();
+    // Turn 1 streams chunks and opens stream
+    h.send(chunk(1, 1600));
+    // Turn 2 chunk arrives directly (barge-in or rapid rotation without explicit reset)
+    h.send(chunk(2, 1600));
+    h.send(final_cmd(2, 1600, InteractionOwner::Assistant));
+
+    let ev = h.next_event();
+    match ev {
+        VoxEvent::TranscriptFinal { turn_id, .. } => {
+            assert_eq!(turn_id, 2, "Final transcript must match Turn 2");
+        }
+        other => panic!("Expected TranscriptFinal for Turn 2, got {:?}", other),
+    }
+
+    // Verify decoder reset was called between Turn 1 and Turn 2 (resets must be >= 1)
+    let resets = h.recording.resets.load(Ordering::SeqCst);
+    assert!(
+        resets >= 1,
+        "STT decoder must be reset on turn divergence to prevent acoustic bleeding across turns"
+    );
+
+    h.close();
 }

@@ -229,7 +229,7 @@ pub fn on_ptt_cancel<R: tauri::Runtime>(
     }
 
     state.pipeline_accumulator.lock().clear();
-    state.pipeline.turn_cancel_token().cancel();
+    state.pipeline.cancel_active_turn();
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {

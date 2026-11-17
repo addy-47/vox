@@ -44,7 +44,9 @@ Avoid magic numbers. Place constants into one of three tiers:
 
 - **Derive lifecycle from state enums:** Never introduce boolean flags that shadow state transitions (e.g. `is_connected`, `is_idle`, `is_recording`). Query the canonical state enum or settings directly.
 - **Model readiness via Options:** Represent model availability via `Option<Engine>` or explicit status enums rather than loose boolean bags (`is_llm_loaded`).
-- **Permitted booleans:** Hardware signal states (`mic_muted: bool`), persistent config flags (`echo_cancellation: bool`), local loop state (`let mut seen_token = false;`), and atomic cancellation tokens (`CancellationToken`).
+- **Permitted booleans:** Hardware signal states (`mic_muted: bool`), persistent config flags (`echo_cancellation: bool`), local function loop state (`let mut seen_token = false;`), and atomic cancellation tokens (`CancellationToken`).
+- **Ban struct-level "event memory" booleans:** Structs (`Harness`, `PipelineAtomics`, `PlaybackEngine`) must not store `was_*_this_turn`, `is_*_this_turn`, or `has_*_occurred` flags. Turn-scoped lifecycle state is either a coordinated router latch (`llm_done`) or a relational audit record in Turso DB.
+- **API hardening (no leaked mutable primitives):** Never expose raw mutable handles (`state.pipeline.turn_cancel_token().cancel()`) when compound invariants are required (e.g. updating `hardware_cancel_flag`). Wrap compound operations into named methods on the owner struct (`cancel_active_turn()`).
 
 ---
 
