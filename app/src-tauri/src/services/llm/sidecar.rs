@@ -175,8 +175,8 @@ impl LlmProvider for SidecarLlmProvider {
                                 .and_then(|v| v.as_str())
                             {
                                 if !reasoning.is_empty() {
-                                    let _ = tx
-                                        .send(LlmStreamEvent::Thinking(reasoning.to_string()));
+                                    let _ =
+                                        tx.send(LlmStreamEvent::Thinking(reasoning.to_string()));
                                 }
                             }
 

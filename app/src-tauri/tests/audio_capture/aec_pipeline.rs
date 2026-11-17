@@ -243,7 +243,7 @@ async fn aec_suppresses_the_synthetic_tts_echo() {
         vox_lib::utils::paths::init();
         let (_app, state) = common::harness::get_test_app_and_state().await;
         state.pipeline.turn_id.store(1101, Ordering::Relaxed);
-        state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
+        state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
         state.pipeline.set_state(InteractionState::Speaking);
 
         let tts_path = Path::new("tests/assets/edgetts_01_en_briefing.wav");

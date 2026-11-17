@@ -209,6 +209,11 @@ impl PlaybackStreamContext {
         self.update_energy_metrics(frames, sum_sq, sum_low_sq, sum_mid_sq, sum_high_sq);
         self.played_samples += popped;
 
+        // Publish sink occupancy lock-free for the router's quiescence latch.
+        self.handles
+            .sink_occupied
+            .store(!self.consumer.is_empty(), Ordering::Relaxed);
+
         if self.consumer.is_empty() {
             let pending_jobs = self.handles.pending_synthesis_jobs.load(Ordering::Relaxed);
             let armed = self.turn_armed.load(Ordering::Relaxed);

@@ -23,6 +23,7 @@ use vox_lib::{
         events::{AudioIntent, VoxEvent},
         state::InteractionState,
     },
+    harness::{Harness, TRANSITION_MESSAGES_EN},
     pipeline::{
         assistant::{
             playback::{on_playback_finished, on_playback_started},
@@ -30,13 +31,10 @@ use vox_lib::{
         },
         RoutingContext,
     },
-    harness::{Harness, TRANSITION_MESSAGES_EN},
-    services::{
-        tts::{
-            actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
-            providers::{supertonic::TtsEngine as SupertonicEngine, SynthesisContext, TtsProvider},
-            ProviderCaps,
-        },
+    services::tts::{
+        actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
+        providers::{supertonic::TtsEngine as SupertonicEngine, SynthesisContext, TtsProvider},
+        ProviderCaps,
     },
 };
 
@@ -113,7 +111,7 @@ async fn voice_switch_does_not_restart_the_tts_worker() {
         state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
 
         let cancel_flag = Arc::new(AtomicBool::new(false));
-        let pending_jobs = Arc::clone(&state.pipeline.pending_synthesis_jobs);
+        let pending_jobs = Arc::clone(&state.pipeline.pending_tts_jobs);
         pending_jobs.store(0, Ordering::Relaxed);
 
         let (event_tx, _event_rx) = mpsc::channel::<VoxEvent>();
@@ -302,7 +300,7 @@ async fn compaction_filler_is_dispatched_and_counted() {
         );
 
         state.pipeline.set_state(InteractionState::Thinking);
-        state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
+        state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
 
         // Calibrate context window to 8192 (>= MIN_LLM_CONTEXT_WINDOW = 8192)
         {
@@ -394,7 +392,7 @@ async fn compaction_filler_is_dispatched_and_counted() {
             "State must transition to Working when critical compaction filler is dispatched"
         );
         assert!(
-            state.pipeline.pending_synthesis_jobs.load(Ordering::Relaxed) >= 1,
+            state.pipeline.pending_tts_jobs.load(Ordering::Relaxed) >= 1,
             "pending_synthesis_jobs must be incremented when filler is dispatched"
         );
 
@@ -426,7 +424,7 @@ async fn compaction_filler_is_dispatched_and_counted() {
         );
 
         // Cancel turn token to cleanly abort background compaction task
-        state.pipeline.turn_token().cancel();
+        state.pipeline.turn_cancel_token().cancel();
 
         // ---------------------------------------------------------------------
         // Observable Exit 4: Under normal context (<85% utilization), zero filler dispatched

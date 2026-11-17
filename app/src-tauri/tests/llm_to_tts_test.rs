@@ -28,8 +28,8 @@ use vox_lib::{
         events::{AudioIntent, InteractionMode, PipelineMode, VoxEvent},
         state::{InteractionOwner, InteractionState},
     },
-    pipeline::{router::spawn_router, RoutingContext},
     harness::{Harness, TurnExecutionRequest, TurnOutcome},
+    pipeline::{router::spawn_router, RoutingContext},
     services::{
         llm::{
             actor::{spawn_llm_worker, LlmCommand},
@@ -38,7 +38,6 @@ use vox_lib::{
         tts::TtsCommand,
     },
 };
-
 
 /// Builds the modular harness rig shared by the deterministic tests and the real-model
 /// test: scripted or real LLM worker, router consuming the pipeline channel.
@@ -66,7 +65,9 @@ impl SeamRig {
             settings.interaction.pipeline_mode = PipelineMode::Modular;
             settings.memory.context_retrieval_enabled = false;
         }
-        state.owner.store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
+        state
+            .owner
+            .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
         state.pipeline.set_state(InteractionState::Thinking);
 
         // Single shared pipeline channel, exactly like production: workers and the
@@ -91,7 +92,8 @@ impl SeamRig {
 
         {
             let settings = state.settings.read().unwrap().clone();
-            let prompt = "You are a concise voice assistant. Reply in exactly two short sentences.".to_string();
+            let prompt = "You are a concise voice assistant. Reply in exactly two short sentences."
+                .to_string();
             *state.harness.lock() = Some(Harness::new_modular(
                 Some(1),
                 prompt,
@@ -146,7 +148,7 @@ impl SeamRig {
         TurnExecutionRequest {
             query: query.to_string(),
             turn_id,
-            cancel: self.state.pipeline.turn_token(),
+            cancel: self.state.pipeline.turn_cancel_token(),
             owner: InteractionOwner::Assistant,
             llm_tx: Some(self.llm_tx.clone()),
             tts_tx: Some(self.tts_tx.clone()),
@@ -154,7 +156,7 @@ impl SeamRig {
             db: Arc::clone(&self.state.db),
             pipeline_tx: Some(self.pipeline_tx.clone()),
             accumulator: Arc::clone(&self.state.pipeline_accumulator),
-            pending_synthesis_jobs: Arc::clone(&self.state.pipeline.pending_synthesis_jobs),
+            pending_synthesis_jobs: Arc::clone(&self.state.pipeline.pending_tts_jobs),
             emitter: Arc::new(self.app.clone()),
             routing_ctx: self.routing_ctx(),
             app_state: Arc::clone(&self.state),
@@ -164,7 +166,6 @@ impl SeamRig {
     fn routing_ctx(&self) -> RoutingContext {
         RoutingContext::from_app_state(&self.state)
     }
-
 }
 
 /// Collects every `TtsCommand::Generate` received within `timeout`.
@@ -204,9 +205,9 @@ fn drain_tts_generate(
 /// MUTANT:   Drop the clause dispatch in StreamRoutingStage.
 #[tokio::test]
 async fn scripted_stream_dispatches_clauses_to_tts() {
-    let rig = SeamRig::new(Arc::new(
-        common::harness::ScriptedLlmProvider::tokens("Hello there. How are you today?"),
-    ))
+    let rig = SeamRig::new(Arc::new(common::harness::ScriptedLlmProvider::tokens(
+        "Hello there. How are you today?",
+    )))
     .await;
     let turn_id = 202;
 
@@ -235,7 +236,11 @@ async fn scripted_stream_dispatches_clauses_to_tts() {
     );
     for (tid, _, intent) in &clauses {
         assert_eq!(*tid, turn_id, "clauses must carry the request turn_id");
-        assert_eq!(*intent, AudioIntent::TurnResponse, "clauses must carry TurnResponse intent");
+        assert_eq!(
+            *intent,
+            AudioIntent::TurnResponse,
+            "clauses must carry TurnResponse intent"
+        );
     }
     let texts: Vec<&str> = clauses.iter().map(|(_, t, _)| t.as_str()).collect();
     assert!(
@@ -244,7 +249,9 @@ async fn scripted_stream_dispatches_clauses_to_tts() {
         texts
     );
     assert!(
-        texts.iter().any(|t| t.contains("How are you") || t.contains("today")),
+        texts
+            .iter()
+            .any(|t| t.contains("How are you") || t.contains("today")),
         "second clause must land in TTS, got {:?}",
         texts
     );
@@ -260,9 +267,9 @@ async fn scripted_stream_dispatches_clauses_to_tts() {
 /// MUTANT:   Dispatch no clauses for a complete sentence.
 #[tokio::test]
 async fn scripted_complete_sentence_reaches_tts() {
-    let rig = SeamRig::new(Arc::new(
-        common::harness::ScriptedLlmProvider::tokens("Everything is ready for the demo."),
-    ))
+    let rig = SeamRig::new(Arc::new(common::harness::ScriptedLlmProvider::tokens(
+        "Everything is ready for the demo.",
+    )))
     .await;
     let turn_id = 203;
 
@@ -293,9 +300,9 @@ async fn scripted_complete_sentence_reaches_tts() {
 /// MUTANT:   Drop the dispatch for tool-less sentences.
 #[tokio::test]
 async fn tools_registered_but_unused_stream_completes() {
-    let rig = SeamRig::new(Arc::new(
-        common::harness::ScriptedLlmProvider::tokens("Understood, no tools needed."),
-    ))
+    let rig = SeamRig::new(Arc::new(common::harness::ScriptedLlmProvider::tokens(
+        "Understood, no tools needed.",
+    )))
     .await;
     let turn_id = 204;
 

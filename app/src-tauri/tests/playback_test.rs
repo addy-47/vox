@@ -56,7 +56,7 @@ async fn playback_gates_thinking_to_speaking_and_speaking_to_ready() {
         state.pipeline.set_state(InteractionState::Thinking);
 
         let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
-        state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
+        state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
 
         let (playback_engine, mut sink_ctx, _ref_cons) =
             common::harness::create_headless_playback_with_aec_tap(&state, event_tx.clone());
@@ -157,7 +157,7 @@ async fn short_utterance_requires_a_flush_to_arm_the_pre_roll() {
 
         let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
         let current_turn_id = Arc::new(AtomicU32::new(turn_id));
-        let pending_jobs = Arc::clone(&state.pipeline.pending_synthesis_jobs);
+        let pending_jobs = Arc::clone(&state.pipeline.pending_tts_jobs);
 
         let (playback_engine, _consumer_arc) =
             common::harness::create_mock_playback_engine_with_handles(
@@ -216,15 +216,13 @@ async fn playback_finished_is_deferred_while_a_job_is_pending() {
         state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
         state.pipeline.set_state(InteractionState::Speaking);
 
-        let pending_jobs = Arc::clone(&state.pipeline.pending_synthesis_jobs);
+        let pending_jobs = Arc::clone(&state.pipeline.pending_tts_jobs);
         pending_jobs.store(1, Ordering::Relaxed);
 
         let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
 
-        let (_playback_engine, mut sink_ctx, _ref_cons) = common::harness::create_headless_playback_with_aec_tap(
-            &state,
-            event_tx.clone(),
-        );
+        let (_playback_engine, mut sink_ctx, _ref_cons) =
+            common::harness::create_headless_playback_with_aec_tap(&state, event_tx.clone());
 
         let router_handle =
             spawn_router(app.clone(), event_rx).expect("Failed to spawn router thread");
@@ -337,7 +335,7 @@ fn speech_detection_follows_the_audio_output_mode() {
         vad_backend,
         stt_tx,
         vad_config,
-        state.pipeline.current_state_atomic.clone(),
+        state.pipeline.assistant_state_atomic.clone(),
         state.pipeline.turn_id.clone(),
         audio_suppressed.clone(),
         state.pipeline.ingestion_gate.clone(),
@@ -445,17 +443,14 @@ async fn barge_in_cancels_the_turn_and_advances_it() {
         state.pipeline.set_state(InteractionState::Speaking);
 
         // Get Turn 1 cancellation token
-        let turn_1_token = state.pipeline.turn_token();
+        let turn_1_token = state.pipeline.turn_cancel_token();
         assert!(
             !turn_1_token.is_cancelled(),
             "Turn 1 token must be active initially"
         );
 
         // Seed pending jobs and accumulator
-        state
-            .pipeline
-            .pending_synthesis_jobs
-            .store(2, Ordering::Relaxed);
+        state.pipeline.pending_tts_jobs.store(2, Ordering::Relaxed);
         {
             let mut acc = state.pipeline_accumulator.lock();
             let _ = acc.push_token("Partial response before interruption");
@@ -468,7 +463,7 @@ async fn barge_in_cancels_the_turn_and_advances_it() {
             common::harness::create_mock_playback_engine_with_handles(
                 event_tx.clone(),
                 Arc::new(AtomicU32::new(turn_1_id)),
-                Arc::clone(&state.pipeline.pending_synthesis_jobs),
+                Arc::clone(&state.pipeline.pending_tts_jobs),
             );
 
         playback_engine.ingest_chunk(&vec![0.2f32; 2500]); // 5000 samples @ 48k
@@ -531,16 +526,13 @@ async fn barge_in_cancels_the_turn_and_advances_it() {
 
         // - New turn token must NOT be cancelled
         assert!(
-            !state.pipeline.turn_token().is_cancelled(),
+            !state.pipeline.turn_cancel_token().is_cancelled(),
             "New turn token must be active"
         );
 
         // - Pending synthesis jobs must be reset to 0
         assert_eq!(
-            state
-                .pipeline
-                .pending_synthesis_jobs
-                .load(Ordering::Relaxed),
+            state.pipeline.pending_tts_jobs.load(Ordering::Relaxed),
             0,
             "pending_synthesis_jobs must be reset to 0 upon barge-in"
         );
@@ -579,115 +571,4 @@ async fn barge_in_cancels_the_turn_and_advances_it() {
     })
     .await
     .expect("test_barge_in_cancels_and_advances_turn timed out");
-}
-
-// ============================================================================
-// Subtest 4: test_invariant_14_synthesis_guard_latch_lifecycle
-// ============================================================================
-/// PURPOSE:  The synthesis guard latch must open and close exactly once per turn.
-/// SCENARIO: A turn is prepared, played back and finished.
-/// ASSERTS:  The latch opens with the turn and closes when the playback finishes.
-/// CLASS:    edge-case
-/// REQUIRES: none
-/// MUTANT:   Leave the latch open after the turn.
-/// Verifies Invariant 14 Synthesis Guard Latch (`turn_open` and `drained_while_open`):
-/// 1. Router sets `turn_open = true` at turn onset.
-/// 2. Audio finishes playing (`on_playback_finished`) while LLM stream is still actively generating.
-/// 3. Latch catches premature exit: sets `drained_while_open = true` and holds state in `Speaking` (does NOT transition to `Ready`).
-/// 4. LLM finishes (`on_llm_finished`): clears `turn_open`, detects `drained_while_open == true` and `pending == 0`, and cleanly transitions to `Ready`.
-
-#[tokio::test]
-async fn synthesis_guard_latch_has_a_full_lifecycle() {
-    let test_timeout = Duration::from_secs(15);
-    tokio::time::timeout(test_timeout, async {
-        let _guard = common::paths::TempPathsGuard::new();
-        vox_lib::utils::paths::init();
-        let (app, state) = common::harness::get_test_app_and_state().await;
-
-        let turn_id = 905;
-        state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
-        let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
-        let router_handle = spawn_router(app.clone(), event_rx).expect("router");
-
-        // Turn begins: transcript sets turn_open = true
-        state.pipeline.set_state(InteractionState::Thinking);
-        state.pipeline.set_turn_open(true);
-        state.pipeline.clear_drained_while_open();
-        assert!(state.pipeline.is_turn_open());
-
-        // Audio starts playing first clause -> transitions to Speaking
-        event_tx
-            .send(VoxEvent::PlaybackStarted {
-                turn_id,
-                intent: AudioIntent::TurnResponse,
-            })
-            .expect("router must accept PlaybackStarted");
-
-        // Poll for Speaking (router thread applies the transition).
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < deadline && state.pipeline.state() != InteractionState::Speaking {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert_eq!(state.pipeline.state(), InteractionState::Speaking);
-        assert!(!state.pipeline.is_drained_while_open());
-
-        // Premature audio drain: Playback finishes while turn_open is still true (LLM still generating)
-        state
-            .pipeline
-            .pending_synthesis_jobs
-            .store(0, Ordering::Relaxed);
-        event_tx
-            .send(VoxEvent::PlaybackFinished {
-                turn_id,
-                intent: AudioIntent::TurnResponse,
-            })
-            .expect("router must accept PlaybackFinished");
-        // Give the router one iteration to arm the latch.
-        std::thread::sleep(Duration::from_millis(100));
-
-        // LATCH INVARIANT: Pipeline must NOT transition to Ready! It must remain Speaking and set drained_while_open = true
-        assert_eq!(
-            state.pipeline.state(),
-            InteractionState::Speaking,
-            "Premature audio drain while turn_open=true must NOT transition to Ready"
-        );
-        assert!(
-            state.pipeline.is_drained_while_open(),
-            "drained_while_open latch must be armed"
-        );
-
-        // LLM finishes later: the router's LlmFinished arm evaluates the latch
-        event_tx
-            .send(VoxEvent::LlmFinished { turn_id })
-            .expect("router must accept LlmFinished");
-
-        let llf_deadline = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < llf_deadline && state.pipeline.state() != InteractionState::Ready {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-
-        assert_eq!(
-            state.pipeline.state(),
-            InteractionState::Ready,
-            "LlmFinished must evaluate the armed latch and transition to Ready"
-        );
-        assert!(
-            !state.pipeline.is_turn_open(),
-            "turn_open must be cleared on turn completion"
-        );
-        assert!(
-            !state.pipeline.is_drained_while_open(),
-            "drained_while_open must be cleared after evaluation"
-        );
-
-        let _ = event_tx.send(VoxEvent::Shutdown);
-        let _ = tokio::time::timeout(
-            Duration::from_secs(5),
-            tokio::task::spawn_blocking(move || router_handle.join()),
-        )
-        .await
-        .expect("Router thread join timed out");
-    })
-    .await
-    .expect("test_invariant_14_synthesis_guard_latch_lifecycle timed out");
 }

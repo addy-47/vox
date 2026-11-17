@@ -174,38 +174,38 @@ fn apply_appearance_mutation(
             settings.appearance.preset = p.to_string();
         }
         "dark_accent" => {
-            let hex = value
-                .as_str()
-                .ok_or("dark_accent must be a string")?;
+            let hex = value.as_str().ok_or("dark_accent must be a string")?;
             if !is_valid_hex_color(hex) {
-                return Err(format!("dark_accent must be a valid #RRGGBB hex color, got '{hex}'"));
+                return Err(format!(
+                    "dark_accent must be a valid #RRGGBB hex color, got '{hex}'"
+                ));
             }
             settings.appearance.dark_accent = hex.to_uppercase();
         }
         "light_accent" => {
-            let hex = value
-                .as_str()
-                .ok_or("light_accent must be a string")?;
+            let hex = value.as_str().ok_or("light_accent must be a string")?;
             if !is_valid_hex_color(hex) {
-                return Err(format!("light_accent must be a valid #RRGGBB hex color, got '{hex}'"));
+                return Err(format!(
+                    "light_accent must be a valid #RRGGBB hex color, got '{hex}'"
+                ));
             }
             settings.appearance.light_accent = hex.to_uppercase();
         }
         "dark_bg" => {
-            let hex = value
-                .as_str()
-                .ok_or("dark_bg must be a string")?;
+            let hex = value.as_str().ok_or("dark_bg must be a string")?;
             if !is_valid_hex_color(hex) {
-                return Err(format!("dark_bg must be a valid #RRGGBB hex color, got '{hex}'"));
+                return Err(format!(
+                    "dark_bg must be a valid #RRGGBB hex color, got '{hex}'"
+                ));
             }
             settings.appearance.dark_bg = hex.to_uppercase();
         }
         "light_bg" => {
-            let hex = value
-                .as_str()
-                .ok_or("light_bg must be a string")?;
+            let hex = value.as_str().ok_or("light_bg must be a string")?;
             if !is_valid_hex_color(hex) {
-                return Err(format!("light_bg must be a valid #RRGGBB hex color, got '{hex}'"));
+                return Err(format!(
+                    "light_bg must be a valid #RRGGBB hex color, got '{hex}'"
+                ));
             }
             settings.appearance.light_bg = hex.to_uppercase();
         }

@@ -83,7 +83,7 @@ pub fn transition(
 
     let previous = state.pipeline.state();
     if previous == new_state {
-        let activity_unchanged = match (activity, state.pipeline.active_activity()) {
+        let activity_unchanged = match (activity, state.pipeline.current_activity()) {
             (None, None) => true,
             (Some(next), Some(current)) => current.kind == next.kind && current.name == next.name,
             _ => false,
@@ -99,7 +99,7 @@ pub fn transition(
     } else {
         state.pipeline.set_state(new_state);
     }
-    state.pipeline.set_active_activity(activity);
+    state.pipeline.set_current_activity(activity);
 
     log::info!(
         "[Pipeline] State {:?} -> {:?} (owner {:?}, mode {:?}/{:?}, turn {}, activity {:?})",

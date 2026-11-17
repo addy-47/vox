@@ -1,5 +1,3 @@
-use std::sync::atomic::Ordering;
-
 use tauri::AppHandle;
 
 use crate::{
@@ -87,11 +85,13 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
         );
         let now = crate::harness::current_timestamp_ms();
         if let Some(ref harness) = *state.harness.lock() {
-            harness.inbox().push(crate::harness::stages::inbox::InboxMessage::new(
-                query,
-                crate::harness::stages::inbox::QueuedMessageDelivery::Immediate,
-                now,
-            ));
+            harness
+                .inbox()
+                .push(crate::harness::stages::inbox::InboxMessage::new(
+                    query,
+                    crate::harness::stages::inbox::QueuedMessageDelivery::Immediate,
+                    now,
+                ));
         }
         return;
     }
@@ -101,7 +101,6 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
     {
         super::interrupt::on_interrupt(app, state, ctx)
     } else if current_state == InteractionState::Ready {
-        state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
         let (new_turn_id, _) = state.pipeline.next_turn();
         state.pipeline_accumulator.lock().clear();
         state.turn_metrics.start_turn(new_turn_id);
@@ -137,8 +136,6 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
         log::warn!("[Pipeline::Text] Failed to emit TranscriptFinal IPC: {}", e);
     }
 
-    state.pipeline.set_turn_open(true);
-    state.pipeline.clear_drained_while_open();
     transition(InteractionState::Thinking, None, ctx, app, state);
 
     match ctx.pipeline_mode {

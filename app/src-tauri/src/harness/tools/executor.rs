@@ -11,8 +11,7 @@ use super::{
     ToolExecutionMode, ToolResult,
 };
 use crate::{
-    core::events::PipelineMode, harness::TOOL_EXECUTION_TIMEOUT,
-    services::llm::CanonicalToolCall,
+    core::events::PipelineMode, harness::TOOL_EXECUTION_TIMEOUT, services::llm::CanonicalToolCall,
 };
 
 /// Outcome record of a single executed tool invocation.

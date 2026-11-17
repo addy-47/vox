@@ -27,7 +27,7 @@ pub mod stages;
 pub mod steps;
 pub mod tools;
 
-pub use chassis::{Harness, LlmExecutionParams};
+pub use chassis::{Harness, LlmExecutionParams, TurnPhase};
 pub use r#loop::execute_turn;
 pub use stages::{
     budget::{ContextBudgetStage, ContextStatus},
@@ -36,14 +36,14 @@ pub use stages::{
     prompt::PromptBuilderStage,
     streaming::{ClauseChunker, StreamRoutingHandles, StreamRoutingStage},
 };
+pub use steps::{
+    enter_non_terminal_phase, step7_handle_cancelled as handle_turn_cancelled,
+    CancelledTurnContext, NonTerminalContext, NonTerminalPhase, NonTerminalTrigger,
+};
 pub use tools::{
     MemorySearchTool, SetSessionTitleTool, SetTitleTool, ToolControlAction, ToolDefinition,
     ToolDomain, ToolError, ToolExecutionContext, ToolExecutionMode, ToolExecutionOutcome,
     ToolExecutor, ToolFilter, ToolRegistry, ToolResult,
-};
-pub use steps::{
-    enter_non_terminal_phase, step7_handle_cancelled as handle_turn_cancelled,
-    CancelledTurnContext, NonTerminalContext, NonTerminalPhase, NonTerminalTrigger,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

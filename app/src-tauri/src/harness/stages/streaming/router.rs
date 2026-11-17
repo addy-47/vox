@@ -12,8 +12,8 @@ use crate::{
         metrics::TurnMetricsCollector,
         state::InteractionOwner,
     },
-    pipeline::{assistant::TurnAccumulator, target_window},
     harness::stages::streaming::TextNormalizer,
+    pipeline::{assistant::TurnAccumulator, target_window},
     services::{
         llm::{actor::LlmResponse, CanonicalToolCall},
         tts::actor::TtsCommand,
@@ -35,12 +35,17 @@ pub enum StreamPassOutcome {
     Cancelled {
         partial_text: String,
     },
+    Superseded {
+        stale: u32,
+        current: u32,
+    },
     Error(String),
 }
 
 /// Bundled handles and shared state required to route streaming LLM responses.
 pub struct StreamRoutingHandles {
     pub turn_id: u32,
+    pub live_turn_id: Arc<AtomicU32>,
     pub owner: InteractionOwner,
     pub accumulator: Arc<Mutex<TurnAccumulator>>,
     pub tts_tx: Option<Sender<TtsCommand>>,
@@ -55,6 +60,7 @@ impl Clone for StreamRoutingHandles {
     fn clone(&self) -> Self {
         Self {
             turn_id: self.turn_id,
+            live_turn_id: Arc::clone(&self.live_turn_id),
             owner: self.owner,
             accumulator: Arc::clone(&self.accumulator),
             tts_tx: self.tts_tx.clone(),
@@ -93,11 +99,28 @@ impl StreamRoutingStage {
     ) -> Result<StreamPassOutcome, String> {
         let outcome = self.consume_stream_events(&handles, response_rx, allow_tools)?;
 
+        if let Some(current) = self.superseded_turn(&handles) {
+            return Ok(StreamPassOutcome::Superseded {
+                stale: handles.turn_id,
+                current,
+            });
+        }
+
         if let StreamPassOutcome::Completed { .. } = &outcome {
             self.emit_finished(&handles);
         }
 
         Ok(outcome)
+    }
+
+    /// Returns the active turn id when this pass has been superseded by a newer turn.
+    fn superseded_turn(&self, handles: &StreamRoutingHandles) -> Option<u32> {
+        let current = handles.live_turn_id.load(Ordering::SeqCst);
+        if current != handles.turn_id {
+            Some(current)
+        } else {
+            None
+        }
     }
 
     /// Consumes stream responses until completion, tool call, cancellation, or error.
@@ -115,6 +138,18 @@ impl StreamRoutingStage {
         let mut last_activity = std::time::Instant::now();
 
         loop {
+            if let Some(current) = self.superseded_turn(handles) {
+                log::info!(
+                    "[Harness::Stream] Turn {} superseded by {}; aborting pass before further emission",
+                    handles.turn_id,
+                    current
+                );
+                return Ok(StreamPassOutcome::Superseded {
+                    stale: handles.turn_id,
+                    current,
+                });
+            }
+
             let next_resp = match response_rx.try_recv() {
                 Ok(resp) => {
                     last_activity = std::time::Instant::now();
@@ -404,7 +439,7 @@ impl StreamRoutingStage {
 
     /// Emits `VoxEvent::LlmFinished` upon complete stream consumption.
     pub fn emit_finished(&self, handles: &StreamRoutingHandles) {
-        if handles.cancel.load(Ordering::Relaxed) {
+        if handles.cancel.load(Ordering::Relaxed) || self.superseded_turn(handles).is_some() {
             return;
         }
 

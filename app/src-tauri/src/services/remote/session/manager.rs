@@ -209,6 +209,11 @@ impl RemoteSessionManager {
         st != "Idle" && st != "None" && !st.is_empty()
     }
 
+    /// Sets the current pipeline state string (used during attach snapshot hydration or testing).
+    pub fn set_pipeline_state(&self, state: impl Into<String>) {
+        *self.current_pipeline_state.write() = state.into();
+    }
+
     /// Attaches an event listener for receiving remote pipeline events and attach snapshots.
     pub fn set_on_remote_event(&self, callback: RemoteEventCallback) {
         *self.on_remote_event.lock() = Some(callback);

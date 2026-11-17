@@ -3,11 +3,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::{
     core::defaults::DEFAULT_LLM_CONTEXT_WINDOW,
     harness::{ChatMessage, PromptTag::SessionContext, Role},
-    services::{
-        llm::{
-            catalog, ConversationInput, GenerationPolicy, GenerationPurpose, GenerationRequest,
-            LlmSettings, OutputConstraint, ReasoningMode,
-        },
+    services::llm::{
+        catalog, ConversationInput, GenerationPolicy, GenerationPurpose, GenerationRequest,
+        LlmSettings, OutputConstraint, ReasoningMode,
     },
 };
 

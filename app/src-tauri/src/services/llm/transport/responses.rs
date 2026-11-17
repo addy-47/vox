@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use super::{config::ConnectionConfig, sse::SseDecoder};
 use crate::{
     harness::Role,
-    services::llm::{CanonicalToolCall, GenerationRequest, LlmError, OutputConstraint, ReasoningMode},
+    services::llm::{
+        CanonicalToolCall, GenerationRequest, LlmError, OutputConstraint, ReasoningMode,
+    },
 };
 
 #[derive(Serialize)]

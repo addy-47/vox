@@ -181,10 +181,11 @@ fn create_playback_engine(
     };
 
     let engine_handles = PlaybackEngineHandles {
-        cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
-        state_atomic: Arc::clone(&state.pipeline.current_state_atomic),
+        cancel_flag: Arc::new(AtomicBool::new(false)),
+        state_atomic: Arc::clone(&state.pipeline.assistant_state_atomic),
         current_turn_id: Arc::clone(&state.pipeline.turn_id),
-        pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_synthesis_jobs),
+        pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_tts_jobs),
+        sink_occupied: Arc::clone(&state.pipeline.sink_occupied),
         event_tx,
         playback_intent: Arc::new(AtomicU8::new(0)),
         is_playback_muted: Arc::clone(&state.pipeline.is_playback_muted),
@@ -335,7 +336,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         };
 
         let vad_handles = VadActorHandles {
-            state_atomic: Arc::clone(&state.pipeline.current_state_atomic),
+            state_atomic: Arc::clone(&state.pipeline.assistant_state_atomic),
             turn_id_atomic: Arc::clone(&state.pipeline.turn_id),
             audio_suppressed: Arc::new(AtomicBool::new(false)),
             engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
@@ -413,7 +414,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     };
 
     let stt_handles = SttActorHandles {
-        cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
+        cancel_flag: Arc::new(AtomicBool::new(false)),
         engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
     };
 
@@ -582,9 +583,9 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
             TtsWarmUpHandles {
                 tts_tx: &mut new_tts_tx,
                 tts_handle: &mut new_tts_handle,
-                cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
+                cancel_flag: Arc::new(AtomicBool::new(false)),
                 playback_engine,
-                pending_synthesis_jobs: Some(Arc::clone(&state.pipeline.pending_synthesis_jobs)),
+                pending_synthesis_jobs: Some(Arc::clone(&state.pipeline.pending_tts_jobs)),
                 telemetry_rtf: Some(Arc::clone(&state.telemetry.latest_tts_rtf)),
                 turn_metrics: Some(Arc::clone(&state.turn_metrics)),
             },

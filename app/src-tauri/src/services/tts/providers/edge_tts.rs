@@ -579,6 +579,7 @@ mod tests {
             state_atomic: Arc::new(AtomicU32::new(0)),
             current_turn_id: Arc::new(AtomicU32::new(1)),
             pending_synthesis_jobs: Arc::new(AtomicU32::new(1)),
+            sink_occupied: Arc::new(AtomicBool::new(false)),
             playback_intent: Arc::new(std::sync::atomic::AtomicU8::new(0)),
             event_tx: event_tx.clone(),
             is_playback_muted: Arc::new(AtomicBool::new(false)),

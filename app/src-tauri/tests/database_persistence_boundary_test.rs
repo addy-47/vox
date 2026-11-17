@@ -965,18 +965,16 @@ async fn tool_call_event_self_heals_a_missing_session() {
 
         let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
         let conn = db.connect().expect("Failed to vend connection");
-        run_migrations(&conn).await.expect("Failed to run migrations");
+        run_migrations(&conn)
+            .await
+            .expect("Failed to run migrations");
 
         let is_healthy = Arc::new(AtomicBool::new(true));
         let rate = Arc::new(AtomicU32::new(0));
         let is_private = Arc::new(AtomicBool::new(false));
 
-        let persist_tx = spawn_persistence_worker(
-            Arc::new(db),
-            is_healthy,
-            rate,
-            Arc::clone(&is_private),
-        );
+        let persist_tx =
+            spawn_persistence_worker(Arc::new(db), is_healthy, rate, Arc::clone(&is_private));
 
         let orphan_sid = 999111222i64;
         let call_id = "call_test_123".to_string();
@@ -1907,7 +1905,10 @@ async fn session_deletion_and_startup_sweep_purge_tier4_tool_output_cache_direct
             .expect("write file b");
 
         assert!(dir_a.exists(), "dir_a must exist on disk before deletion");
-        assert!(dir_b.exists(), "dir_b must exist on disk before startup sweep");
+        assert!(
+            dir_b.exists(),
+            "dir_b must exist on disk before startup sweep"
+        );
 
         // 1. Delete session_a
         delete_session(&conn, session_a, true)
@@ -1924,12 +1925,7 @@ async fn session_deletion_and_startup_sweep_purge_tier4_tool_output_cache_direct
         let rate = Arc::new(AtomicU32::new(0));
         let private_mode = Arc::new(AtomicBool::new(false));
 
-        let persist_tx = spawn_persistence_worker(
-            Arc::new(db),
-            is_healthy,
-            rate,
-            private_mode,
-        );
+        let persist_tx = spawn_persistence_worker(Arc::new(db), is_healthy, rate, private_mode);
 
         let _ = persist_tx.send(PersistenceEvent::Shutdown);
 
@@ -1946,5 +1942,3 @@ async fn session_deletion_and_startup_sweep_purge_tier4_tool_output_cache_direct
     .await
     .expect("test timed out");
 }
-
-

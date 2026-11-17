@@ -27,21 +27,19 @@ use crate::{
         tools::{web_search::WebSearchTool, ToolDefinition},
         ChatMessage, Role,
     },
-    services::{
-        llm::{
-            provider::Support,
-            transport::{
-                chat_completions::{self, ToolCallAccumulator},
-                inject_auth_headers,
-                ollama::{self, parse_tool_calls_in_line},
-                responses::{self, ResponsesToolAccumulator},
-                sse::SseDecoder,
-                ConnectionConfig, TransportType,
-            },
-            CanonicalToolCall, CanonicalToolDefinition, ConversationInput, EmbeddedProvider,
-            GenerationOptions, GenerationPurpose, GenerationRequest, LlmProvider, LlmRuntimeTarget,
-            OutputConstraint, RemoteTransport, GEMMA_MODEL_DIR, QWEN_MODEL_DIR,
+    services::llm::{
+        provider::Support,
+        transport::{
+            chat_completions::{self, ToolCallAccumulator},
+            inject_auth_headers,
+            ollama::{self, parse_tool_calls_in_line},
+            responses::{self, ResponsesToolAccumulator},
+            sse::SseDecoder,
+            ConnectionConfig, TransportType,
         },
+        CanonicalToolCall, CanonicalToolDefinition, ConversationInput, EmbeddedProvider,
+        GenerationOptions, GenerationPurpose, GenerationRequest, LlmProvider, LlmRuntimeTarget,
+        OutputConstraint, RemoteTransport, GEMMA_MODEL_DIR, QWEN_MODEL_DIR,
     },
     setup::manifest::VoxManifest,
     utils::paths,

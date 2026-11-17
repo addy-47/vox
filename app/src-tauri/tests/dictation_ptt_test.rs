@@ -103,7 +103,7 @@ impl Rig {
             vad_backend,
             stt_tx.clone(),
             vad_config,
-            state.pipeline.current_state_atomic.clone(),
+            state.pipeline.assistant_state_atomic.clone(),
             state.pipeline.turn_id.clone(),
             audio_suppressed,
             state.pipeline.ingestion_gate.clone(),
@@ -300,7 +300,7 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
     {
         rig.assistant_mode(PipelineMode::Modular);
         ptt_start(&rig.app, &rig.state).expect("ptt_start");
-        let token = rig.state.pipeline.turn_token();
+        let token = rig.state.pipeline.turn_cancel_token();
         common::audio::stream_test_clip_prefix(
             common::ASSET_SUPERTONIC_01_EN_FILENAME,
             4000,
@@ -348,7 +348,7 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
     {
         rig.assistant_mode(PipelineMode::Realtime);
         ptt_start(&rig.app, &rig.state).expect("ptt_start");
-        let token = rig.state.pipeline.turn_token();
+        let token = rig.state.pipeline.turn_cancel_token();
         common::audio::stream_test_clip_prefix(
             common::ASSET_SUPERTONIC_01_EN_FILENAME,
             4000,
@@ -550,17 +550,13 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
     }
 
     // ---------------------------------------------------------------- S15
-    // Assistant: cancel without a start is ignored and leaves the cancel flag alone.
+    // Assistant: cancel without a start is ignored and leaves the turn cancel token uncancelled.
     {
         rig.assistant_mode(PipelineMode::Modular);
-        rig.state
-            .pipeline
-            .cancel_flag
-            .store(false, Ordering::Relaxed);
         ptt_cancel(&rig.app, &rig.state).expect("ptt_cancel");
         assert_eq!(rig.state.pipeline.state(), InteractionState::Ready);
         assert!(
-            !rig.state.pipeline.cancel_flag.load(Ordering::Relaxed),
+            !rig.state.pipeline.turn_cancel_token().is_cancelled(),
             "a no-op cancel must not poison the next turn"
         );
         rig.assert_no_final("assistant cancel without start");
@@ -601,28 +597,21 @@ async fn validated_speech_reaches_only_the_selected_dispatch_arm() {
     }
 
     // ---------------------------------------------------------------- S17
-    // Dictation: a speech onset must clear a stale cancel flag.
+    // Dictation: a speech onset must have a valid cancellation token.
     {
         rig.dictation_mode();
-        rig.state
-            .pipeline
-            .cancel_flag
-            .store(true, Ordering::Relaxed);
+        rig.state.pipeline.turn_cancel_token().cancel();
         assert!(
-            rig.state.pipeline.cancel_flag.load(Ordering::Relaxed),
-            "precondition: the cancel flag is set by the previous session teardown"
+            rig.state.pipeline.turn_cancel_token().is_cancelled(),
+            "precondition: the cancel token was cancelled"
         );
 
         rig.send(VoxEvent::SpeechStart {
             owner: InteractionOwner::Dictation,
         });
-        rig.wait_dictation(InteractionState::Listening, "cancel flag reset")
+        rig.wait_dictation(InteractionState::Listening, "cancel token check")
             .await;
 
-        assert!(
-            !rig.state.pipeline.cancel_flag.load(Ordering::Relaxed),
-            "a dictation speech onset must clear the cancel flag, or STT drops the turn"
-        );
         transition_dictation(InteractionState::Ready, &rig.app, &rig.state);
     }
 

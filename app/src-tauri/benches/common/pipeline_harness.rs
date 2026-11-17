@@ -20,11 +20,10 @@ use vox_lib::{
     },
     services::{
         audio::{
-            aec::{AecProcessor, spawn_aec_worker, AecCommand},
+            aec::{spawn_aec_worker, AecCommand, AecProcessor},
             playback::PlaybackEngineHandles,
-            PlaybackEngine, PLAYBACK_BUFFER_SAMPLES, AEC_REFERENCE_BUFFER_SAMPLES,
             sink::{PlaybackReferenceTap, PlaybackStreamContext},
-            AudioStream,
+            AudioStream, PlaybackEngine, AEC_REFERENCE_BUFFER_SAMPLES, PLAYBACK_BUFFER_SAMPLES,
         },
         stt::{
             actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},
@@ -179,10 +178,11 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
     let reference_tap = PlaybackReferenceTap::new(aec_ref_prod);
 
     let pb_handles = PlaybackEngineHandles {
-        cancel_flag: state.pipeline.cancel_flag.clone(),
-        state_atomic: state.pipeline.current_state_atomic.clone(),
+        cancel_flag: Arc::new(AtomicBool::new(false)),
+        state_atomic: state.pipeline.assistant_state_atomic.clone(),
         current_turn_id: state.pipeline.turn_id.clone(),
-        pending_synthesis_jobs: state.pipeline.pending_synthesis_jobs.clone(),
+        pending_synthesis_jobs: state.pipeline.pending_tts_jobs.clone(),
+        sink_occupied: state.pipeline.sink_occupied.clone(),
         playback_intent: Arc::new(AtomicU8::new(0)),
         event_tx: event_tx.clone(),
         is_playback_muted: state.pipeline.is_playback_muted.clone(),
@@ -254,8 +254,7 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
     let clean_rb = HeapRb::<f32>::new(65536);
     let (clean_prod, clean_cons) = clean_rb.split();
     let (aec_cmd_tx, aec_rx) = mpsc::channel::<AecCommand>();
-    let aec = AecProcessor::new(Some(aec_ref_cons))
-        .expect("Failed to create AecProcessor");
+    let aec = AecProcessor::new(Some(aec_ref_cons)).expect("Failed to create AecProcessor");
     let aec_handle = spawn_aec_worker(
         aec,
         in_cons,
@@ -283,7 +282,7 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         partial_emitter,
     };
     let stt_handles = SttActorHandles {
-        cancel_flag: state.pipeline.cancel_flag.clone(),
+        cancel_flag: Arc::new(AtomicBool::new(false)),
         engine_shutdown: state.pipeline.engine_shutdown.clone(),
     };
     let stt_handle = spawn_stt_worker(stt_channels, stt_provider, stt_handles)
@@ -304,7 +303,7 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         vox_event_tx: Some(event_tx.clone()),
     };
     let vad_handles = VadActorHandles {
-        state_atomic: state.pipeline.current_state_atomic.clone(),
+        state_atomic: state.pipeline.assistant_state_atomic.clone(),
         turn_id_atomic: state.pipeline.turn_id.clone(),
         audio_suppressed: Arc::new(AtomicBool::new(false)),
         engine_shutdown: state.pipeline.engine_shutdown.clone(),

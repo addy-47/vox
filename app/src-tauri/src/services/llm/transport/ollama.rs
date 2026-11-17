@@ -329,8 +329,8 @@ pub async fn stream_ollama(
                 let reasoning = msg.thinking.as_deref().or(msg.thought.as_deref());
                 if let Some(thought) = reasoning {
                     if !thought.is_empty() {
-                        let _ = tx
-                            .send(super::super::LlmStreamEvent::Thinking(thought.to_string()));
+                        let _ =
+                            tx.send(super::super::LlmStreamEvent::Thinking(thought.to_string()));
                     }
                 }
                 if let Some(content) = msg.content {

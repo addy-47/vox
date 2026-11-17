@@ -294,11 +294,10 @@ async fn check_host_readiness(state: &AppState, ws_link: &WsLink) -> bool {
         return false;
     }
 
-    let is_local_session_active = state.pipeline.turn_open.load(Ordering::Relaxed)
-        || (!matches!(
-            state.pipeline.state(),
-            InteractionState::Idle | InteractionState::Paused
-        ) && state.remote_manager.state() != RemoteLinkState::Connected);
+    let is_local_session_active = !matches!(
+        state.pipeline.state(),
+        InteractionState::Idle | InteractionState::Paused
+    ) && state.remote_manager.state() != RemoteLinkState::Connected;
 
     if is_local_session_active {
         log::warn!("[Remote] Inbound Hello refused: host is currently busy with local session");
@@ -405,7 +404,7 @@ async fn build_attach_snapshot(state: &AppState) -> AttachSnapshot {
     let state_val = serde_json::json!({
         "state": pipeline_state,
         "owner": "assistant",
-        "turn_id": state.pipeline.turn_open.load(Ordering::Relaxed) as u32,
+        "turn_id": state.pipeline.peek_turn_id(),
     });
 
     let session_id_raw = state.conversation_id.load(Ordering::Relaxed);

@@ -1,5 +1,3 @@
-use std::sync::atomic::Ordering;
-
 use tauri::AppHandle;
 
 use crate::{
@@ -30,6 +28,10 @@ pub fn on_speech_start<R: tauri::Runtime>(
         return;
     }
 
+    // Every physical speech onset allocates a monotonic utterance sequence ID,
+    // even if conversational turn_id remains held in Scenario C (Working state).
+    let active_utterance_id = state.pipeline.next_utterance_id();
+
     let active_turn_id = if current_state == InteractionState::Thinking
         || current_state == InteractionState::Speaking
         || current_state == InteractionState::Working
@@ -44,7 +46,6 @@ pub fn on_speech_start<R: tauri::Runtime>(
                 engine.playback_engine.cancel();
             }
         }
-        state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
         transition(InteractionState::Listening, None, ctx, app, state);
         state.turn_metrics.start_turn(new_turn_id);
@@ -54,8 +55,9 @@ pub fn on_speech_start<R: tauri::Runtime>(
     };
 
     log::info!(
-        "[Pipeline::Speech] Speech start processed (turn: {})",
-        active_turn_id
+        "[Pipeline::Speech] Speech start processed (turn: {}, utterance: {})",
+        active_turn_id,
+        active_utterance_id
     );
 }
 

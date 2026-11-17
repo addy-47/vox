@@ -114,19 +114,6 @@ impl ConversationHistoryStage {
         );
     }
 
-    /// Rolls back the most recent user turn if interrupted before assistant generated any response.
-    pub fn rollback_last_user_turn(&mut self) -> Option<ChatMessage> {
-        if let Some(last) = self.messages.last() {
-            if last.role == Role::User {
-                let popped = self.messages.pop();
-                self.kv_synced_index = self.messages.len();
-                log::info!("[Harness::History] Interrupted user turn rolled back");
-                return popped;
-            }
-        }
-        None
-    }
-
     /// Synchronizes the root system prompt in place without wiping conversational history turns.
     pub fn sync_system_prompt(&mut self, system_prompt: &str) {
         if let Some(first) = self.messages.first_mut() {

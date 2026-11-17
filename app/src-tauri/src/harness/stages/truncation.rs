@@ -1,7 +1,4 @@
-use crate::{
-    harness::tools::TruncationPolicy,
-    services::memory::ml::estimate_tokens,
-};
+use crate::{harness::tools::TruncationPolicy, services::memory::ml::estimate_tokens};
 
 const ESTIMATED_CHARS_PER_TOKEN: usize = 4;
 const NEWLINE_SEARCH_WINDOW_BYTES: usize = 200;
@@ -39,7 +36,13 @@ impl TruncationStage {
 
         let sanitized_id: String = call_id
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
 
         let spillover_dir = crate::utils::paths::session_tool_outputs_dir(session_id);
@@ -101,7 +104,9 @@ impl TruncationStage {
         // Tail cut point: look for newline within search window of target, else snap to char boundary
         let tail_target_start = raw_output.len().saturating_sub(tail_target_bytes);
         let tail_search_start = tail_target_start.max(head_cut);
-        let tail_search_end = tail_search_start.saturating_add(NEWLINE_SEARCH_WINDOW_BYTES).min(raw_output.len());
+        let tail_search_end = tail_search_start
+            .saturating_add(NEWLINE_SEARCH_WINDOW_BYTES)
+            .min(raw_output.len());
         let tail_valid_start = raw_output.ceil_char_boundary(tail_search_start);
         let tail_valid_end = raw_output.floor_char_boundary(tail_search_end);
 
@@ -124,9 +129,7 @@ impl TruncationStage {
         );
 
         let preview_tokens = estimate_tokens(&preview);
-        let display_path = spillover_path_opt
-            .as_deref()
-            .unwrap_or("<write_failed>");
+        let display_path = spillover_path_opt.as_deref().unwrap_or("<write_failed>");
         log::info!(
             "[TruncationAudit] call_id={} tool={} policy={:?} original_tokens={} preview_tokens={} spillover_path={}",
             call_id,

@@ -24,13 +24,13 @@ use crate::{
         events::{emit_ipc, IpcEvent, PipelineMode, VoxEvent},
         metrics::TurnMetricsCollector,
     },
-    monitoring::snapshots::MonitoringState,
-    persistence::{PersistenceEvent, VoxDb},
-    pipeline::assistant::TurnAccumulator,
     harness::{
         tools::web_search::{default_engines, VoxEmbedder, DEFAULT_MIN_SCORE},
         Harness,
     },
+    monitoring::snapshots::MonitoringState,
+    persistence::{PersistenceEvent, VoxDb},
+    pipeline::assistant::TurnAccumulator,
     services::{
         llm::LlmProvider,
         realtime::RealtimeActor,

@@ -1,5 +1,3 @@
-use std::sync::atomic::Ordering;
-
 use tauri::AppHandle;
 
 use crate::{
@@ -21,11 +19,12 @@ pub fn on_speech_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) 
     }
 
     let (turn_id, _token) = state.pipeline.next_turn();
-    state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
+    let utterance_id = state.pipeline.next_utterance_id();
     transition_dictation(InteractionState::Listening, app, state);
     log::info!(
-        "[Dictation::Speech] Passive speech started (turn: {})",
-        turn_id
+        "[Dictation::Speech] Passive speech started (turn: {}, utterance: {})",
+        turn_id,
+        utterance_id
     );
 }
 

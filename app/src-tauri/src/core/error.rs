@@ -159,6 +159,9 @@ pub enum PersistenceError {
 
     #[error("Record not found: {id}")]
     NotFound { id: String },
+
+    #[error("Persistence channel unavailable: {message}")]
+    ChannelUnavailable { message: String },
 }
 
 /// Dictation subsystem domain error types.

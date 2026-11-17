@@ -66,10 +66,7 @@ impl ToolDefinition for SetTitleTool {
 
             apply_session_title(&title, ctx).await?;
 
-            Ok(ToolResult::new(format!(
-                "Session title set to '{}'",
-                title
-            )))
+            Ok(ToolResult::new(format!("Session title set to '{}'", title)))
         }
         .boxed()
     }

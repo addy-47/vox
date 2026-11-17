@@ -1,5 +1,40 @@
 # Phase 14 Work Log
 
+## 2026-11-16 — Domain 4 Adversarial Architecture Audit (Remote Session & IPC Protocol)
+
+- **Role & Scope:** Principal System Architect adversarial review of Domain 4 per `.agents/rules/system-architect.md`, `architectural-invariants.md`, and `/review`. Scope: `services/remote/{control/,session/,audio/,mod.rs}`, `ipc/{dispatcher,pipeline,persistence,mod}.rs`; cross-boundary evidence from `ipc/remote.rs`, `control/{guard,gateway,routing}.rs`, `core/{events,state}.rs`, `pipeline/{atomics,router}.rs`, `security/pairing.rs`, `lib.rs`. Calibrated to production scale. Spec SSOT: `remote-control-spec.md` (read in full), `ipc-spec.md`, `events-spec.md`.
+- **Artifact:** Full report written to `temp/review/domain4_remote_report.md`. Zero vague prose — every finding carries exact file:line, concrete race sequence, and ZBC Rust replacement.
+- **Findings (20 total: 7 🔴 / 10 🟠 / 3 🟡), grouped by the 5 audit patterns:**
+  1. 🔴 F-01: `listener.rs:403-409` serializes `turn_open` (AtomicBool) `as u32` as snapshot `turn_id`; canonical is `pipeline.turn_id: AtomicU32`. Replacement: typed `AttachSnapshot.state: StateChangedPayload` from router-owned cache.
+  2. 🔴 F-02: `listener.rs:297-301` uses `turn_open` as session-liveness in host admission → false `host_busy` on paused/interrupted sessions. Replacement: single `HostAdmission::evaluate` over `InteractionState`.
+  3. 🔴 F-03: `manager.rs:794-808` + `supervisor.rs:162-183` fabricate `state_changed{turn_id:0,"Paused"}` on disconnect. Replacement: `SessionSuspended` typed control message; router is sole `state_changed` producer.
+  4. 🔴 F-05: TOCTOU — `listener.rs:287` admission check then `manager.rs:331-366` `attach_link` across snapshot DB I/O → two controllers, two audio owners. Replacement: atomic `try_reserve_controller` lease before snapshot.
+  5. 🔴 F-07: `dialer.rs:149-160` `UnknownPeer` deletes Tier 1 trust row from Tier 2 rejection → remote trust-destruction primitive. Replacement: terminal `Failed(UnknownPeer)` with no DB write.
+  6. 🔴 F-09: `listener.rs:534-538` per-frame `parking_lot` lock in host audio recv loop. Replacement: `tokio::sync::watch` slot.
+  7. 🔴 F-11: `controller_runtime.rs:199-235` spawns one detached task per 16ms VAD chunk → nondeterministic SpeechStart/frames/SpeechEnd order + zombie tasks. Replacement: `blocking_send` on the dedicated OS thread.
+  8. 🟠 F-04 (shadow `RwLock<String>` + unconditional stale state overwrite), F-06 (mDNS poll loop mutating canonical state), F-08 (1s Pong timeout unused), F-12 (audio bridge tasks ignore cancel), F-13 (single drop-on-full event queue), F-14 (reconnect task ignores cancel), F-15 (unbounded `Req` gateway tasks), F-17 (150ms sleep as delivery barrier), F-18 (localhost fallback collapses per-IP rate limit), F-16 classified 🔴 — see below.
+  9. 🔴 F-16: `ipc/dispatcher.rs:19-25` has no `ControlOrigin` and ignores `_state`; `RULE-RC-GUARD` enforced only by `lib.rs:228-249` interceptor, bypassed by tray `launch_engine` at `lib.rs:193`. Replacement: `ControlOrigin` explicit param + `ensure_command_permitted` at service boundary.
+  10. 🟡 F-10 (settings lock policy divergence), F-19 (`DefaultCommandGateway` fake ACK), F-20 (substring error classification).
+- **What's fine:** three-tier enum separation, split pairing/connect/disconnect/revoke verbs, well-designed guard function, sound pairing identity binding, no DB lock across network awaits, epoch framing, lock-free CPAL callbacks, complete default-deny routing table.
+- **Bottom line:** Not ready. Fix F-05 first (atomic controller admission), then the F-01/F-02/F-03/F-04 identity cluster and F-16 guard wiring. Audit only — no production code changed.
+
+
+- **Role & Scope:** Principal System Architect adversarial review of Domain 2 per `.agents/rules/system-architect.md`, `architectural-invariants.md`, and `/review`. Scope: `harness/{chassis,loop,steps,mod}.rs`, `harness/stages/**`, `harness/tools/**`, `services/llm/**` (cross-boundary evidence from `pipeline/assistant/**`, `atomics.rs`, `tts/actor.rs`, `audio/sink.rs`). Calibrated to production scale.
+- **Artifact:** Full report written to `temp/review/domain2_harness_report.md`. Zero vague prose — every finding carries exact file:line, race sequence, and ZBC Rust replacement.
+- **Findings (10 total: 5 🔴 / 5 🟠):**
+  1. 🔴 F-01: Eager user-turn intake before Step 0 (`steps.rs:141`, `chassis.rs:249-281`) + 4-site rollback band-aid cluster; work_log:1058 confirms it was added as a race patch. Replacement: `TurnPhase` + `pending_user_query` staging + single atomic `commit_turn_artifact`; delete `rollback_user_turn`/`uncommitted_user_turn_id`.
+  2. 🔴 F-02: Unguarded positional rollback in `on_llm_finished` (`llm.rs:85-93`) — epoch mismatch that can delete a newer steering user message. Replacement: delete rollback; emit `VoxEvent::LlmEmptyResponse`.
+  3. 🔴 F-03: `drained_while_open` is write-only (grep: only its definition at `atomics.rs:173`); quiescence recomputed from 2 independently-mutated `Relaxed` atomics. Replacement: single `SynthesisJobTracker` actor + canonical `SynthesisQuiescence` enum.
+  4. 🔴 F-04: Two independent `PlaybackFinished` producers (`tts/actor.rs:137` vs `audio/sink.rs:225`) with different predicates. Replacement: sink-only authority via tracker; drop `intent` from event.
+  5. 🔴 F-05: `on_playback_finished` defers on `turn_open` with no re-arm (`playback.rs:79-86`) → permanent `Speaking` wedge. Replacement: single `finalize_turn_ready` path.
+  6. 🟠 F-06: QuietCompactionWatcher stores only `CancellationToken`, no `JoinHandle` (`compaction.rs:240-282`); stale S1 compaction can apply to S2's harness in a reused slot. Replacement: own+join handle, epoch-guard apply.
+  7. 🟠 F-07: `StreamRoutingHandles` freezes stale `turn_id` (`loop.rs:84-94`); barge-in Scenario C discards whole turn tail. Replacement: `TurnEpoch` + `assert_current` + `TurnSuperseded` event.
+  8. 🟠 F-08: Router thread takes `engine.blocking_lock()` (`llm.rs:110`) — documented band-aid at work_log:239; can freeze all state transitions. Replacement: lock-free `sink_occupied` atomic written by cpal callback.
+  9. 🟠 F-09: Shadow boolean cluster (`chassis.rs:51,54,58,60,61`) → implicit state machine; read-and-reset `is_compacted` corrupts step provenance. Replacement: `TurnState{phase, provenance}` enum.
+  10. 🟠 F-10: `try_send` with discarded errors in `persistence.rs:32,49` → silent FK-orphan rows on channel full. Replacement: blocking `send` + propagate `Result`.
+- **What's fine:** 4-tier boundary enforcement, tool barrier scheduler + bijection assertion, 3-stream demux/Thinking quarantine, `StepInbox` `Notify` usage, ThinkTag UTF-8 handling.
+- **Bottom line:** Not ready for production reliability bar. Fix F-01+F-03 first; all other findings are downstream symptoms of the incomplete turn/quiescence state machine. Audit only — no production code changed.
+
 ## 2026-11-16 — RCA: verify-targets.sh recompiles Vox on every run
 
 - **Symptom:** `scripts/verify-targets.sh` recompiles `Vox` + `tauri-plugin-positioner` on each invocation (49s, 1m21s, 3m24s, 36s) despite no source changes; "1234/1236" progress repeats.
@@ -1067,6 +1102,20 @@
    - 10 / 10 deliberate mutants killed (**100.0% kill rate**). Recorded in `docs/plans/phase14/mutation_report.md`.
    - Clean-room Adversarial Review sign-off: 🟢 **APPROVED (PASS)**.
    - All 39 tests passing GREEN (`cargo test --test harness_loop_test --release`: 39/39 passed in 21.93s).
+
+### Domain 3 Adversarial Architecture Audit (Audio Hot-Path & Inference Workers)
+- **Role:** Principal System Architect clean-room review (no production `.rs` edits).
+- **Rules loaded:** `system-architect.md`, `architectural-invariants.md`, `~/.gemini/config/skills/review/SKILL.md`.
+- **Output:** `temp/review/domain3_audio_report.md`.
+- **Calibration:** production scale (48 kHz CPAL callbacks, Tier 1A).
+- **Findings (5, all 🔴/🟠):**
+  1. Cross-boundary turn-ID mismatch: VAD/STT guess `wrapping_add(1)`; router is sole allocator. Working barge-in (Scenario C) keeps turn unchanged → guaranteed misroute. Proposed router-issued `TurnId` via `VadCommand::BindTurn`.
+  2. Four competing `PlaybackFinished` authorities (sink callback, TTS worker, router, LlmFinished); `drained_while_open` is a write-only latch confirmed by repo-wide grep. Proposed single `PlaybackSupervisor`.
+  3. Sacred hot-path violations: Mutex + logging in CPAL callbacks, heap churn in VAD loop, `blocking_lock()` on router thread. Proposed single-writer capture + preallocated scratch.
+  4. Teardown leaks: TTS worker ignores `engine_shutdown`, `cool_down_tts` never joins, unbounded per-chunk remote spawns. Proposed epoch-tagged bounded channel + generation-counter flush.
+  5. Downstream babysitting: turn-id guards compensating for cancel re-arm, duplicate ring flush, fabricated `TranscriptFinal`/`PlaybackFinished`. Proposed turn-scoped `TurnToken` (no boolean re-arm).
+- **Note:** requested `audio/capture.rs` does not exist; audited `device.rs::build_input_stream` + `services/remote/audio/capture.rs`.
+- **Spec action flagged (Gate 5):** `events-spec.md` §4.3 RULE-EVT-11 and §5 need `TurnToken` amendment before implementation.
 
 
 

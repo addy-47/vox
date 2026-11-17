@@ -7,6 +7,7 @@ use crate::{
         events::{InteractionMode, PipelineMode},
         state::{AppState, InteractionState},
     },
+    harness::TurnPhase,
     pipeline::{transition, RoutingContext},
 };
 
@@ -58,7 +59,7 @@ pub fn on_interrupt<R: tauri::Runtime>(
     if is_speech_held || prior_state == InteractionState::Working {
         // Scenario C (Working / Speech-Held Turn):
         // Mute playback & clear AEC render queue (done above).
-        // Do NOT cancel turn_token, keep turn_open = true, keep turn_id unchanged.
+        // Keep the active turn token and turn_id unchanged; speech hold absorbs this utterance.
         // Engage speech hold on harness inbox.
         {
             let guard = state.harness.lock();
@@ -75,79 +76,69 @@ pub fn on_interrupt<R: tauri::Runtime>(
         interrupted_turn_id
     } else {
         match prior_state {
-        InteractionState::Thinking => {
-            // Cancel turn token & guards for Thinking
-            state.pipeline.cancel_flag.store(true, Ordering::SeqCst);
-            state.pipeline.turn_token().cancel();
-            state
-                .pipeline
-                .pending_synthesis_jobs
-                .store(0, Ordering::Relaxed);
-            state.pipeline.reset_turn_guards();
+            InteractionState::Thinking => {
+                // Cancel turn token for Thinking
+                state.pipeline.turn_cancel_token().cancel();
+                state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
 
-            let has_committed = {
-                let guard = state.harness.lock();
-                guard
-                    .as_ref()
-                    .map(|h| h.has_committed_steps_this_turn())
-                    .unwrap_or(false)
-            };
-
-            if !has_committed {
-                // Scenario A: Step 0 Thinking (!has_committed_steps_this_turn)
-                // Synchronously rollback user turn from history:
-                let rolled_back_msg = {
-                    let mut guard = state.harness.lock();
-                    guard.as_mut().and_then(|h| h.rollback_user_turn(interrupted_turn_id))
+                let has_committed = {
+                    let guard = state.harness.lock();
+                    guard
+                        .as_ref()
+                        .map(|h| h.turn_phase() == TurnPhase::Committed)
+                        .unwrap_or(false)
                 };
-                {
-                    let mut acc = state.pipeline_accumulator.lock();
-                    if let Some(msg) = rolled_back_msg {
-                        if acc.user_transcript.is_empty() {
-                            acc.set_user_transcript(msg.content);
+
+                if !has_committed {
+                    // Scenario A: Step 0 Thinking with no committed artifact.
+                    // The query is staged, not in history; take it for continuation.
+                    let staged_query = {
+                        let mut guard = state.harness.lock();
+                        guard
+                            .as_mut()
+                            .and_then(|h| h.take_staged_query(interrupted_turn_id))
+                    };
+                    {
+                        let mut acc = state.pipeline_accumulator.lock();
+                        if let Some(text) = staged_query {
+                            if acc.user_transcript.is_empty() {
+                                acc.set_user_transcript(text);
+                            }
                         }
-                    }
-                    acc.stash_for_continuation();
-                    log::info!(
-                        "[Pipeline::Interrupt] Scenario A: Step 0 thinking interrupt; rolled back turn {}; stashed prefix='{}'",
+                        acc.stash_for_continuation();
+                        log::info!(
+                        "[Pipeline::Interrupt] Scenario A: Step 0 thinking interrupt; discarded staged turn {}; stashed prefix='{}'",
                         interrupted_turn_id,
                         acc.continuation_prefix
                     );
-                }
-            } else {
-                // Scenario B: Step K >= 1 Thinking (has_committed_steps_this_turn == true)
-                // Committed tool steps remain permanently in history.
-                // Call acc.clear() (do NOT call stash_for_continuation!).
-                state.pipeline_accumulator.lock().clear();
-                log::info!(
+                    }
+                } else {
+                    // Scenario B: Step K >= 1 Thinking (turn phase Committed)
+                    // Committed tool steps remain permanently in history.
+                    // Call acc.clear() (do NOT call stash_for_continuation!).
+                    state.pipeline_accumulator.lock().clear();
+                    log::info!(
                     "[Pipeline::Interrupt] Scenario B: Mid-turn thinking interrupt (step K >= 1); committed tools preserved, accumulator cleared"
                 );
+                }
+
+                let (new_turn_id, _) = state.pipeline.next_turn();
+                transition(InteractionState::Listening, None, ctx, app, state);
+                state.turn_metrics.start_turn(new_turn_id);
+                new_turn_id
             }
+            _ => {
+                // Speaking or other states: genuine barge-in
+                state.pipeline.turn_cancel_token().cancel();
+                state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
 
-            let (new_turn_id, _) = state.pipeline.next_turn();
-            state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
-            transition(InteractionState::Listening, None, ctx, app, state);
-            state.turn_metrics.start_turn(new_turn_id);
-            new_turn_id
+                state.pipeline_accumulator.lock().clear();
+
+                let (new_turn_id, _) = state.pipeline.next_turn();
+                transition(InteractionState::Listening, None, ctx, app, state);
+                state.turn_metrics.start_turn(new_turn_id);
+                new_turn_id
+            }
         }
-        _ => {
-            // Speaking or other states: genuine barge-in
-            state.pipeline.cancel_flag.store(true, Ordering::SeqCst);
-            state.pipeline.turn_token().cancel();
-            state
-                .pipeline
-                .pending_synthesis_jobs
-                .store(0, Ordering::Relaxed);
-            state.pipeline.reset_turn_guards();
-
-            state.pipeline_accumulator.lock().clear();
-
-            let (new_turn_id, _) = state.pipeline.next_turn();
-            state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
-            transition(InteractionState::Listening, None, ctx, app, state);
-            state.turn_metrics.start_turn(new_turn_id);
-            new_turn_id
-        }
-    }
     }
 }

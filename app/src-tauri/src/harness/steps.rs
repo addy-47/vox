@@ -6,15 +6,18 @@ use std::sync::{
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
+pub use crate::harness::stages::streaming::{
+    normalizer::TextNormalizer, StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage,
+};
 use crate::{
     core::{
+        error::{PipelineError, PipelineImpact},
         events::{
-            ActivityEnvelope, ActivityKind, InteractionOwner, IpcEmitter, IpcEvent,
-            PipelineMode, VoxEvent, ACTIVITY_COMPACTION,
+            ActivityEnvelope, ActivityKind, InteractionOwner, IpcEmitter, IpcEvent, PipelineMode,
+            VoxEvent, ACTIVITY_COMPACTION,
         },
         state::{AppState, AppWindow, InteractionState},
     },
-    pipeline::router::{transition, RoutingContext},
     harness::{
         chassis::Harness,
         stages::{
@@ -25,15 +28,10 @@ use crate::{
             inbox::InboxMessage,
         },
         tools::{ToolExecutionContext, ToolExecutor, ToolFilter, ToolRegistry},
-        TurnExecutionRequest, TurnOutcome,
+        ChatMessage, TurnExecutionRequest, TurnOutcome,
     },
-    services::{
-        llm::{actor::LlmResponse, CanonicalToolCall, GenerationRequest},
-    },
-};
-
-pub use crate::harness::stages::streaming::{
-    normalizer::TextNormalizer, StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage,
+    pipeline::router::{transition, RoutingContext},
+    services::llm::{actor::LlmResponse, CanonicalToolCall, GenerationRequest},
 };
 
 /// Bundled contextual handles for a single active cognitive turn loop iteration.
@@ -138,7 +136,7 @@ pub fn step1_intake(
     }
 
     let start_intake = std::time::Instant::now();
-    let can_compact = harness.intake_recorded_turn(req.turn_id, req.query.clone());
+    let can_compact = harness.stage_user_query(req.turn_id, req.query.clone());
     log::info!(
         "[Harness::Intake] Turn {} intake & budget evaluated in {}ms (can_compact: {})",
         turn_id,
@@ -146,8 +144,6 @@ pub fn step1_intake(
         can_compact
     );
 
-    req.app_state.pipeline.set_turn_open(true);
-    req.app_state.pipeline.clear_drained_while_open();
     transition(
         InteractionState::Thinking,
         None,
@@ -488,9 +484,18 @@ pub fn step4_assemble_request(
         None
     };
 
+    // The current turn's query is staged, not in canonical history until the
+    // first artifact commits. Append it as a synthetic user message for this pass.
+    let mut messages = harness.history.messages().to_vec();
+    if let Some((staged_id, ref staged_text)) = harness.pending_user_query {
+        if staged_id == turn_id {
+            messages.push(ChatMessage::new(crate::harness::Role::User, staged_text.clone()));
+        }
+    }
+
     let start_assemble = std::time::Instant::now();
     let req = harness.prompt.build_generation_request(
-        harness.history.messages(),
+        &messages,
         harness.generation_options.clone(),
         tools,
     );
@@ -570,10 +575,7 @@ pub async fn step6_execute_tool_batch(
                     web_search_enabled: harness.web_search_enabled,
                 };
                 let tools = harness.tool_registry.active_definitions(&filter);
-                budget.calculate_max_observation_tokens(
-                    harness.history.messages(),
-                    Some(&tools),
-                )
+                budget.calculate_max_observation_tokens(harness.history.messages(), Some(&tools))
             } else {
                 2000
             }
@@ -654,11 +656,8 @@ pub async fn step6_execute_tool_batch(
         }
     }
 
-    let completion_tokens = ContextBudgetStage::estimate_step_completion_tokens(
-        preamble_text,
-        thinking_text,
-        &calls,
-    );
+    let completion_tokens =
+        ContextBudgetStage::estimate_step_completion_tokens(preamble_text, thinking_text, &calls);
 
     let prompt_tokens = {
         let guard = ctx.harness_arc.lock();
@@ -673,10 +672,7 @@ pub async fn step6_execute_tool_batch(
                 };
                 let active_tools = h.tool_registry.active_definitions(&filter);
                 h.budget.as_ref().map(|b| {
-                    b.estimate_step_prompt_tokens(
-                        h.history.messages(),
-                        Some(&active_tools),
-                    )
+                    b.estimate_step_prompt_tokens(h.history.messages(), Some(&active_tools))
                 })
             })
             .unwrap_or(0)
@@ -691,11 +687,7 @@ pub async fn step6_execute_tool_batch(
     {
         let mut guard = ctx.harness_arc.lock();
         if let Some(ref mut harness) = *guard {
-            harness.commit_tool_step(
-                preamble_text.to_string(),
-                calls,
-                tool_results,
-            );
+            harness.commit_tool_step(preamble_text.to_string(), calls, tool_results);
         }
     }
 
@@ -727,7 +719,7 @@ pub async fn step6_execute_tool_batch(
     );
 
     let persist_lock = ctx.req.app_state.persist_tx.lock();
-    stages::persistence::persist_step_and_tools(
+    if let Err(e) = stages::persistence::persist_step_and_tools(
         persist_lock.as_ref(),
         ctx.session_id,
         turn_id,
@@ -740,9 +732,29 @@ pub async fn step6_execute_tool_batch(
         completion_tokens,
         strike_count as u32,
         is_compacted,
-    );
+    ) {
+        log::error!(
+            "[Harness::Persistence] Step {} provenance lost for turn {}: {}",
+            step_index,
+            turn_id,
+            e
+        );
+        let _ = ctx
+            .stream_handles
+            .event_tx
+            .send(VoxEvent::Error(PipelineError {
+                turn_id,
+                message: e.to_string(),
+                source: "Harness".to_string(),
+                impact: PipelineImpact::TurnAborted,
+            }));
+    }
 
-    (ctx.req.cancel.is_cancelled(), suspended_question, circuit_broken)
+    (
+        ctx.req.cancel.is_cancelled(),
+        suspended_question,
+        circuit_broken,
+    )
 }
 
 /// Awaits any active speech-hold on StepInbox and drains immediate steering messages into history at the step boundary.
@@ -814,10 +826,7 @@ pub struct CancelledTurnContext<'a> {
 }
 
 /// Finalizes a suspended question by dispatching response TTS, emitting LlmFinished, and committing to history.
-pub fn step7_commit_suspended_question(
-    ctx: &TurnLoopContext<'_>,
-    question: String,
-) -> TurnOutcome {
+pub fn step7_commit_suspended_question(ctx: &TurnLoopContext<'_>, question: String) -> TurnOutcome {
     let turn_id = ctx.req.turn_id;
     if let Some(ref tts_tx) = ctx.req.tts_tx {
         let normalized = TextNormalizer::normalize_for_speech(&question);
@@ -872,15 +881,21 @@ pub fn step7_handle_cancelled(ctx: CancelledTurnContext<'_>) -> TurnOutcome {
         }
         drop(guard);
         let persist_lock = ctx.app_state.persist_tx.lock();
-        stages::persistence::persist_cancelled_turn(
+        if let Err(e) = stages::persistence::persist_cancelled_turn(
             persist_lock.as_ref(),
             ctx.session_id,
             ctx.turn_id,
             ctx.user_text,
             ctx.partial_text,
-        );
+        ) {
+            log::error!(
+                "[Harness::Finalize] Failed to persist interrupted turn {}: {}",
+                ctx.turn_id,
+                e
+            );
+        }
     } else if let Some(ref mut harness) = *guard {
-        harness.rollback_user_turn(ctx.turn_id);
+        harness.discard_pending_turn(ctx.turn_id);
     }
 
     ctx.app_state
@@ -903,7 +918,7 @@ pub fn step7_handle_error(
 
     let mut guard = harness_arc.lock();
     if let Some(ref mut harness) = *guard {
-        harness.rollback_user_turn(turn_id);
+        harness.discard_pending_turn(turn_id);
     }
 
     if let Some(tx) = event_tx {
@@ -932,10 +947,7 @@ pub fn step7_commit_completed(
 
     let mut guard = harness_arc.lock();
     if let Some(ref mut harness) = *guard {
-        harness.uncommitted_user_turn_id = None;
-        harness
-            .history
-            .push_assistant_turn(assistant_response.clone());
+        harness.commit_completed_turn(assistant_response.clone());
     }
 
     TurnOutcome::Completed {

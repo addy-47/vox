@@ -588,11 +588,8 @@ async fn loopback_passes_generic_conformance_suite() {
 #[ignore = "VERIFY: RC-SUITE-1 — generic suite assumes shared-socket control/audio semantics; WsLink splits control and audio onto separate link instances (see docs/tests/test-findings.md F-003)"]
 async fn ws_link_passes_generic_conformance_suite() {
     let report = run_link_conformance(|| async {
-        let listener = within_ok(
-            "bind",
-            bind("127.0.0.1:0".parse().expect("valid loopback")),
-        )
-        .await;
+        let listener =
+            within_ok("bind", bind("127.0.0.1:0".parse().expect("valid loopback"))).await;
         let addr = listener.local_addr().expect("local addr");
         let server_handle = tokio::spawn(async move { listener.accept().await });
 

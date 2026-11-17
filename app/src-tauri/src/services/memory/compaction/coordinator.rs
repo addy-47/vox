@@ -11,6 +11,7 @@ use crate::{
         events::{emit_ipc, IpcEvent, Severity},
         state::{AppState, InteractionState},
     },
+    harness::{ChatMessage, PromptTag, Role},
     persistence::{
         compactions::{
             commit_compaction_output, fetch_latest_compaction_run, fetch_turns_for_compaction,
@@ -21,7 +22,6 @@ use crate::{
         sessions::fetch_session_by_id,
         TurnRow, VoxDb,
     },
-    harness::{ChatMessage, PromptTag, Role},
     services::{
         llm::{
             actor::create_llm_provider_from_llm_settings, LlmProvider, LlmProvidersConfig,

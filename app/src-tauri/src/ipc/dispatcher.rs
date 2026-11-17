@@ -126,7 +126,10 @@ pub async fn dispatch_command(
         }
         "set_appearance" => {
             let theme = args.get("theme").and_then(|v| v.as_str()).map(String::from);
-            let preset = args.get("preset").and_then(|v| v.as_str()).map(String::from);
+            let preset = args
+                .get("preset")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             let dark_accent = args
                 .get("dark_accent")
                 .and_then(|v| v.as_str())
@@ -135,8 +138,14 @@ pub async fn dispatch_command(
                 .get("light_accent")
                 .and_then(|v| v.as_str())
                 .map(String::from);
-            let dark_bg = args.get("dark_bg").and_then(|v| v.as_str()).map(String::from);
-            let light_bg = args.get("light_bg").and_then(|v| v.as_str()).map(String::from);
+            let dark_bg = args
+                .get("dark_bg")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let light_bg = args
+                .get("light_bg")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             let result = settings::set_appearance(
                 theme,
                 preset,

@@ -1,7 +1,4 @@
-use std::{
-    sync::{atomic::Ordering, mpsc},
-    time::Duration,
-};
+use std::{sync::mpsc, time::Duration};
 
 use tauri::AppHandle;
 
@@ -106,7 +103,6 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
     }
 
     let (turn_id, _token) = state.pipeline.next_turn();
-    state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
     let auto_stop_ms = state
         .settings

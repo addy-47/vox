@@ -237,7 +237,8 @@ fn collect_snapshot(
         .as_millis() as u64;
 
     let pa = &state.pipeline;
-    let pipeline_state = map_pipeline_state_string(pa.current_state_atomic.load(Ordering::Relaxed));
+    let pipeline_state =
+        map_pipeline_state_string(pa.assistant_state_atomic.load(Ordering::Relaxed));
     let owner_enum: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
     let owner = format!("{:?}", owner_enum);
     let buffer_samples = get_playback_buffer_samples(state);

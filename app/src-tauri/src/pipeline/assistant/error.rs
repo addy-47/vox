@@ -49,12 +49,8 @@ pub fn on_error<R: tauri::Runtime + 'static>(
                     engine.playback_engine.cancel();
                 }
             }
-            state.pipeline.turn_token().cancel();
-            state
-                .pipeline
-                .pending_synthesis_jobs
-                .store(0, Ordering::Relaxed);
-            state.pipeline.reset_turn_guards();
+            state.pipeline.turn_cancel_token().cancel();
+            state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
             transition(InteractionState::Ready, None, ctx, app, state);
         }
         PipelineImpact::SessionHalted => {
@@ -63,12 +59,8 @@ pub fn on_error<R: tauri::Runtime + 'static>(
                     engine.playback_engine.cancel();
                 }
             }
-            state.pipeline.turn_token().cancel();
-            state
-                .pipeline
-                .pending_synthesis_jobs
-                .store(0, Ordering::Relaxed);
-            state.pipeline.reset_turn_guards();
+            state.pipeline.turn_cancel_token().cancel();
+            state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
             transition(InteractionState::Error, None, ctx, app, state);
         }
     }
@@ -207,11 +199,7 @@ pub fn on_cancelled<R: tauri::Runtime>(
     );
 
     state.pipeline_accumulator.lock().clear();
-    state
-        .pipeline
-        .pending_synthesis_jobs
-        .store(0, Ordering::Relaxed);
-    state.pipeline.reset_turn_guards();
+    state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {

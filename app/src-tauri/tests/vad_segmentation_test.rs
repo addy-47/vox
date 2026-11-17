@@ -22,8 +22,8 @@ use vox_lib::{
     config::AudioOutputMode,
     core::{
         defaults::{
-            DEFAULT_VAD_SILENCE_DURATION_MS, DEFAULT_VAD_SPEECH_ONSET_MS,
-            DEFAULT_VAD_THRESHOLD, DEFAULT_VAD_PTT_NOISE_GATE,
+            DEFAULT_VAD_PTT_NOISE_GATE, DEFAULT_VAD_SILENCE_DURATION_MS,
+            DEFAULT_VAD_SPEECH_ONSET_MS, DEFAULT_VAD_THRESHOLD,
         },
         events::{InteractionMode, PipelineMode, VoxEvent},
         state::{AppState, InteractionOwner, InteractionState},
@@ -142,7 +142,6 @@ fn realtime_passive(state: &AppState) {
     settings.interaction.pipeline_mode = PipelineMode::Realtime;
 }
 
-
 /// PURPOSE:  Real speech must produce exactly one final transcript per segment under standard silence timing.
 /// SCENARIO: EN and HI clips with natural intra-sentence pauses at the
 ///           production silence-duration default (400ms), plus a composed clip with a
@@ -157,7 +156,9 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
     let test_deadline = Instant::now() + Duration::from_secs(90);
 
     let (_guard, app, state) = common::harness::setup_isolated_app_state_sync();
-    state.owner.store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
+    state
+        .owner
+        .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
     realtime_passive(&state);
     state.pipeline.set_state(InteractionState::Ready);
 
@@ -173,7 +174,7 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
     let audio_suppressed = Arc::new(AtomicBool::new(false));
     let ingestion_gate = Arc::new(AtomicBool::new(true));
     let vad_shutdown = Arc::new(AtomicBool::new(false));
-    let state_atomic = state.pipeline.current_state_atomic.clone();
+    let state_atomic = state.pipeline.assistant_state_atomic.clone();
     let turn_id_atomic = state.pipeline.turn_id.clone();
 
     // ---------- Subtest A: English clip — natural 0.4 s pause, one utterance ----------
@@ -197,7 +198,8 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
         let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
             .expect("Failed to decode supertonic_01_en_briefing.wav");
 
-        let (seen_bits, watcher_join) = common::harness::spawn_state_watcher(&state, Duration::from_secs(20));
+        let (seen_bits, watcher_join) =
+            common::harness::spawn_state_watcher(&state, Duration::from_secs(20));
         common::audio::stream_audio_to_ring_buffer(&audio, &mut producer);
         common::audio::stream_silence_frames(&mut producer, 60);
         common::audio::wait_for_buffer_drain(&producer, 5);
@@ -302,7 +304,7 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
     // must absorb a composed 250 ms pause and keep the utterance unified as one segment.
     {
         const SPLIT_SAMPLES: usize = 9_600; // 0.6 s of speech
-        const GAP_SAMPLES: usize = 4_000;   // 250 ms pause (< 400 ms default silence threshold)
+        const GAP_SAMPLES: usize = 4_000; // 250 ms pause (< 400 ms default silence threshold)
 
         state.pipeline.set_state(InteractionState::Ready);
         state.pipeline.turn_id.store(3, Ordering::Relaxed);
@@ -387,7 +389,8 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
         let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
             .expect("Failed to decode supertonic_01_en_briefing.wav");
 
-        let (seen_bits, watcher_join) = common::harness::spawn_state_watcher(&state, Duration::from_secs(25));
+        let (seen_bits, watcher_join) =
+            common::harness::spawn_state_watcher(&state, Duration::from_secs(25));
         common::audio::stream_audio_to_ring_buffer(&audio[BURST_START..BURST_END], &mut producer);
         common::audio::stream_silence_frames(&mut producer, 60);
         common::audio::wait_for_buffer_drain(&producer, 5);
@@ -416,7 +419,10 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
 
     // ---------- Subtest E: Silence guard ----------
     {
-        assert!(Instant::now() < test_deadline, "Test exceeded overall deadline");
+        assert!(
+            Instant::now() < test_deadline,
+            "Test exceeded overall deadline"
+        );
 
         state.pipeline.set_state(InteractionState::Ready);
         state.pipeline.turn_id.store(5, Ordering::Relaxed);
@@ -454,7 +460,10 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
     }
 
     // ---------- Teardown ----------
-    assert!(Instant::now() < test_deadline, "Test exceeded overall deadline");
+    assert!(
+        Instant::now() < test_deadline,
+        "Test exceeded overall deadline"
+    );
 
     let _ = stt_tx.send(SttCommand::Shutdown);
     stt_shutdown.store(true, Ordering::SeqCst);
@@ -560,10 +569,16 @@ fn smart_turn_detector_gracefully_degrades_when_model_absent() {
     let fake_path = std::path::PathBuf::from("/non/existent/path/smart_turn.onnx");
     let detector = vox_lib::services::vad::turn_detector::SmartTurnDetector::new(&fake_path)
         .expect("SmartTurnDetector::new must succeed with graceful fallback on missing model");
-    assert!(!detector.is_loaded(), "Detector must report not loaded when file is missing");
+    assert!(
+        !detector.is_loaded(),
+        "Detector must report not loaded when file is missing"
+    );
     let dummy_audio = vec![0.0f32; 16000];
     let result = detector
         .predict_eou(&dummy_audio)
         .expect("predict_eou must succeed with None when model is absent");
-    assert!(result.is_none(), "predict_eou must return None for dormant detector");
+    assert!(
+        result.is_none(),
+        "predict_eou must return None for dormant detector"
+    );
 }

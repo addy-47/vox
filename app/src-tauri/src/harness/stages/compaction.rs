@@ -5,18 +5,19 @@ use std::{
 
 use anyhow::Result;
 use parking_lot::Mutex;
+use tauri::async_runtime::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use turso::Connection;
 
 use crate::{
     core::state::{AppState, InteractionState},
+    harness::{ChatMessage, Harness, PromptTag, Role},
     persistence::{
         compactions::{
             commit_compaction_output, record_compaction_finish, record_compaction_start,
         },
         models::get_model_parameters,
     },
-    harness::{ChatMessage, Harness, PromptTag, Role},
     services::{
         llm::{LlmProvider, LlmSettings},
         memory::compaction::runner::{run_compaction, CompactionResult},
@@ -45,10 +46,17 @@ pub struct CompactionStage {
     last_compacted_to_turn: u32,
 }
 
+/// Owned state of an in-flight quiet compaction task, bound to its originating session epoch.
+struct CompactionTask {
+    session_id: i64,
+    cancel: CancellationToken,
+    handle: JoinHandle<()>,
+}
+
 /// Session-scoped reactive quiet watcher arming a 20-second debounce timer during soft context warning.
 #[derive(Default)]
 pub struct QuietCompactionWatcher {
-    active_cancel: Option<CancellationToken>,
+    active: Option<CompactionTask>,
 }
 
 impl CompactionStage {
@@ -206,16 +214,18 @@ impl CompactionStage {
 impl QuietCompactionWatcher {
     /// Constructs a new `QuietCompactionWatcher` instance.
     pub fn new() -> Self {
-        Self {
-            active_cancel: None,
-        }
+        Self { active: None }
     }
 
     /// Cancels any currently pending quiet debounce timer.
     pub fn abort(&mut self) {
-        if let Some(token) = self.active_cancel.take() {
-            token.cancel();
-            log::info!("[Harness::Watcher] Quiet debounce timer aborted.");
+        if let Some(task) = self.active.take() {
+            task.cancel.cancel();
+            task.handle.abort();
+            log::info!(
+                "[Harness::Watcher] Quiet debounce timer for session {} aborted.",
+                task.session_id
+            );
         }
     }
 
@@ -237,13 +247,14 @@ impl QuietCompactionWatcher {
             QUIET_COMPACTION_DEBOUNCE_SECS
         );
 
+        let session_id = state.conversation_id.load(Ordering::Relaxed) as i64;
         let cancel = CancellationToken::new();
-        self.active_cancel = Some(cancel.clone());
+        let task_cancel = cancel.clone();
 
         let state_clone = Arc::clone(&state);
         let harness_clone = Arc::clone(&harness_lock);
 
-        tauri::async_runtime::spawn(async move {
+        let handle = tauri::async_runtime::spawn(async move {
             let deadline =
                 tokio::time::Instant::now() + Duration::from_secs(QUIET_COMPACTION_DEBOUNCE_SECS);
             let mut debounce_timer = Box::pin(tokio::time::sleep_until(deadline));
@@ -263,7 +274,7 @@ impl QuietCompactionWatcher {
                         }
 
                         log::info!("[Harness::Watcher] 20s quiet window expired. Triggering background soft compaction.");
-                        execute_soft_compaction(&state_clone, &harness_clone, &tracked_turns, &cancel).await;
+                        execute_soft_compaction(&state_clone, &harness_clone, &tracked_turns, &cancel, session_id).await;
                         return;
                     }
                     res = state_rx.changed() => {
@@ -280,6 +291,11 @@ impl QuietCompactionWatcher {
                 }
             }
         });
+        self.active = Some(CompactionTask {
+            session_id,
+            cancel: task_cancel,
+            handle,
+        });
     }
 }
 
@@ -289,6 +305,7 @@ async fn execute_soft_compaction(
     harness_lock: &Mutex<Option<Harness>>,
     history_slice: &[ChatMessage],
     cancel: &CancellationToken,
+    session_id: i64,
 ) {
     let provider_opt = state.llm_provider.read().clone();
     let Some(provider) = provider_opt else {
@@ -303,7 +320,6 @@ async fn execute_soft_compaction(
         .llm
         .clone();
 
-    let session_id = state.conversation_id.load(Ordering::Relaxed) as i64;
     let from_turn = {
         let guard = harness_lock.lock();
         guard.as_ref().map(|h| h.from_turn_id()).unwrap_or(0)
@@ -366,9 +382,18 @@ async fn execute_soft_compaction(
     if !result.session_context.trim().is_empty() {
         let mut guard = harness_lock.lock();
         if let Some(ref mut harness) = *guard {
-            harness.apply_quiet_compaction_summary(&result.session_context);
-            harness.set_last_compacted_to_turn(to_turn);
-            log::info!("[Harness::Watcher] Background soft compaction completed, rolling summary stored, and history pruned.");
+            // Epoch guard: never apply a summary produced for a prior session
+            // into a harness slot that has since been remounted.
+            if harness.session_id() == Some(session_id) {
+                harness.apply_quiet_compaction_summary(&result.session_context);
+                harness.set_last_compacted_to_turn(to_turn);
+                log::info!("[Harness::Watcher] Background soft compaction completed, rolling summary stored, and history pruned.");
+            } else {
+                log::warn!(
+                    "[Harness::Watcher] Dropping stale compaction result for session {}",
+                    session_id
+                );
+            }
         }
     }
 }

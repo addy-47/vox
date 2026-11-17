@@ -11,18 +11,17 @@
 
 use std::{
     path::Path,
-    sync::{Arc, atomic::Ordering},
+    sync::{atomic::Ordering, Arc},
     time::{Duration, Instant},
 };
 
 use ringbuf::traits::{Observer, Producer};
-
 use vox_lib::{
     config::AudioOutputMode,
     core::{
         defaults::{
-            DEFAULT_VAD_SILENCE_DURATION_MS, DEFAULT_VAD_SPEECH_ONSET_MS,
-            DEFAULT_VAD_THRESHOLD, DEFAULT_VAD_PTT_NOISE_GATE,
+            DEFAULT_VAD_PTT_NOISE_GATE, DEFAULT_VAD_SILENCE_DURATION_MS,
+            DEFAULT_VAD_SPEECH_ONSET_MS, DEFAULT_VAD_THRESHOLD,
         },
         events::InteractionMode,
         state::{AppState, InteractionOwner, InteractionState},
@@ -54,9 +53,11 @@ impl EchoScene {
         let guard = common::paths::TempPathsGuard::new();
         vox_lib::utils::paths::init();
         let (app, state) = common::harness::get_test_app_and_state().await;
-        state.owner.store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
+        state
+            .owner
+            .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
         state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
-        state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
+        state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
         state.pipeline.set_state(InteractionState::Speaking);
 
         let tts_16k = common::audio::decode_wav_to_mono_16k(Path::new(tts_path))
@@ -81,7 +82,12 @@ impl EchoScene {
             vox_lib::services::vad::VadBackendOption::Earshot,
             DEFAULT_VAD_THRESHOLD,
         );
-        let rig = common::harness::AudioSceneRig::new(app.clone(), Arc::clone(&state), vad_cfg, vad_backend);
+        let rig = common::harness::AudioSceneRig::new(
+            app.clone(),
+            Arc::clone(&state),
+            vad_cfg,
+            vad_backend,
+        );
 
         // Queue the whole clip into the playback buffer; it drains while the mic is fed.
         rig.engine.ingest_chunk(&tts_24k);
@@ -165,7 +171,10 @@ async fn solo_playback_over_six_seconds_never_interrupts_with_pipewire_delay() {
             InteractionState::Listening,
             "echo alone must not trigger barge-in"
         );
-        common::harness::assert_channel_empty(&scene.rig.stt_rx, "echo-only playback must not emit STT commands");
+        common::harness::assert_channel_empty(
+            &scene.rig.stt_rx,
+            "echo-only playback must not emit STT commands",
+        );
     })
     .await
     .expect("Test timed out");
@@ -193,8 +202,10 @@ async fn double_talk_barge_in_cancels_the_playback_and_opens_listening() {
 
         // Phase B: double talk — the same window again, but the mic now carries
         // real user speech concurrently with the speaker's echo.
-        let user = common::audio::decode_wav_to_mono_16k(Path::new("tests/assets/supertonic_01_en_briefing.wav"))
-            .expect("Failed to load user speech WAV");
+        let user = common::audio::decode_wav_to_mono_16k(Path::new(
+            "tests/assets/supertonic_01_en_briefing.wav",
+        ))
+        .expect("Failed to load user speech WAV");
         let phase_b = common::harness::scene_mic(&scene.tts_16k[..40_000], Some(&user[..40_000]));
         scene.feed_mixed(&phase_b);
 
@@ -216,7 +227,12 @@ async fn double_talk_barge_in_cancels_the_playback_and_opens_listening() {
             "barge-in must open a new turn"
         );
         assert!(
-            scene.state.pipeline.pending_synthesis_jobs.load(Ordering::Relaxed) == 0,
+            scene
+                .state
+                .pipeline
+                .pending_tts_jobs
+                .load(Ordering::Relaxed)
+                == 0,
             "interrupt must reset pending synthesis jobs"
         );
 

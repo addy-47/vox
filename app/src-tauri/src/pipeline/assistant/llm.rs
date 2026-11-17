@@ -1,4 +1,4 @@
-use std::sync::atomic::Ordering;
+use std::{sync::atomic::Ordering, time::Duration};
 
 use tauri::AppHandle;
 
@@ -11,19 +11,24 @@ use crate::{
     pipeline::{transition, RoutingContext},
 };
 
+const PERSIST_SEND_TIMEOUT: Duration = Duration::from_secs(2);
+
 /// Commits finalized assistant turn to persistence event queue.
 fn persist_assistant_turn(turn_id: u32, full_text: String, user_text: String, state: &AppState) {
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
 
     let persist_lock = state.persist_tx.lock();
     if let Some(ref tx) = *persist_lock {
-        if let Err(e) = tx.try_send(PersistenceEvent::TurnCompleted {
-            session_id: conv_id as i64,
-            turn_id,
-            user_text,
-            assistant_text: full_text,
-        }) {
-            log::warn!(
+        if let Err(e) = tx.send_timeout(
+            PersistenceEvent::TurnCompleted {
+                session_id: conv_id as i64,
+                turn_id,
+                user_text,
+                assistant_text: full_text,
+            },
+            PERSIST_SEND_TIMEOUT,
+        ) {
+            log::error!(
                 "[Pipeline::Llm] Failed to send TurnCompleted to persistence: {}",
                 e
             );
@@ -34,10 +39,7 @@ fn persist_assistant_turn(turn_id: u32, full_text: String, user_text: String, st
 /// Flushes audio pre-roll buffer in the playback engine based on pipeline mode.
 fn flush_pre_roll(state: &AppState, mode: &PipelineMode) {
     if *mode == PipelineMode::Realtime {
-        state
-            .pipeline
-            .pending_synthesis_jobs
-            .store(0, Ordering::Relaxed);
+        state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
     }
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
@@ -53,6 +55,16 @@ pub fn on_llm_finished<R: tauri::Runtime>(
     state: &AppState,
     ctx: &RoutingContext,
 ) {
+    let active_turn_id = state.pipeline.peek_turn_id();
+    if turn_id != active_turn_id {
+        log::debug!(
+            "[Pipeline::Llm] Dropping stale LlmFinished for turn {} (active: {})",
+            turn_id,
+            active_turn_id
+        );
+        return;
+    }
+
     let current_state = state.pipeline.state();
     if current_state != InteractionState::Thinking
         && current_state != InteractionState::Speaking
@@ -66,7 +78,6 @@ pub fn on_llm_finished<R: tauri::Runtime>(
     }
 
     state.turn_metrics.record_llm_finish();
-    state.pipeline.clear_turn_open();
     flush_pre_roll(state, &ctx.pipeline_mode);
 
     let (full_text, user_text) = {
@@ -82,14 +93,12 @@ pub fn on_llm_finished<R: tauri::Runtime>(
         );
         persist_assistant_turn(turn_id, full_text, user_text, state);
     } else {
+        // No assistant artifact was produced. The harness discards its staged
+        // query at the terminal commit; history stays untouched. No rollback.
         log::warn!(
-            "[Pipeline::Llm] LlmFinished with empty response (turn {}); rolling back staged user turn",
+            "[Pipeline::Llm] LlmFinished with empty response (turn {}); staged query discarded",
             turn_id
         );
-        let mut guard = state.harness.lock();
-        if let Some(ref mut harness) = *guard {
-            harness.history.rollback_last_user_turn();
-        }
     }
 
     evaluate_synthesis_latch(turn_id, current_state, app, state, ctx);
@@ -103,17 +112,8 @@ fn evaluate_synthesis_latch<R: tauri::Runtime>(
     state: &AppState,
     ctx: &RoutingContext,
 ) {
-    let pending_jobs = state
-        .pipeline
-        .pending_synthesis_jobs
-        .load(Ordering::Relaxed);
-    let sink_active = {
-        let guard = state.engine.blocking_lock();
-        guard
-            .as_ref()
-            .map(|e| e.playback_engine.occupied_len() > 0 || e.playback_engine.buffer_len() > 0)
-            .unwrap_or(false)
-    };
+    let pending_jobs = state.pipeline.pending_tts_jobs.load(Ordering::Relaxed);
+    let sink_active = state.pipeline.sink_occupied.load(Ordering::Relaxed);
 
     let audio_active = pending_jobs > 0 || sink_active;
 
@@ -132,7 +132,6 @@ fn evaluate_synthesis_latch<R: tauri::Runtime>(
             );
         }
     } else {
-        state.pipeline.clear_drained_while_open();
         if state.turn_metrics.playback_start_ms.load(Ordering::Relaxed) == 0 {
             let payload = state.turn_metrics.build_payload(turn_id);
             if let Some(app_handle) = app {

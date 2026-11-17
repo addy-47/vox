@@ -123,6 +123,7 @@ pub fn start(settings: &TtsSettings, event_tx: mpsc::Sender<VoxEvent>) -> Result
             state_atomic,
             current_turn_id: Arc::clone(&current_turn_id),
             pending_synthesis_jobs: Arc::clone(&pending_synthesis_jobs),
+            sink_occupied: Arc::new(AtomicBool::new(false)),
             event_tx: event_tx.clone(),
             playback_intent: Arc::clone(&playback_intent),
             is_playback_muted,

@@ -29,13 +29,10 @@ use vox_lib::{
         events::{InteractionMode, PipelineMode, VoxEvent},
         state::{AppState, InteractionOwner, InteractionState},
     },
-    pipeline::router::spawn_router,
     harness::{Harness, LlmExecutionParams, Role},
-    services::{
-        llm::{actor::LlmResponse, LlmCommand},
-    },
+    pipeline::router::spawn_router,
+    services::llm::{actor::LlmResponse, LlmCommand},
 };
-
 
 const DEADLINE: Duration = Duration::from_secs(10);
 
@@ -133,7 +130,9 @@ impl Rig {
 
     /// Sends an event into the router's channel (the production entry seam).
     fn send(&self, event: VoxEvent) {
-        self.event_tx.send(event).expect("router must accept the event");
+        self.event_tx
+            .send(event)
+            .expect("router must accept the event");
     }
 
     /// Polls until `expected` state appears or the deadline elapses.
@@ -453,8 +452,6 @@ async fn continuation_prefix_is_merged_into_the_next_query() {
         owner: InteractionOwner::Assistant,
     });
     rig.await_query(first_turn);
-    // Wait for the turn to finish: a turn that completes late clears the prefix.
-    rig.await_assistant_response();
 
     // The user starts speaking again while the assistant is still thinking.
     rig.send(VoxEvent::SpeechStart {
@@ -590,7 +587,7 @@ async fn empty_transcript_promotes_the_stashed_prefix() {
 #[tokio::test]
 async fn stale_cancel_does_not_block_the_next_turn() {
     let rig = Rig::new().await;
-    rig.state.pipeline.turn_token().cancel();
+    rig.state.pipeline.turn_cancel_token().cancel();
 
     rig.send(VoxEvent::SpeechStart {
         owner: InteractionOwner::Assistant,

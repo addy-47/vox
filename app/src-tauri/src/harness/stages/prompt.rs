@@ -1,10 +1,12 @@
 use crate::{
     harness::{ChatMessage, PromptTag, Role},
-    services::llm::{
-        CanonicalToolDefinition, ConversationInput, GenerationOptions, GenerationPurpose,
-        GenerationRequest, OutputConstraint,
+    services::{
+        llm::{
+            CanonicalToolDefinition, ConversationInput, GenerationOptions, GenerationPurpose,
+            GenerationRequest, OutputConstraint,
+        },
+        memory::ml::estimate_tokens,
     },
-    services::memory::ml::estimate_tokens,
 };
 
 /// Plugin managing system prompt assembly, user identity grounding, and system budget ceiling enforcement.
@@ -102,7 +104,8 @@ impl PromptBuilderStage {
             for tool in tools {
                 match tool.name.as_str() {
                     "set_title" => {
-                        rules.push("- Call set_title with a concise session title (under 5 words).");
+                        rules
+                            .push("- Call set_title with a concise session title (under 5 words).");
                     }
                     "search_memory" => {
                         rules.push("- When asked about past projects, notes, or earlier factual details, call search_memory.");

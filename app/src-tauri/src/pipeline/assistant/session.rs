@@ -20,6 +20,7 @@ use crate::{
         events::{InteractionMode, PipelineMode, Severity},
         state::{AppState, InteractionOwner, InteractionState},
     },
+    harness::{Harness, LlmExecutionParams},
     paths::get,
     persistence::{
         compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},
@@ -32,7 +33,6 @@ use crate::{
     pipeline::{
         dictation::DictationInteractionMode, spawn_idle_monitor, transition, RoutingContext,
     },
-    harness::{Harness, LlmExecutionParams},
     services::{
         self,
         audio::detect_audio_output_mode,
@@ -224,7 +224,6 @@ pub fn on_session_start<R: Runtime + 'static>(
     }
 
     state.owner.store(owner as u32, Ordering::Relaxed);
-    state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
     // Cancel any in-flight background ingestion sweep to avoid CPU/ONNX contention during session
     if let Some(token) = state.ingestion_cancel.lock().take() {
@@ -329,7 +328,7 @@ pub fn on_session_start<R: Runtime + 'static>(
         };
 
     state.pipeline.turn_id.store(max_turn_id, Ordering::Relaxed);
-    state.pipeline.rearm_turn_token();
+    state.pipeline.rearm_turn_cancel_token();
     log::info!(
         "[Pipeline::Session] Synchronized turn counter to {} for session {}",
         max_turn_id,
@@ -409,9 +408,7 @@ pub fn on_pause<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingC
         return;
     }
 
-    state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
-    state.pipeline.turn_token().cancel();
-    state.pipeline.reset_turn_guards();
+    state.pipeline.turn_cancel_token().cancel();
     state.pipeline_accumulator.lock().clear();
 
     if let Ok(guard) = state.engine.try_lock() {
@@ -483,8 +480,7 @@ pub fn on_resume<R: Runtime>(app: &AppHandle<R>, state: &AppState, _ctx: &Routin
     state
         .owner
         .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
-    state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
-    state.pipeline.rearm_turn_token();
+    state.pipeline.rearm_turn_cancel_token();
 
     let assistant_ctx = RoutingContext::from_app_state(state);
 
@@ -574,10 +570,8 @@ pub fn on_stop_turn<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rout
         }
     }
 
-    state.pipeline.cancel_flag.store(true, Ordering::SeqCst);
-    state.pipeline.turn_token().cancel();
-    state.pipeline.reset_turn_guards();
-    state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
+    state.pipeline.turn_cancel_token().cancel();
+    state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
 
     state.pipeline_accumulator.lock().clear();
     let active_turn_id = state.pipeline.peek_turn_id();
@@ -585,13 +579,10 @@ pub fn on_stop_turn<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rout
         let mut guard = state.harness.lock();
         if let Some(ref mut harness) = *guard {
             harness.inbox().clear();
-            if !harness.has_committed_steps_this_turn() {
-                harness.rollback_user_turn(active_turn_id);
-            }
+            harness.discard_pending_turn(active_turn_id);
         }
     }
 
-    state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
     transition(InteractionState::Ready, None, ctx, app, state);
     log::info!("[Pipeline::Session] Turn stopped -> Ready");
 }
@@ -604,9 +595,7 @@ pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingCon
         return;
     }
 
-    state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
-    state.pipeline.turn_token().cancel();
-    state.pipeline.reset_turn_guards();
+    state.pipeline.turn_cancel_token().cancel();
     state.pipeline_accumulator.lock().clear();
     state.harness.lock().take();
 

@@ -337,7 +337,9 @@ pub fn process_continuous_segmentation(
         // to cleanly reject residual acoustic loudspeaker echo before AEC fully converges.
         let base_gate = state.noise_gate * vad.noise_gate_multiplier();
         let onset_gate = if interaction_state == InteractionState::Speaking {
-            (state.noise_floor_ema * 3.5).max(base_gate * 2.0).max(0.038)
+            (state.noise_floor_ema * 3.5)
+                .max(base_gate * 2.0)
+                .max(0.038)
         } else {
             (state.noise_floor_ema * 2.0).max(base_gate * 0.5)
         };
@@ -753,7 +755,6 @@ mod tests {
         assert_eq!(rig.events().len(), 1, "the fourth frame must barge in");
     }
 
-
     #[test]
     fn silence_emits_no_events_and_no_stt_commands() {
         let mut rig = Rig::new(32, 400, 0.01);
@@ -971,7 +972,9 @@ mod tests {
         );
         let events = rig.events();
         assert!(
-            events.iter().any(|e| matches!(e, VoxEvent::SpeechEnd { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, VoxEvent::SpeechEnd { .. })),
             "SpeechEnd must be emitted at silence threshold"
         );
     }

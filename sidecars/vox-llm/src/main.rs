@@ -193,14 +193,20 @@ async fn chat_completions_handler(
                         }],
                     };
                     if let Ok(json_str) = serde_json::to_string(&chunk) {
-                        if sse_tx.blocking_send(Ok(Event::default().data(json_str))).is_err() {
+                        if sse_tx
+                            .blocking_send(Ok(Event::default().data(json_str)))
+                            .is_err()
+                        {
                             cancel_for_stream.cancel();
                             break;
                         }
                     }
                 }
                 LlmStreamEvent::Finished => {
-                    if sse_tx.blocking_send(Ok(Event::default().data("[DONE]"))).is_err() {
+                    if sse_tx
+                        .blocking_send(Ok(Event::default().data("[DONE]")))
+                        .is_err()
+                    {
                         cancel_for_stream.cancel();
                     }
                     break;

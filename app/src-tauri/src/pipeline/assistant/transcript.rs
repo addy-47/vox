@@ -8,8 +8,8 @@ use crate::{
         events::{emit_ipc_to, IpcEvent, PipelineMode, Severity, TranscriptPayload},
         state::{AppState, InteractionState},
     },
-    pipeline::{target_window, transition, RoutingContext},
     harness::{Harness, TurnExecutionRequest, TurnOutcome},
+    pipeline::{target_window, transition, RoutingContext},
     services::{
         self,
         notifications::{Action, NotificationCategory, NotificationParams},
@@ -25,8 +25,8 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
     state: &AppState,
     ctx: &RoutingContext,
 ) {
-    let cancel = state.pipeline.turn_token();
-    let pending_jobs = Arc::clone(&state.pipeline.pending_synthesis_jobs);
+    let cancel = state.pipeline.turn_cancel_token();
+    let pending_jobs = Arc::clone(&state.pipeline.pending_tts_jobs);
     let accumulator = Arc::clone(&state.pipeline_accumulator);
     let app_clone = app.clone();
     let ctx_clone = ctx.clone();
@@ -35,7 +35,9 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
     let app_state = match app.try_state::<Arc<AppState>>() {
         Some(st) => Arc::clone(st.inner()),
         None => {
-            log::warn!("[Pipeline::Transcript] AppState not managed on AppHandle; cannot spawn turn task");
+            log::warn!(
+                "[Pipeline::Transcript] AppState not managed on AppHandle; cannot spawn turn task"
+            );
             return;
         }
     };
@@ -90,16 +92,17 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
                 if let Some(ref mut harness) = *guard {
                     harness.on_turn_completed(Arc::clone(&app_state), Arc::clone(&harness_arc));
                 }
-                app_state
-                    .pipeline_accumulator
-                    .lock()
-                    .continuation_prefix
-                    .clear();
+                if turn_id == app_state.pipeline.peek_turn_id() {
+                    app_state
+                        .pipeline_accumulator
+                        .lock()
+                        .continuation_prefix
+                        .clear();
+                }
             }
             TurnOutcome::DuplicateIgnored { turn_id } => {
                 log::info!("[Pipeline::Transcript] Duplicate turn {} ignored", turn_id);
                 if turn_id == app_state.pipeline.peek_turn_id() {
-                    app_state.pipeline.reset_turn_guards();
                     transition(
                         InteractionState::Ready,
                         None,
@@ -117,7 +120,6 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
                         && current != InteractionState::Idle
                         && current != InteractionState::Ready
                     {
-                        app_state.pipeline.reset_turn_guards();
                         transition(
                             InteractionState::Ready,
                             None,
@@ -135,7 +137,6 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
                     message
                 );
                 if turn_id == app_state.pipeline.peek_turn_id() {
-                    app_state.pipeline.reset_turn_guards();
                     transition(
                         InteractionState::Ready,
                         None,
@@ -169,7 +170,10 @@ pub fn on_transcript_final<R: tauri::Runtime>(
 
     let is_held = {
         let guard = state.harness.lock();
-        guard.as_ref().map(|h| h.inbox().is_speech_held()).unwrap_or(false)
+        guard
+            .as_ref()
+            .map(|h| h.inbox().is_speech_held())
+            .unwrap_or(false)
     };
 
     if is_held {
@@ -186,7 +190,10 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             }
             return;
         } else {
-            log::info!("[Pipeline::Transcript] Steering transcript during speech-held turn: '{}'", trimmed);
+            log::info!(
+                "[Pipeline::Transcript] Steering transcript during speech-held turn: '{}'",
+                trimmed
+            );
             let payload = TranscriptPayload {
                 turn_id,
                 text: trimmed.to_string(),
@@ -204,22 +211,25 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             {
                 let guard = state.harness.lock();
                 if let Some(ref harness) = *guard {
-                    harness.inbox().push(crate::harness::stages::inbox::InboxMessage::new(
-                        trimmed.to_string(),
-                        crate::harness::stages::inbox::QueuedMessageDelivery::Immediate,
-                        now,
-                    ));
+                    harness
+                        .inbox()
+                        .push(crate::harness::stages::inbox::InboxMessage::new(
+                            trimmed.to_string(),
+                            crate::harness::stages::inbox::QueuedMessageDelivery::Immediate,
+                            now,
+                        ));
                 }
             }
             return;
         }
     }
 
-    // If turn_id matches a late-arriving final while the user is already speaking the continuation (Listening),
-    // capture it directly into continuation_prefix instead of dropping it.
+    // If awaiting_continuation is set, capture late-arriving final into continuation_prefix
     if current_state == InteractionState::Listening {
         let mut acc = state.pipeline_accumulator.lock();
-        if acc.awaiting_continuation && turn_id + 1 == state.pipeline.peek_turn_id() {
+        // A final for the active turn is new speech; a final for any other
+        // epoch is the late tail of the interrupted turn.
+        if acc.awaiting_continuation && turn_id != state.pipeline.peek_turn_id() {
             acc.append_continuation_prefix(&text);
             log::info!(
                 "[Pipeline::Transcript] Captured late-arriving final for turn {} while in Listening; prefix len={}",
@@ -230,9 +240,9 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         }
     }
 
-    if current_state != InteractionState::Thinking && current_state != InteractionState::Listening {
+    if current_state != InteractionState::Thinking {
         log::debug!(
-            "[Pipeline::Transcript] Transcript dropped: state is {:?}, expected Thinking or Listening",
+            "[Pipeline::Transcript] Transcript dropped: state is {:?}, expected Thinking",
             current_state
         );
         return;
@@ -303,7 +313,6 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         );
         state.pipeline_accumulator.lock().clear();
         if turn_id == state.pipeline.peek_turn_id() {
-            state.pipeline.reset_turn_guards();
             transition(InteractionState::Ready, None, ctx, app, state);
         }
         return;
@@ -333,8 +342,6 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         IpcEvent::TranscriptFinal(payload),
     );
 
-    state.pipeline.set_turn_open(true);
-    state.pipeline.clear_drained_while_open();
     transition(InteractionState::Thinking, None, ctx, app, state);
 
     match ctx.pipeline_mode {

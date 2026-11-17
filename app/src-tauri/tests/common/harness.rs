@@ -25,9 +25,8 @@ use vox_lib::{
             aec::{AecCommand, AecProcessor},
             playback::PlaybackEngineHandles,
             sink::{PlaybackReferenceTap, PlaybackStreamContext},
-            spawn_aec_worker, AEC_REFERENCE_BUFFER_SAMPLES,
+            spawn_aec_worker, PlaybackEngine, AEC_REFERENCE_BUFFER_SAMPLES,
         },
-        audio::PlaybackEngine,
         llm::actor::{spawn_llm_worker, LlmCommand},
         stt::{
             actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},
@@ -82,6 +81,7 @@ pub fn create_mock_playback_engine_with_handles(
         state_atomic: Arc::new(AtomicU32::new(0)),
         current_turn_id,
         pending_synthesis_jobs,
+        sink_occupied: Arc::new(AtomicBool::new(false)),
         playback_intent: Arc::new(AtomicU8::new(0)),
         event_tx,
         is_playback_muted: Arc::new(AtomicBool::new(false)),
@@ -116,10 +116,11 @@ pub fn create_headless_playback_with_aec_tap(
     let turn_armed = Arc::new(AtomicBool::new(false));
 
     let handles = PlaybackEngineHandles {
-        cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
-        state_atomic: Arc::clone(&state.pipeline.current_state_atomic),
+        cancel_flag: Arc::new(AtomicBool::new(false)),
+        state_atomic: Arc::clone(&state.pipeline.assistant_state_atomic),
         current_turn_id: Arc::clone(&state.pipeline.turn_id),
-        pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_synthesis_jobs),
+        pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_tts_jobs),
+        sink_occupied: Arc::new(AtomicBool::new(false)),
         playback_intent: Arc::new(AtomicU8::new(0)),
         event_tx,
         is_playback_muted: Arc::clone(&state.pipeline.is_playback_muted),
@@ -144,13 +145,7 @@ pub fn create_headless_playback_with_aec_tap(
         Some(reference_tap),
     );
 
-    let engine = PlaybackEngine::from_parts(
-        producer,
-        handles,
-        discard_request,
-        turn_armed,
-        None,
-    );
+    let engine = PlaybackEngine::from_parts(producer, handles, discard_request, turn_armed, None);
 
     (Arc::new(engine), sink, ref_cons)
 }
@@ -173,7 +168,11 @@ pub fn pump_playback_sink_until_finished(
         }
         if !sink.turn_armed.load(std::sync::atomic::Ordering::Relaxed)
             && sink.consumer.occupied_len() == 0
-            && sink.handles.pending_synthesis_jobs.load(std::sync::atomic::Ordering::Relaxed) == 0
+            && sink
+                .handles
+                .pending_synthesis_jobs
+                .load(std::sync::atomic::Ordering::Relaxed)
+                == 0
         {
             break;
         }
@@ -240,11 +239,7 @@ pub fn setup_vad_actor(
     ingestion_gate: Arc<AtomicBool>,
     engine_shutdown: Arc<AtomicBool>,
     vox_event_tx: Sender<VoxEvent>,
-) -> (
-    Sender<VadCommand>,
-    RbProducer,
-    std::thread::JoinHandle<()>,
-) {
+) -> (Sender<VadCommand>, RbProducer, std::thread::JoinHandle<()>) {
     let rb = HeapRb::<f32>::new(65536);
     let (producer, consumer) = rb.split();
 
@@ -937,7 +932,7 @@ fn wire_audio_scene(
 
     let audio_suppressed = Arc::new(AtomicBool::new(false));
     let vad_handles = VadActorHandles {
-        state_atomic: Arc::clone(&state.pipeline.current_state_atomic),
+        state_atomic: Arc::clone(&state.pipeline.assistant_state_atomic),
         turn_id_atomic: Arc::clone(&state.pipeline.turn_id),
         audio_suppressed: Arc::clone(&audio_suppressed),
         engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
@@ -958,8 +953,14 @@ fn wire_audio_scene(
     let vad_handle = std::thread::Builder::new()
         .name("scene-vad-actor".to_string())
         .spawn(move || {
-            spawn_vad_actor(vad_backend, clean_cons, vad_channels, vad_handles, vad_config)
-                .expect("VAD actor failed");
+            spawn_vad_actor(
+                vad_backend,
+                clean_cons,
+                vad_channels,
+                vad_handles,
+                vad_config,
+            )
+            .expect("VAD actor failed");
         })
         .expect("Failed to spawn VAD actor thread");
 
@@ -990,7 +991,10 @@ pub struct AudioSceneRig {
 
 impl Drop for AudioSceneRig {
     fn drop(&mut self) {
-        self.state.pipeline.engine_shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.state
+            .pipeline
+            .engine_shutdown
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         let _ = self.vox_event_tx.send(VoxEvent::Shutdown);
         let _ = self.vad_tx.send(VadCommand::Shutdown);
         if let Ok(mut guard) = self.state.engine.try_lock() {
@@ -1095,7 +1099,14 @@ impl E2eVoiceRig {
         vad_backend: VadBackend,
         llm_provider: Arc<dyn vox_lib::services::llm::LlmProvider>,
     ) -> Self {
-        Self::new_with_kokoro_override(app, state, vad_config, vad_backend, true, Some(llm_provider))
+        Self::new_with_kokoro_override(
+            app,
+            state,
+            vad_config,
+            vad_backend,
+            true,
+            Some(llm_provider),
+        )
     }
 
     /// Builds the rig with Kokoro synthesis disabled. Clauses still dispatch to the
@@ -1149,7 +1160,7 @@ impl E2eVoiceRig {
             partial_emitter,
         };
         let stt_handles = SttActorHandles {
-            cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
             engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
         };
         spawn_stt_worker(stt_channels, stt_provider, stt_handles)
@@ -1184,8 +1195,8 @@ impl E2eVoiceRig {
             let tts_handles = TtsWorkerHandles {
                 playback: Arc::clone(&engine),
                 event_tx: vox_event_tx.clone(),
-                cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
-                pending_synthesis_jobs: Some(Arc::clone(&state.pipeline.pending_synthesis_jobs)),
+                cancel_flag: Arc::new(AtomicBool::new(false)),
+                pending_synthesis_jobs: Some(Arc::clone(&state.pipeline.pending_tts_jobs)),
                 telemetry_rtf: None,
                 turn_metrics: Some(Arc::clone(&state.turn_metrics)),
             };
@@ -1282,7 +1293,10 @@ impl ScriptedLlmProvider {
         Self::from_passes(Vec::new(), "scripted-empty")
     }
 
-    pub fn tool_call(name: &str, arguments: serde_json::Value) -> vox_lib::services::llm::CanonicalToolCall {
+    pub fn tool_call(
+        name: &str,
+        arguments: serde_json::Value,
+    ) -> vox_lib::services::llm::CanonicalToolCall {
         vox_lib::services::llm::CanonicalToolCall {
             id: format!("call-{name}"),
             name: name.to_string(),
@@ -1345,7 +1359,10 @@ impl vox_lib::services::llm::LlmProvider for ScriptedLlmProvider {
 
     fn list_models<'a>(
         &'a self,
-    ) -> futures_util::future::BoxFuture<'a, Result<Vec<vox_lib::services::llm::LlmModelInfo>, vox_lib::services::llm::LlmError>> {
+    ) -> futures_util::future::BoxFuture<
+        'a,
+        Result<Vec<vox_lib::services::llm::LlmModelInfo>, vox_lib::services::llm::LlmError>,
+    > {
         Box::pin(async { Ok(Vec::new()) })
     }
 
@@ -1355,7 +1372,6 @@ impl vox_lib::services::llm::LlmProvider for ScriptedLlmProvider {
         vox_lib::services::llm::ProviderKind::OpenAiCompat
     }
 }
-
 
 // ============================================================================
 // Shared scene helpers (E2E crowd scenes)
@@ -1389,7 +1405,10 @@ pub fn scene_mic(echo_source: &[f32], user: Option<&[f32]>) -> Vec<f32> {
 pub fn spawn_state_watcher(
     state: &Arc<vox_lib::core::state::AppState>,
     window: core::time::Duration,
-) -> (Arc<std::sync::atomic::AtomicU32>, std::thread::JoinHandle<()>) {
+) -> (
+    Arc<std::sync::atomic::AtomicU32>,
+    std::thread::JoinHandle<()>,
+) {
     let seen = Arc::new(std::sync::atomic::AtomicU32::new(0));
     let seen_clone = Arc::clone(&seen);
     let state = Arc::clone(state);
@@ -1423,7 +1442,8 @@ pub fn spawn_state_watcher(
 // Shared Harness Test Infrastructure & Production Router Rig
 // ============================================================================
 
-pub type ScriptStep = Box<dyn FnOnce(mpsc::Sender<vox_lib::services::llm::actor::LlmResponse>) + Send + 'static>;
+pub type ScriptStep =
+    Box<dyn FnOnce(mpsc::Sender<vox_lib::services::llm::actor::LlmResponse>) + Send + 'static>;
 
 pub struct ScriptedLlmWorker {
     pub queue: parking_lot::Mutex<Vec<ScriptStep>>,
@@ -1454,10 +1474,7 @@ impl ScriptedLlmWorker {
     }
 }
 
-pub fn run_scripted_worker(
-    llm_rx: mpsc::Receiver<LlmCommand>,
-    scripted: Arc<ScriptedLlmWorker>,
-) {
+pub fn run_scripted_worker(llm_rx: mpsc::Receiver<LlmCommand>, scripted: Arc<ScriptedLlmWorker>) {
     while let Ok(cmd) = llm_rx.recv() {
         match cmd {
             LlmCommand::Generate {
@@ -1466,7 +1483,11 @@ pub fn run_scripted_worker(
                 cancel,
                 response_tx,
             } => {
-                let offers_tools = request.tools.as_ref().map(|t| !t.is_empty()).unwrap_or(false);
+                let offers_tools = request
+                    .tools
+                    .as_ref()
+                    .map(|t| !t.is_empty())
+                    .unwrap_or(false);
                 scripted.requests.lock().push((turn_id, offers_tools));
 
                 if cancel.is_cancelled() {
@@ -1496,7 +1517,9 @@ pub fn run_scripted_worker(
                     ));
                     let _ = response_tx.send(vox_lib::services::llm::actor::LlmResponse::Finished);
                 } else {
-                    let _ = response_tx.send(vox_lib::services::llm::actor::LlmResponse::Token("done".to_string()));
+                    let _ = response_tx.send(vox_lib::services::llm::actor::LlmResponse::Token(
+                        "done".to_string(),
+                    ));
                     let _ = response_tx.send(vox_lib::services::llm::actor::LlmResponse::Finished);
                 }
             }
@@ -1545,7 +1568,9 @@ impl HarnessRig {
             .await
             .expect("seed session");
         }
-        state.conversation_id.store(session_id as u64, std::sync::atomic::Ordering::Relaxed);
+        state
+            .conversation_id
+            .store(session_id as u64, std::sync::atomic::Ordering::Relaxed);
 
         let real_persist_tx = vox_lib::persistence::worker::spawn_persistence_worker(
             Arc::clone(&state.db),
@@ -1554,7 +1579,8 @@ impl HarnessRig {
             state.telemetry.is_private_mode.clone(),
         );
 
-        let (proxy_persist_tx, proxy_persist_rx) = crossbeam_channel::unbounded::<vox_lib::persistence::PersistenceEvent>();
+        let (proxy_persist_tx, proxy_persist_rx) =
+            crossbeam_channel::unbounded::<vox_lib::persistence::PersistenceEvent>();
         *state.persist_tx.lock() = Some(proxy_persist_tx);
 
         let persist_notify = Arc::new(tokio::sync::Notify::new());
@@ -1565,7 +1591,8 @@ impl HarnessRig {
             .name("test-persist-forwarder".to_string())
             .spawn(move || {
                 while let Ok(event) = proxy_persist_rx.recv() {
-                    let is_shutdown = matches!(event, vox_lib::persistence::PersistenceEvent::Shutdown);
+                    let is_shutdown =
+                        matches!(event, vox_lib::persistence::PersistenceEvent::Shutdown);
                     let _ = real_persist_tx_clone.send(event);
                     persist_notify_clone.notify_waiters();
                     if is_shutdown {
@@ -1582,9 +1609,17 @@ impl HarnessRig {
             settings.memory.auto_compaction = false;
             settings.memory.context_retrieval_enabled = true;
         }
-        state.owner.store(vox_lib::core::state::InteractionOwner::Assistant as u32, std::sync::atomic::Ordering::Relaxed);
-        state.pipeline.set_state(vox_lib::core::state::InteractionState::Ready);
-        state.pipeline.pending_synthesis_jobs.store(0, std::sync::atomic::Ordering::Relaxed);
+        state.owner.store(
+            vox_lib::core::state::InteractionOwner::Assistant as u32,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        state
+            .pipeline
+            .set_state(vox_lib::core::state::InteractionState::Ready);
+        state
+            .pipeline
+            .pending_tts_jobs
+            .store(0, std::sync::atomic::Ordering::Relaxed);
 
         let PipelineTestChannels {
             stt_tx,
@@ -1683,7 +1718,11 @@ impl HarnessRig {
         }
     }
 
-    pub fn turn_request(&self, query: &str, turn_id: u32) -> vox_lib::harness::TurnExecutionRequest {
+    pub fn turn_request(
+        &self,
+        query: &str,
+        turn_id: u32,
+    ) -> vox_lib::harness::TurnExecutionRequest {
         self.state
             .pipeline
             .turn_id
@@ -1691,7 +1730,7 @@ impl HarnessRig {
         vox_lib::harness::TurnExecutionRequest {
             query: query.to_string(),
             turn_id,
-            cancel: self.state.pipeline.turn_token(),
+            cancel: self.state.pipeline.turn_cancel_token(),
             owner: vox_lib::core::state::InteractionOwner::Assistant,
             llm_tx: Some(self.llm_tx.clone()),
             tts_tx: Some(self.tts_tx.clone()),
@@ -1699,7 +1738,7 @@ impl HarnessRig {
             db: Arc::clone(&self.state.db),
             pipeline_tx: Some(self.pipeline_tx.clone()),
             accumulator: Arc::clone(&self.state.pipeline_accumulator),
-            pending_synthesis_jobs: Arc::clone(&self.state.pipeline.pending_synthesis_jobs),
+            pending_synthesis_jobs: Arc::clone(&self.state.pipeline.pending_tts_jobs),
             emitter: Arc::new(self.app.clone()),
             routing_ctx: vox_lib::pipeline::RoutingContext::from_app_state(&self.state),
             app_state: Arc::clone(&self.state),
@@ -1743,27 +1782,49 @@ impl HarnessRig {
                 return None;
             }
             let remaining = deadline - tokio::time::Instant::now();
-            let _ = tokio::time::timeout(remaining.min(Duration::from_millis(50)), self.event_notify.notified()).await;
+            let _ = tokio::time::timeout(
+                remaining.min(Duration::from_millis(50)),
+                self.event_notify.notified(),
+            )
+            .await;
         }
     }
 
-    pub async fn wait_for_state(&self, expected: vox_lib::core::state::InteractionState, timeout: Duration) -> bool {
+    pub async fn wait_for_state(
+        &self,
+        expected: vox_lib::core::state::InteractionState,
+        timeout: Duration,
+    ) -> bool {
         let deadline = tokio::time::Instant::now() + timeout;
         while tokio::time::Instant::now() < deadline {
             if self.state.pipeline.state() == expected {
                 return true;
             }
             let remaining = deadline - tokio::time::Instant::now();
-            let _ = tokio::time::timeout(remaining.min(Duration::from_millis(20)), self.event_notify.notified()).await;
+            let _ = tokio::time::timeout(
+                remaining.min(Duration::from_millis(20)),
+                self.event_notify.notified(),
+            )
+            .await;
         }
         self.state.pipeline.state() == expected
     }
 
-    pub async fn wait_for_session_title(&self, expected: &str, timeout: Duration) -> Option<String> {
+    pub async fn wait_for_session_title(
+        &self,
+        expected: &str,
+        timeout: Duration,
+    ) -> Option<String> {
         let conn = self.state.db.connect().expect("db connect");
         let deadline = tokio::time::Instant::now() + timeout;
         while tokio::time::Instant::now() < deadline {
-            if let Ok(mut rows) = conn.query("SELECT title FROM sessions WHERE id = ?;", (self.session_id,)).await {
+            if let Ok(mut rows) = conn
+                .query(
+                    "SELECT title FROM sessions WHERE id = ?;",
+                    (self.session_id,),
+                )
+                .await
+            {
                 if let Ok(Some(row)) = rows.next().await {
                     if let Ok(Some(t)) = row.get::<Option<String>>(0) {
                         if t == expected {
@@ -1776,7 +1837,11 @@ impl HarnessRig {
             if remaining.is_zero() {
                 break;
             }
-            let _ = tokio::time::timeout(remaining.min(Duration::from_millis(50)), self.persist_notify.notified()).await;
+            let _ = tokio::time::timeout(
+                remaining.min(Duration::from_millis(50)),
+                self.persist_notify.notified(),
+            )
+            .await;
         }
         None
     }
@@ -1798,7 +1863,11 @@ impl HarnessRig {
             if remaining.is_zero() {
                 break;
             }
-            let _ = tokio::time::timeout(remaining.min(Duration::from_millis(50)), self.persist_notify.notified()).await;
+            let _ = tokio::time::timeout(
+                remaining.min(Duration::from_millis(50)),
+                self.persist_notify.notified(),
+            )
+            .await;
         }
         None
     }
@@ -1821,7 +1890,8 @@ impl Drop for HarnessRig {
             let _ = tx.send(vox_lib::persistence::PersistenceEvent::Shutdown);
         }
         if let Some(join) = self.persist_forwarder_join.take() {
-            join.join().expect("persist_forwarder worker thread panicked");
+            join.join()
+                .expect("persist_forwarder worker thread panicked");
         }
     }
 }
@@ -1882,7 +1952,10 @@ impl vox_lib::harness::ToolDefinition for BarrierTraceTool {
         _mode: vox_lib::core::events::PipelineMode,
         _args: serde_json::Value,
         _ctx: &'a vox_lib::harness::ToolExecutionContext,
-    ) -> futures_util::future::BoxFuture<'a, Result<vox_lib::harness::ToolResult, vox_lib::harness::ToolError>> {
+    ) -> futures_util::future::BoxFuture<
+        'a,
+        Result<vox_lib::harness::ToolResult, vox_lib::harness::ToolError>,
+    > {
         use futures_util::future::FutureExt;
         async move {
             self.trace.lock().push(format!("start:{}", self.name));
@@ -1895,10 +1968,11 @@ impl vox_lib::harness::ToolDefinition for BarrierTraceTool {
                 tokio::task::yield_now().await;
             }
             self.trace.lock().push(format!("end:{}", self.name));
-            Ok(vox_lib::harness::ToolResult::new(format!("done:{}", self.name)))
+            Ok(vox_lib::harness::ToolResult::new(format!(
+                "done:{}",
+                self.name
+            )))
         }
         .boxed()
     }
 }
-
-

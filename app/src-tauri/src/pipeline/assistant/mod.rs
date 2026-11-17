@@ -15,8 +15,8 @@ use crate::{
         events::VoxEvent,
         state::{AppState, InteractionOwner},
     },
-    pipeline::router::RoutingContext,
     harness::stages::streaming::ClauseChunker,
+    pipeline::router::RoutingContext,
 };
 
 /// Canonical turn-level textual accumulator and TTS clause chunker.

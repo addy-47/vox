@@ -18,6 +18,16 @@ pub fn on_playback_started<R: tauri::Runtime>(
     state: &AppState,
     ctx: &RoutingContext,
 ) {
+    let active_turn_id = state.pipeline.peek_turn_id();
+    if turn_id != active_turn_id {
+        log::debug!(
+            "[Pipeline::Playback] PlaybackStarted dropped (turn {}): does not match active turn {}",
+            turn_id,
+            active_turn_id
+        );
+        return;
+    }
+
     let current_state = state.pipeline.state();
 
     if current_state == InteractionState::Working && intent == AudioIntent::InterimFiller {
@@ -27,8 +37,6 @@ pub fn on_playback_started<R: tauri::Runtime>(
         );
         return;
     }
-
-    state.pipeline.clear_drained_while_open();
 
     if current_state != InteractionState::Thinking && current_state != InteractionState::Working {
         log::debug!(
@@ -63,6 +71,16 @@ pub fn on_playback_finished<R: tauri::Runtime>(
     state: &AppState,
     ctx: &RoutingContext,
 ) {
+    let active_turn_id = state.pipeline.peek_turn_id();
+    if turn_id != active_turn_id {
+        log::debug!(
+            "[Pipeline::Playback] PlaybackFinished dropped (turn {}): does not match active turn {}",
+            turn_id,
+            active_turn_id
+        );
+        return;
+    }
+
     let current_state = state.pipeline.state();
     if current_state != InteractionState::Speaking
         && current_state != InteractionState::Thinking
@@ -76,19 +94,7 @@ pub fn on_playback_finished<R: tauri::Runtime>(
         return;
     }
 
-    if state.pipeline.is_turn_open() {
-        state.pipeline.set_drained_while_open(true);
-        log::debug!(
-            "[Pipeline::Playback] PlaybackFinished deferred (turn {}): turn_open=true, latching drained_while_open",
-            turn_id
-        );
-        return;
-    }
-
-    let pending_jobs = state
-        .pipeline
-        .pending_synthesis_jobs
-        .load(Ordering::Relaxed);
+    let pending_jobs = state.pipeline.pending_tts_jobs.load(Ordering::Relaxed);
     if pending_jobs > 0 {
         log::debug!(
             "[Pipeline::Playback] PlaybackFinished deferred (turn {}): {} synthesis jobs still pending",
@@ -106,7 +112,6 @@ pub fn on_playback_finished<R: tauri::Runtime>(
         }
     }
 
-    state.pipeline.clear_drained_while_open();
     state.pipeline_accumulator.lock().clear();
     transition(InteractionState::Ready, None, ctx, app, state);
     state.turn_metrics.record_playback_finished(turn_id);

@@ -12,9 +12,8 @@ use crate::harness::{
         step1_intake, step3_check_and_run_loop_budget, step3_execute_compaction,
         step4_assemble_request, step5_dispatch_llm, step6_await_and_drain_inbox,
         step6_execute_tool_batch, step6_run_stream_pass, step7_commit_completed,
-        step7_commit_suspended_question, step7_handle_cancelled, step7_handle_error,
-        IntakeResult, StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage,
-        TurnLoopContext,
+        step7_commit_suspended_question, step7_handle_cancelled, step7_handle_error, IntakeResult,
+        StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage, TurnLoopContext,
     },
     TurnExecutionRequest, TurnOutcome,
 };
@@ -83,6 +82,7 @@ async fn run_cognitive_loop(
 
     let stream_handles = StreamRoutingHandles {
         turn_id,
+        live_turn_id: Arc::clone(&req.app_state.pipeline.turn_id),
         owner: req.owner,
         accumulator: Arc::clone(&req.accumulator),
         tts_tx: req.tts_tx.clone(),
@@ -157,7 +157,8 @@ async fn execute_loop_iterations(
         step3_check_and_run_loop_budget(ctx, allow_tools, iteration).await;
 
         // === STEP 4: Assemble Generation Request ===
-        let generation_request = match step4_assemble_request(ctx.harness_arc, turn_id, allow_tools) {
+        let generation_request = match step4_assemble_request(ctx.harness_arc, turn_id, allow_tools)
+        {
             Ok(req_obj) => req_obj,
             Err(e) => {
                 return step7_handle_error(
@@ -189,19 +190,18 @@ async fn execute_loop_iterations(
         };
 
         // === STEP 6: Stream Tokens & Intercept Tool Calls ===
-        let stream_res =
-            step6_run_stream_pass(ctx.stream_stage, ctx.stream_handles, response_rx, allow_tools)
-                .await;
+        let stream_res = step6_run_stream_pass(
+            ctx.stream_stage,
+            ctx.stream_handles,
+            response_rx,
+            allow_tools,
+        )
+        .await;
         match stream_res {
             Ok(pass_outcome) => {
-                let (action, circuit_broken) = handle_pass_outcome(
-                    ctx,
-                    pass_outcome,
-                    cancel_atomic,
-                    allow_tools,
-                    iteration,
-                )
-                .await;
+                let (action, circuit_broken) =
+                    handle_pass_outcome(ctx, pass_outcome, cancel_atomic, allow_tools, iteration)
+                        .await;
                 if circuit_broken {
                     allow_tools = false;
                 }
@@ -284,6 +284,23 @@ async fn handle_pass_outcome(
             LoopAction::Terminal(step7_handle_cancelled(ctx.cancelled_ctx(partial_text))),
             false,
         ),
+        StreamPassOutcome::Superseded { stale, current } => {
+            log::warn!(
+                "[Harness::Loop] Turn {} superseded by {}; discarding generation pass",
+                stale,
+                current
+            );
+            let partial = ctx
+                .stream_handles
+                .accumulator
+                .lock()
+                .assistant_response
+                .clone();
+            (
+                LoopAction::Terminal(step7_handle_cancelled(ctx.cancelled_ctx(partial))),
+                false,
+            )
+        }
         StreamPassOutcome::Error(err) => (
             LoopAction::Terminal(step7_handle_error(ctx.harness_arc, turn_id, err, None)),
             false,
@@ -309,7 +326,8 @@ async fn handle_pass_outcome(
             }
 
             let (cancelled, suspended_question, circuit_broken) =
-                step6_execute_tool_batch(ctx, calls, &preamble_text, &thinking_text, iteration).await;
+                step6_execute_tool_batch(ctx, calls, &preamble_text, &thinking_text, iteration)
+                    .await;
             if cancelled {
                 (
                     LoopAction::Terminal(step7_handle_cancelled(ctx.cancelled_ctx(String::new()))),

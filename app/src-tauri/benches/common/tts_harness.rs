@@ -87,6 +87,7 @@ pub fn benchmark_tts_provider(
         state_atomic,
         current_turn_id: Arc::clone(&current_turn_id),
         pending_synthesis_jobs: Arc::clone(&pending_jobs),
+        sink_occupied: Arc::new(AtomicBool::new(false)),
         playback_intent: Arc::new(AtomicU8::new(0)),
         event_tx: event_tx.clone(),
         is_playback_muted: Arc::new(AtomicBool::new(false)),

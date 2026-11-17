@@ -21,12 +21,10 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use vox_lib::{
     core::{events::VoxEvent, state::AppState},
+    harness::{chassis::Harness, TurnExecutionRequest, TurnOutcome},
     monitoring::telemetry::{TelemetryAggregator, TelemetryAggregatorHandles, TelemetryState},
     pipeline::{assistant::TurnAccumulator, RoutingContext},
-    harness::{chassis::Harness, TurnExecutionRequest, TurnOutcome},
-    services::{
-        llm::{spawn_llm_worker, ConnectionConfig, LlmCommand, LlmProvider, RemoteTransport},
-    },
+    services::llm::{spawn_llm_worker, ConnectionConfig, LlmCommand, LlmProvider, RemoteTransport},
     utils::paths,
 };
 

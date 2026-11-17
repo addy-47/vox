@@ -33,7 +33,7 @@ use vox_lib::{
             ToolDefinition, ToolError, ToolExecutionContext, ToolFilter, ToolResult,
             TruncationPolicy,
         },
-        Role, ToolExecutionMode, TurnOutcome,
+        Role, ToolExecutionMode, TurnOutcome, TurnPhase,
     },
     services::{
         llm::{actor::LlmResponse, CanonicalToolCall},
@@ -90,7 +90,7 @@ async fn the_tool_loop_stops_at_the_tool_budget() {
 #[tokio::test]
 async fn a_cancelled_turn_never_dispatches() {
     let rig = Rig::new().await;
-    rig.state.pipeline.turn_token().cancel();
+    rig.state.pipeline.turn_cancel_token().cancel();
     let request = rig.turn_request("never sent", 2);
 
     let outcome = Harness::execute_turn(&rig.state.harness, request).await;
@@ -213,7 +213,10 @@ async fn critical_threshold_plays_the_compaction_filler() {
         ));
     }
     rig.state.pipeline.set_state(InteractionState::Thinking);
-    rig.state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
+    rig.state
+        .pipeline
+        .pending_tts_jobs
+        .store(0, Ordering::Relaxed);
 
     // Seed enough history to cross the critical threshold (>85% of ~7680 usable tokens).
     {
@@ -242,17 +245,15 @@ async fn critical_threshold_plays_the_compaction_filler() {
 
     let req = rig.turn_request("Final query exceeding threshold", 46);
     let harness_arc = Arc::clone(&rig.state.harness);
-    let execute_handle = tokio::spawn(async move {
-        Harness::execute_turn(&harness_arc, req).await
-    });
+    let execute_handle =
+        tokio::spawn(async move { Harness::execute_turn(&harness_arc, req).await });
 
     let tts_rx = Arc::clone(&rig.tts_rx);
-    let filler_cmd = tokio::task::spawn_blocking(move || {
-        tts_rx.lock().recv_timeout(Duration::from_secs(10))
-    })
-    .await
-    .expect("join")
-    .expect("Expected filler TtsCommand::Generate on critical threshold");
+    let filler_cmd =
+        tokio::task::spawn_blocking(move || tts_rx.lock().recv_timeout(Duration::from_secs(10)))
+            .await
+            .expect("join")
+            .expect("Expected filler TtsCommand::Generate on critical threshold");
 
     match filler_cmd {
         vox_lib::services::tts::TtsCommand::Generate {
@@ -281,7 +282,11 @@ async fn critical_threshold_plays_the_compaction_filler() {
         "state must transition to Working when critical compaction filler is dispatched"
     );
     assert!(
-        rig.state.pipeline.pending_synthesis_jobs.load(Ordering::Relaxed) >= 1,
+        rig.state
+            .pipeline
+            .pending_tts_jobs
+            .load(Ordering::Relaxed)
+            >= 1,
         "pending_synthesis_jobs must be incremented when filler is dispatched"
     );
 
@@ -306,8 +311,12 @@ async fn zero_tool_turn_demuxes_thinking_tokens_into_quarantine_without_tts_or_i
         let turn_id = 101;
 
         rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Thinking("Step 1: Analyzing user query.\nStep 2: Formulating response.".to_string()));
-            let _ = tx.send(LlmResponse::Token("The weather today is sunny and clear.".to_string()));
+            let _ = tx.send(LlmResponse::Thinking(
+                "Step 1: Analyzing user query.\nStep 2: Formulating response.".to_string(),
+            ));
+            let _ = tx.send(LlmResponse::Token(
+                "The weather today is sunny and clear.".to_string(),
+            ));
             let _ = tx.send(LlmResponse::Finished);
         });
 
@@ -315,27 +324,56 @@ async fn zero_tool_turn_demuxes_thinking_tokens_into_quarantine_without_tts_or_i
         let outcome = Harness::execute_turn(&rig.state.harness, req).await;
 
         match outcome {
-            TurnOutcome::Completed { turn_id: tid, assistant_response } => {
+            TurnOutcome::Completed {
+                turn_id: tid,
+                assistant_response,
+            } => {
                 assert_eq!(tid, turn_id);
                 assert_eq!(assistant_response, "The weather today is sunny and clear.");
-                assert!(!assistant_response.contains("Analyzing user query"), "thinking tokens leaked into assistant_response");
+                assert!(
+                    !assistant_response.contains("Analyzing user query"),
+                    "thinking tokens leaked into assistant_response"
+                );
             }
             other => panic!("Expected Completed outcome, got {:?}", other),
         }
 
         let tts_cmds = rig.drain_tts_commands();
-        assert!(!tts_cmds.is_empty(), "Spoken text must be dispatched to TTS");
+        assert!(
+            !tts_cmds.is_empty(),
+            "Spoken text must be dispatched to TTS"
+        );
         for cmd in tts_cmds {
             if let TtsCommand::Generate { text, intent, .. } = cmd {
-                assert!(!text.contains("Analyzing user query"), "Thinking text leaked into TTS: {}", text);
-                assert!(!text.contains("Step 1"), "Reasoning leaked into TTS: {}", text);
-                assert_eq!(intent, AudioIntent::InterimFiller, "Preamble/initial clauses in allow_tools have InterimFiller intent");
+                assert!(
+                    !text.contains("Analyzing user query"),
+                    "Thinking text leaked into TTS: {}",
+                    text
+                );
+                assert!(
+                    !text.contains("Step 1"),
+                    "Reasoning leaked into TTS: {}",
+                    text
+                );
+                assert_eq!(
+                    intent,
+                    AudioIntent::InterimFiller,
+                    "Preamble/initial clauses in allow_tools have InterimFiller intent"
+                );
             }
         }
 
-        let acc_text = rig.state.pipeline_accumulator.lock().assistant_response.clone();
+        let acc_text = rig
+            .state
+            .pipeline_accumulator
+            .lock()
+            .assistant_response
+            .clone();
         assert_eq!(acc_text, "The weather today is sunny and clear.");
-        assert!(!acc_text.contains("Step 1"), "Accumulator must quarantine thinking tokens");
+        assert!(
+            !acc_text.contains("Step 1"),
+            "Accumulator must quarantine thinking tokens"
+        );
     })
     .await
     .expect("test timed out");
@@ -353,26 +391,39 @@ async fn zero_tool_turn_with_interim_filler_latches_to_ready_only_after_playback
         let rig = Rig::new().await;
         let turn_id = 102;
 
+        rig.state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
         rig.state.pipeline.set_state(InteractionState::Thinking);
-        rig.state.pipeline.set_turn_open(true);
-        rig.state.pipeline.pending_synthesis_jobs.store(1, Ordering::Relaxed);
+        rig.state
+            .pipeline
+            .pending_tts_jobs
+            .store(1, Ordering::Relaxed);
 
         // Signal LlmFinished via authentic production routing while 1 pending synthesis job is active
         rig.send_event(VoxEvent::LlmFinished { turn_id });
-        rig.wait_for_event(|ev| matches!(ev, VoxEvent::LlmFinished { turn_id: tid } if *tid == turn_id), Duration::from_secs(5)).await.expect("LlmFinished routed");
+        rig.wait_for_event(
+            |ev| matches!(ev, VoxEvent::LlmFinished { turn_id: tid } if *tid == turn_id),
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("LlmFinished routed");
 
         assert!(
-            rig.wait_for_state(InteractionState::Speaking, Duration::from_secs(5)).await,
+            rig.wait_for_state(InteractionState::Speaking, Duration::from_secs(5))
+                .await,
             "State must transition to Speaking while audio synthesis is in flight"
         );
-        assert!(!rig.state.pipeline.is_turn_open(), "Key 1: turn_open must be false after completion");
 
         // Calling playback_finished via authentic VoxEvent while 1 job is pending must defer Ready
         rig.send_event(VoxEvent::PlaybackFinished {
             turn_id,
             intent: AudioIntent::InterimFiller,
         });
-        rig.wait_for_event(|ev| matches!(ev, VoxEvent::PlaybackFinished { turn_id: tid, .. } if *tid == turn_id), Duration::from_secs(5)).await.expect("PlaybackFinished routed");
+        rig.wait_for_event(
+            |ev| matches!(ev, VoxEvent::PlaybackFinished { turn_id: tid, .. } if *tid == turn_id),
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("PlaybackFinished routed");
         assert_eq!(
             rig.state.pipeline.state(),
             InteractionState::Speaking,
@@ -380,49 +431,20 @@ async fn zero_tool_turn_with_interim_filler_latches_to_ready_only_after_playback
         );
 
         // Now clear pending jobs (Key 2 satisfied) and signal sound card playback finished
-        rig.state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
+        rig.state
+            .pipeline
+            .pending_tts_jobs
+            .store(0, Ordering::Relaxed);
         rig.send_event(VoxEvent::PlaybackFinished {
             turn_id,
             intent: AudioIntent::InterimFiller,
         });
 
         assert!(
-            rig.wait_for_state(InteractionState::Ready, Duration::from_secs(5)).await,
+            rig.wait_for_state(InteractionState::Ready, Duration::from_secs(5))
+                .await,
             "Two-Key Latch must transition deterministically to Ready when audio drains"
         );
-    })
-    .await
-    .expect("test timed out");
-}
-
-/// PURPOSE:  Prevent sound card buffer underrun from kicking the pipeline to Ready while the turn is open.
-/// SCENARIO: A clause finishes playing on the sound card (PlaybackFinished) while turn_open == true.
-/// ASSERTS:  Router returns early without transitioning to Ready; pipeline state remains stable in Thinking/Working.
-/// CLASS:    suppression
-/// REQUIRES: none
-/// MUTANT:   playback.rs: Remove 'if state.pipeline.is_turn_open() { return; }'.
-#[tokio::test]
-async fn playback_finished_during_open_turn_does_not_prematurely_transition_to_ready() {
-    tokio::time::timeout(Duration::from_secs(15), async {
-        let rig = Rig::new().await;
-        let turn_id = 103;
-
-        rig.state.pipeline.set_state(InteractionState::Thinking);
-        rig.state.pipeline.set_turn_open(true);
-        rig.state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
-
-        rig.send_event(VoxEvent::PlaybackFinished {
-            turn_id,
-            intent: AudioIntent::InterimFiller,
-        });
-        rig.wait_for_event(|ev| matches!(ev, VoxEvent::PlaybackFinished { turn_id: tid, .. } if *tid == turn_id), Duration::from_secs(5)).await.expect("PlaybackFinished routed");
-
-        assert_eq!(
-            rig.state.pipeline.state(),
-            InteractionState::Thinking,
-            "Pipeline state must NOT transition to Ready while turn_open is true"
-        );
-        assert!(rig.state.pipeline.is_turn_open());
     })
     .await
     .expect("test timed out");
@@ -447,7 +469,9 @@ async fn preamble_tokens_before_tool_call_are_preserved_in_history_without_chunk
         // Step 1: Model streams spoken preamble, then issues search_memory tool call
         // Pass 0: Preamble speech + search_memory tool call
         rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Token("Let me look that up in your notes.".to_string()));
+            let _ = tx.send(LlmResponse::Token(
+                "Let me look that up in your notes.".to_string(),
+            ));
             let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
                 id: "call-search-1".to_string(),
                 name: "search_memory".to_string(),
@@ -458,7 +482,9 @@ async fn preamble_tokens_before_tool_call_are_preserved_in_history_without_chunk
 
         // Pass 1: Terminal answer after tool observation
         rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Token("You have a meeting with Sarah tomorrow.".to_string()));
+            let _ = tx.send(LlmResponse::Token(
+                "You have a meeting with Sarah tomorrow.".to_string(),
+            ));
             let _ = tx.send(LlmResponse::Finished);
         });
 
@@ -466,8 +492,13 @@ async fn preamble_tokens_before_tool_call_are_preserved_in_history_without_chunk
         let outcome = Harness::execute_turn(&rig.state.harness, req).await;
 
         match outcome {
-            TurnOutcome::Completed { assistant_response, .. } => {
-                assert_eq!(assistant_response, "You have a meeting with Sarah tomorrow.");
+            TurnOutcome::Completed {
+                assistant_response, ..
+            } => {
+                assert_eq!(
+                    assistant_response,
+                    "You have a meeting with Sarah tomorrow."
+                );
             }
             other => panic!("Expected Completed outcome, got {:?}", other),
         }
@@ -481,16 +512,24 @@ async fn preamble_tokens_before_tool_call_are_preserved_in_history_without_chunk
                 false
             }
         });
-        assert!(preamble_cmd.is_some(), "Preamble speech must be dispatched to TTS as InterimFiller");
+        assert!(
+            preamble_cmd.is_some(),
+            "Preamble speech must be dispatched to TTS as InterimFiller"
+        );
 
         // Verify preamble text is committed in history as the initiating assistant message
         let guard = rig.state.harness.lock();
         let harness = guard.as_ref().expect("Harness must be mounted");
         let messages = harness.messages();
         let preamble_msg = messages.iter().find(|m| {
-            m.role == Role::Assistant && m.content.contains("look that up") && m.tool_calls.is_some()
+            m.role == Role::Assistant
+                && m.content.contains("look that up")
+                && m.tool_calls.is_some()
         });
-        assert!(preamble_msg.is_some(), "Preamble text must be recorded in assistant history initiating tools");
+        assert!(
+            preamble_msg.is_some(),
+            "Preamble text must be recorded in assistant history initiating tools"
+        );
     })
     .await
     .expect("test timed out");
@@ -509,14 +548,18 @@ async fn preamble_audio_playback_retains_working_state_during_tool_execution() {
         let turn_id = 202;
 
         rig.state.pipeline.set_state(InteractionState::Working);
-        rig.state.pipeline.set_turn_open(true);
 
         // Onset of interim filler audio must keep state in Working
         rig.send_event(VoxEvent::PlaybackStarted {
             turn_id,
             intent: AudioIntent::InterimFiller,
         });
-        rig.wait_for_event(|ev| matches!(ev, VoxEvent::PlaybackStarted { turn_id: tid, .. } if *tid == turn_id), Duration::from_secs(5)).await.expect("PlaybackStarted routed");
+        rig.wait_for_event(
+            |ev| matches!(ev, VoxEvent::PlaybackStarted { turn_id: tid, .. } if *tid == turn_id),
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("PlaybackStarted routed");
         assert_eq!(
             rig.state.pipeline.state(),
             InteractionState::Working,
@@ -528,7 +571,12 @@ async fn preamble_audio_playback_retains_working_state_during_tool_execution() {
             turn_id,
             intent: AudioIntent::InterimFiller,
         });
-        rig.wait_for_event(|ev| matches!(ev, VoxEvent::PlaybackFinished { turn_id: tid, .. } if *tid == turn_id), Duration::from_secs(5)).await.expect("PlaybackFinished routed");
+        rig.wait_for_event(
+            |ev| matches!(ev, VoxEvent::PlaybackFinished { turn_id: tid, .. } if *tid == turn_id),
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("PlaybackFinished routed");
         assert_eq!(
             rig.state.pipeline.state(),
             InteractionState::Working,
@@ -561,7 +609,9 @@ async fn universal_tool_execution_succeeds_without_synthetic_speech_parameters()
         });
 
         rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Token("Memory retrieved successfully.".to_string()));
+            let _ = tx.send(LlmResponse::Token(
+                "Memory retrieved successfully.".to_string(),
+            ));
             let _ = tx.send(LlmResponse::Finished);
         });
 
@@ -569,7 +619,9 @@ async fn universal_tool_execution_succeeds_without_synthetic_speech_parameters()
         let outcome = Harness::execute_turn(&rig.state.harness, req).await;
 
         match outcome {
-            TurnOutcome::Completed { assistant_response, .. } => {
+            TurnOutcome::Completed {
+                assistant_response, ..
+            } => {
                 assert_eq!(assistant_response, "Memory retrieved successfully.");
             }
             other => panic!("Expected Completed outcome, got {:?}", other),
@@ -620,7 +672,9 @@ async fn multi_tool_stream_accumulates_full_batch_without_early_stream_abort() {
 
         // Pass 2: Final response synthesizing results
         rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Token("I have checked all three items.".to_string()));
+            let _ = tx.send(LlmResponse::Token(
+                "I have checked all three items.".to_string(),
+            ));
             let _ = tx.send(LlmResponse::Finished);
         });
 
@@ -628,14 +682,20 @@ async fn multi_tool_stream_accumulates_full_batch_without_early_stream_abort() {
         let outcome = Harness::execute_turn(&rig.state.harness, req).await;
 
         match outcome {
-            TurnOutcome::Completed { assistant_response, .. } => {
+            TurnOutcome::Completed {
+                assistant_response, ..
+            } => {
                 assert_eq!(assistant_response, "I have checked all three items.");
             }
             other => panic!("Expected Completed outcome, got {:?}", other),
         }
 
         let dispatches = rig.requests();
-        assert_eq!(dispatches.len(), 2, "Must be exactly 2 passes (batch pass + final synthesis)");
+        assert_eq!(
+            dispatches.len(),
+            2,
+            "Must be exactly 2 passes (batch pass + final synthesis)"
+        );
 
         // Assert all 3 Role::Tool messages are recorded in history
         let guard = rig.state.harness.lock();
@@ -677,7 +737,9 @@ async fn set_title_universal_tool_updates_session_and_latches_title_set_flag() {
         });
 
         rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Token("Session initialized with concise title.".to_string()));
+            let _ = tx.send(LlmResponse::Token(
+                "Session initialized with concise title.".to_string(),
+            ));
             let _ = tx.send(LlmResponse::Finished);
         });
 
@@ -689,7 +751,10 @@ async fn set_title_universal_tool_updates_session_and_latches_title_set_flag() {
         {
             let guard = rig.state.harness.lock();
             let harness = guard.as_ref().expect("Harness must be mounted");
-            assert!(harness.title_set(), "harness.title_set must be latched to true");
+            assert!(
+                harness.title_set(),
+                "harness.title_set must be latched to true"
+            );
 
             let filter = ToolFilter {
                 mode: PipelineMode::Modular,
@@ -699,12 +764,16 @@ async fn set_title_universal_tool_updates_session_and_latches_title_set_flag() {
             };
             let defs = harness.tool_registry().active_definitions(&filter);
             assert!(
-                !defs.iter().any(|d| d.name == "set_title" || d.name == "respond_and_set_title"),
+                !defs
+                    .iter()
+                    .any(|d| d.name == "set_title" || d.name == "respond_and_set_title"),
                 "set_title must be filtered out once title_set is true"
             );
         }
 
-        let title = rig.wait_for_session_title("Cognitive Architecture Spec", Duration::from_secs(5)).await;
+        let title = rig
+            .wait_for_session_title("Cognitive Architecture Spec", Duration::from_secs(5))
+            .await;
         assert_eq!(
             title.as_deref(),
             Some("Cognitive Architecture Spec"),
@@ -732,9 +801,8 @@ async fn turn_cancellation_during_tool_execution_aborts_cleanly_and_clears_turn_
         let turn_id = 401;
 
         // Initialize turn_open to true to verify that cancellation resets it on the router thread
-        rig.state.pipeline.set_turn_open(true);
 
-        let cancel_token = rig.state.pipeline.turn_token();
+        let cancel_token = rig.state.pipeline.turn_cancel_token();
         let cancel_clone = cancel_token.clone();
 
         rig.scripted_llm.push_step(move |tx| {
@@ -764,12 +832,11 @@ async fn turn_cancellation_during_tool_execution_aborts_cleanly_and_clears_turn_
             .await
             .expect("VoxEvent::Cancelled must be emitted on event channel");
 
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        while tokio::time::Instant::now() < deadline && rig.state.pipeline.is_turn_open() {
-            tokio::task::yield_now().await;
-        }
-
-        assert!(!rig.state.pipeline.is_turn_open(), "turn_open must be reset to false on cancellation");
+        assert!(
+            rig.wait_for_state(InteractionState::Ready, Duration::from_secs(5))
+                .await,
+            "terminal event must drive the pipeline to Ready"
+        );
     })
     .await
     .expect("test timed out");
@@ -786,7 +853,7 @@ async fn turn_cancellation_with_partial_spoken_text_commits_interrupted_turn() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let rig = Rig::new().await;
         let turn_id = 402;
-        let cancel_token = rig.state.pipeline.turn_token();
+        let cancel_token = rig.state.pipeline.turn_cancel_token();
         let cancel_token_clone = cancel_token.clone();
         let acc = Arc::clone(&rig.state.pipeline_accumulator);
 
@@ -804,7 +871,9 @@ async fn turn_cancellation_with_partial_spoken_text_commits_interrupted_turn() {
 
         let cancel_flag = cancel_token.clone();
         rig.scripted_llm.push_step(move |tx| {
-            let _ = tx.send(LlmResponse::Token("Partial sentence before interruption.".to_string()));
+            let _ = tx.send(LlmResponse::Token(
+                "Partial sentence before interruption.".to_string(),
+            ));
             while !cancel_flag.is_cancelled() {
                 std::thread::yield_now();
             }
@@ -823,9 +892,14 @@ async fn turn_cancellation_with_partial_spoken_text_commits_interrupted_turn() {
             other => panic!("Expected Cancelled outcome, got {:?}", other),
         }
 
-        let recorded_text = rig.wait_for_turn_assistant_text(Duration::from_secs(5)).await;
+        let recorded_text = rig
+            .wait_for_turn_assistant_text(Duration::from_secs(5))
+            .await;
         assert!(
-            recorded_text.as_deref().map(|t| t.contains("Partial sentence")).unwrap_or(false),
+            recorded_text
+                .as_deref()
+                .map(|t| t.contains("Partial sentence"))
+                .unwrap_or(false),
             "Database turns table must record the interrupted partial speech; saw {:?}",
             recorded_text
         );
@@ -850,7 +924,7 @@ async fn turn_cancellation_before_speech_rolls_back_history_with_zero_db_artifac
             let _ = tx.send(LlmResponse::Cancelled);
         });
 
-        rig.state.pipeline.turn_token().cancel();
+        rig.state.pipeline.turn_cancel_token().cancel();
 
         let req = rig.turn_request("Prompt cancelled before speech", turn_id);
         let outcome = Harness::execute_turn(&rig.state.harness, req).await;
@@ -864,11 +938,17 @@ async fn turn_cancellation_before_speech_rolls_back_history_with_zero_db_artifac
 
         let conn = rig.state.db.connect().expect("db connect");
         let mut rows = conn
-            .query("SELECT COUNT(*) FROM turns WHERE session_id = ? AND turn_id = ?;", (rig.session_id, turn_id as i64))
+            .query(
+                "SELECT COUNT(*) FROM turns WHERE session_id = ? AND turn_id = ?;",
+                (rig.session_id, turn_id as i64),
+            )
             .await
             .expect("query turns");
         let count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
-        assert_eq!(count, 0, "Zero turns must be persisted when cancelled before speech");
+        assert_eq!(
+            count, 0,
+            "Zero turns must be persisted when cancelled before speech"
+        );
     })
     .await
     .expect("test timed out");
@@ -887,7 +967,6 @@ async fn stream_error_clears_turn_open_and_dispatches_error_event() {
         let turn_id = 404;
 
         // Initialize turn_open to true to verify that error handling resets it on the router thread
-        rig.state.pipeline.set_turn_open(true);
 
         rig.scripted_llm.push_step(move |tx| {
             let _ = tx.send(LlmResponse::Error(PipelineError {
@@ -902,9 +981,15 @@ async fn stream_error_clears_turn_open_and_dispatches_error_event() {
         let outcome = Harness::execute_turn(&rig.state.harness, req).await;
 
         match outcome {
-            TurnOutcome::Error { turn_id: tid, message } => {
+            TurnOutcome::Error {
+                turn_id: tid,
+                message,
+            } => {
                 assert_eq!(tid, turn_id);
-                assert!(message.contains("Upstream model service timeout") || message.contains("LLM stream error"));
+                assert!(
+                    message.contains("Upstream model service timeout")
+                        || message.contains("LLM stream error")
+                );
             }
             other => panic!("Expected Error outcome, got {:?}", other),
         }
@@ -924,12 +1009,11 @@ async fn stream_error_clears_turn_open_and_dispatches_error_event() {
             assert!(err.message.contains("Upstream model service timeout"));
         }
 
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        while tokio::time::Instant::now() < deadline && rig.state.pipeline.is_turn_open() {
-            tokio::task::yield_now().await;
-        }
-
-        assert!(!rig.state.pipeline.is_turn_open(), "turn_open must be false after error");
+        assert!(
+            rig.wait_for_state(InteractionState::Ready, Duration::from_secs(5))
+                .await,
+            "terminal event must drive the pipeline to Ready"
+        );
     })
     .await
     .expect("test timed out");
@@ -941,18 +1025,17 @@ async fn stream_error_clears_turn_open_and_dispatches_error_event() {
 
 /// PURPOSE:  Catch loss of completed tool observations or accidental deletion of the user prompt when a turn is cancelled after Step 1 completes.
 /// SCENARIO: Step 1 executes [set_title, search_memory] and commits; during Step 2 tool execution, `cancel_token.cancel()` fires.
-/// ASSERTS:  TurnOutcome is Cancelled; `harness.messages()` retains the User message, Step 1 Assistant(tool_calls) + 2 Tool observations, and Step 2 Assistant(tool_calls) + synthesized cancelled Tool observation (zero orphaned tool_call_ids); `state.pipeline.is_turn_open()` is false after router processes VoxEvent::Cancelled.
+/// ASSERTS:  TurnOutcome is Cancelled; `harness.messages()` retains the User message, Step 1 Assistant(tool_calls) + 2 Tool observations, and Step 2 Assistant(tool_calls) + synthesized cancelled Tool observation (zero orphaned tool_call_ids); pipeline reaches Ready after router processes VoxEvent::Cancelled.
 /// CLASS:    regression
 /// REQUIRES: none
-/// MUTANT:   In `ConversationHistoryStage::rollback_last_user_turn` (`history.rs`), remove the `if last.role == Role::User` guard so it pops unconditionally, OR move `commit_tool_step` back to `step7_commit_completed`.
+/// MUTANT:   In `Harness::commit_tool_step` (`chassis.rs`), delete the `flush_staged_user_query()` call.
 #[tokio::test]
 async fn mid_turn_cancellation_on_step_two_preserves_step_one_history_and_forbids_user_rollback() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let rig = Rig::new().await;
         let turn_id = 501;
 
-        rig.state.pipeline.set_turn_open(true);
-        let cancel_token = rig.state.pipeline.turn_token();
+        let cancel_token = rig.state.pipeline.turn_cancel_token();
         let cancel_clone = cancel_token.clone();
 
         // Pass 1 (Step 1): Emits 2 tool calls (set_title and search_memory)
@@ -999,11 +1082,10 @@ async fn mid_turn_cancellation_on_step_two_preserves_step_one_history_and_forbid
             .await
             .expect("VoxEvent::Cancelled must be emitted on event channel");
 
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        while tokio::time::Instant::now() < deadline && rig.state.pipeline.is_turn_open() {
-            tokio::task::yield_now().await;
-        }
-        assert!(!rig.state.pipeline.is_turn_open(), "turn_open must be false after cancellation");
+        assert!(
+            rig.wait_for_state(InteractionState::Ready, Duration::from_secs(5)).await,
+            "terminal event must drive the pipeline to Ready"
+        );
 
         // Assert conversation history invariants
         let guard = rig.state.harness.lock();
@@ -1014,7 +1096,7 @@ async fn mid_turn_cancellation_on_step_two_preserves_step_one_history_and_forbid
         let user_msg = messages.iter().find(|m| m.role == Role::User);
         assert!(
             user_msg.is_some(),
-            "User query must remain in conversation history; rollback_last_user_turn must NOT pop answered turns!"
+            "Staged user query must be committed with the first tool step and never rolled back!"
         );
         assert_eq!(user_msg.unwrap().content, query);
 
@@ -1052,25 +1134,26 @@ async fn mid_turn_cancellation_on_step_two_preserves_step_one_history_and_forbid
     .expect("test timed out");
 }
 
-/// PURPOSE:  Catch stale unanswered Role::User turns polluting history when the user barges in during Step 0 thinking before any preamble speech or tool execution.
+/// PURPOSE:  Catch a staged user query leaking into canonical history when a Step 0 turn is cancelled before any artifact exists.
 /// SCENARIO: Model streams Thinking tokens in Step 0 and `cancel_token.cancel()` triggers before any Token or ToolCall is emitted.
-/// ASSERTS:  TurnOutcome is Cancelled; `rollback_last_user_turn` pops the unanswered Role::User message leaving only Role::System in `harness.messages()`; `turn_open` is false.
+/// ASSERTS:  TurnOutcome is Cancelled; `harness.messages()` contains only Role::System; the staged query never entered history; pipeline reaches Ready.
 /// CLASS:    suppression
 /// REQUIRES: none
-/// MUTANT:   In `step7_handle_cancelled` (`steps.rs`), delete the call to `harness.rollback_last_user_turn()`.
+/// MUTANT:   In `Harness::stage_user_query` (`chassis.rs`), call `self.history.push_user_turn(query)` instead of staging it.
 #[tokio::test]
-async fn step_zero_cancellation_before_speech_or_tools_rolls_back_unanswered_user_turn() {
+async fn step_zero_cancellation_discards_staged_query_without_touching_history() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let rig = Rig::new().await;
         let turn_id = 502;
 
-        rig.state.pipeline.set_turn_open(true);
-        let cancel_token = rig.state.pipeline.turn_token();
+        let cancel_token = rig.state.pipeline.turn_cancel_token();
         let cancel_clone = cancel_token.clone();
 
         // Step 0: Model streams thinking tokens and gets cancelled before any token or tool call
         rig.scripted_llm.push_step(move |tx| {
-            let _ = tx.send(LlmResponse::Thinking("Thinking deeply in Step 0...".to_string()));
+            let _ = tx.send(LlmResponse::Thinking(
+                "Thinking deeply in Step 0...".to_string(),
+            ));
             cancel_clone.cancel();
             let _ = tx.send(LlmResponse::Finished);
         });
@@ -1081,7 +1164,10 @@ async fn step_zero_cancellation_before_speech_or_tools_rolls_back_unanswered_use
 
         match outcome {
             TurnOutcome::Cancelled { .. } => {}
-            other => panic!("Expected Cancelled outcome on step 0 cancel, got {:?}", other),
+            other => panic!(
+                "Expected Cancelled outcome on step 0 cancel, got {:?}",
+                other
+            ),
         }
 
         // Wait for router thread to process VoxEvent::Cancelled
@@ -1093,13 +1179,13 @@ async fn step_zero_cancellation_before_speech_or_tools_rolls_back_unanswered_use
             .await
             .expect("VoxEvent::Cancelled must be emitted on event channel");
 
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        while tokio::time::Instant::now() < deadline && rig.state.pipeline.is_turn_open() {
-            tokio::task::yield_now().await;
-        }
-        assert!(!rig.state.pipeline.is_turn_open(), "turn_open must be false after cancellation");
+        assert!(
+            rig.wait_for_state(InteractionState::Ready, Duration::from_secs(5))
+                .await,
+            "terminal event must drive the pipeline to Ready"
+        );
 
-        // Assert unanswered user turn was rolled back
+        // Assert the staged query never entered canonical history.
         let guard = rig.state.harness.lock();
         let harness = guard.as_ref().expect("Harness must be mounted");
         let messages = harness.messages();
@@ -1107,7 +1193,7 @@ async fn step_zero_cancellation_before_speech_or_tools_rolls_back_unanswered_use
         let has_user_msg = messages.iter().any(|m| m.role == Role::User);
         assert!(
             !has_user_msg,
-            "Unanswered user turn must be rolled back on Step 0 cancellation before speech or tools!"
+            "A Step 0 query must stay staged until an assistant artifact exists!"
         );
         assert!(
             messages.iter().any(|m| m.role == Role::System),
@@ -1193,7 +1279,9 @@ async fn parallel_tool_wave_executes_concurrently_and_commits_in_declaration_ord
 
         // Pass 2: Final response
         rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Token("All parallel tools executed.".to_string()));
+            let _ = tx.send(LlmResponse::Token(
+                "All parallel tools executed.".to_string(),
+            ));
             let _ = tx.send(LlmResponse::Finished);
         });
 
@@ -1208,10 +1296,27 @@ async fn parallel_tool_wave_executes_concurrently_and_commits_in_declaration_ord
 
         // Concurrency proof: All 3 tools must rendezvous and record "start:*" before ANY "end:*" is recorded
         let t = trace.lock().clone();
-        assert_eq!(t.len(), 6, "Expected 3 starts and 3 ends in trace log, got {:?}", t);
-        assert!(t[0].starts_with("start:"), "Entry 0 must be start:*, got {}", t[0]);
-        assert!(t[1].starts_with("start:"), "Entry 1 must be start:*, got {}", t[1]);
-        assert!(t[2].starts_with("start:"), "Entry 2 must be start:*, got {}", t[2]);
+        assert_eq!(
+            t.len(),
+            6,
+            "Expected 3 starts and 3 ends in trace log, got {:?}",
+            t
+        );
+        assert!(
+            t[0].starts_with("start:"),
+            "Entry 0 must be start:*, got {}",
+            t[0]
+        );
+        assert!(
+            t[1].starts_with("start:"),
+            "Entry 1 must be start:*, got {}",
+            t[1]
+        );
+        assert!(
+            t[2].starts_with("start:"),
+            "Entry 2 must be start:*, got {}",
+            t[2]
+        );
 
         // Out-of-order completion proof: P3 finishes fastest (0 yields), P2 next (2 yields), P1 slowest (4 yields)
         assert_eq!(t[3], "end:P3", "P3 must finish first due to 0 yields");
@@ -1226,7 +1331,11 @@ async fn parallel_tool_wave_executes_concurrently_and_commits_in_declaration_ord
             .iter()
             .filter(|m| m.role == Role::Tool)
             .collect();
-        assert_eq!(tool_msgs.len(), 3, "All 3 tools must be committed to history");
+        assert_eq!(
+            tool_msgs.len(),
+            3,
+            "All 3 tools must be committed to history"
+        );
         assert_eq!(tool_msgs[0].tool_call_id.as_deref(), Some("call-p1"));
         assert_eq!(tool_msgs[1].tool_call_id.as_deref(), Some("call-p2"));
         assert_eq!(tool_msgs[2].tool_call_id.as_deref(), Some("call-p3"));
@@ -1324,7 +1433,9 @@ async fn exclusive_tool_acts_as_strict_barrier_between_parallel_waves() {
 
         // Pass 2: Final synthesis
         rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Token("Batch with exclusive barrier executed.".to_string()));
+            let _ = tx.send(LlmResponse::Token(
+                "Batch with exclusive barrier executed.".to_string(),
+            ));
             let _ = tx.send(LlmResponse::Finished);
         });
 
@@ -1348,12 +1459,32 @@ async fn exclusive_tool_acts_as_strict_barrier_between_parallel_waves() {
         let p4_start = t.iter().position(|e| e == "start:P4").expect("start:P4");
 
         // P1 and P2 both complete before start:E1
-        assert!(p1_end < e1_start, "P1 must complete before E1 starts (p1_end={}, e1_start={})", p1_end, e1_start);
-        assert!(p2_end < e1_start, "P2 must complete before E1 starts (p2_end={}, e1_start={})", p2_end, e1_start);
+        assert!(
+            p1_end < e1_start,
+            "P1 must complete before E1 starts (p1_end={}, e1_start={})",
+            p1_end,
+            e1_start
+        );
+        assert!(
+            p2_end < e1_start,
+            "P2 must complete before E1 starts (p2_end={}, e1_start={})",
+            p2_end,
+            e1_start
+        );
 
         // end:E1 is recorded before either start:P3 or start:P4
-        assert!(e1_end < p3_start, "E1 must complete before P3 starts (e1_end={}, p3_start={})", e1_end, p3_start);
-        assert!(e1_end < p4_start, "E1 must complete before P4 starts (e1_end={}, p4_start={})", e1_end, p4_start);
+        assert!(
+            e1_end < p3_start,
+            "E1 must complete before P3 starts (e1_end={}, p3_start={})",
+            e1_end,
+            p3_start
+        );
+        assert!(
+            e1_end < p4_start,
+            "E1 must complete before P4 starts (e1_end={}, p4_start={})",
+            e1_end,
+            p4_start
+        );
 
         // Declaration order commit: [P1, P2, E1, P3, P4]
         let guard = rig.state.harness.lock();
@@ -1424,7 +1555,9 @@ async fn step_ceiling_breach_disables_tools_and_forces_spoken_summary_pass() {
 
         // Pass 3 (Forced Summary Pass with allow_tools == false): Final spoken summary
         rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Token("Final synthesized summary after reaching step limit.".to_string()));
+            let _ = tx.send(LlmResponse::Token(
+                "Final synthesized summary after reaching step limit.".to_string(),
+            ));
             let _ = tx.send(LlmResponse::Finished);
         });
 
@@ -1432,22 +1565,36 @@ async fn step_ceiling_breach_disables_tools_and_forces_spoken_summary_pass() {
         let outcome = Harness::execute_turn(&rig.state.harness, req).await;
 
         match outcome {
-            TurnOutcome::Completed { ref assistant_response, .. } => {
+            TurnOutcome::Completed {
+                ref assistant_response,
+                ..
+            } => {
                 assert_eq!(
                     assistant_response,
                     "Final synthesized summary after reaching step limit."
                 );
             }
-            other => panic!("Expected Completed outcome after forced summary pass, got {:?}", other),
+            other => panic!(
+                "Expected Completed outcome after forced summary pass, got {:?}",
+                other
+            ),
         }
 
         // Assert: LLM worker received 4 requests total; requests 0..=2 have non-empty tools, request 3 has false (tool-free)
         let requests = rig.requests();
-        assert_eq!(requests.len(), 4, "Expected 4 dispatches (3 tool steps + 1 summary pass), got {}", requests.len());
+        assert_eq!(
+            requests.len(),
+            4,
+            "Expected 4 dispatches (3 tool steps + 1 summary pass), got {}",
+            requests.len()
+        );
         assert!(requests[0].1, "Pass 0 must offer tools");
         assert!(requests[1].1, "Pass 1 must offer tools");
         assert!(requests[2].1, "Pass 2 must offer tools");
-        assert!(!requests[3].1, "Pass 3 (summary pass) must be tool-free (allow_tools == false)");
+        assert!(
+            !requests[3].1,
+            "Pass 3 (summary pass) must be tool-free (allow_tools == false)"
+        );
 
         // Assert: TTS received AudioIntent::TurnResponse
         let tts_cmds = rig.drain_tts_commands();
@@ -1455,7 +1602,10 @@ async fn step_ceiling_breach_disables_tools_and_forces_spoken_summary_pass() {
             matches!(cmd, TtsCommand::Generate { intent: AudioIntent::TurnResponse, text, .. }
                 if text.contains("Final synthesized summary"))
         });
-        assert!(turn_response_cmd.is_some(), "Summary pass must dispatch TurnResponse to TTS");
+        assert!(
+            turn_response_cmd.is_some(),
+            "Summary pass must dispatch TurnResponse to TTS"
+        );
 
         // Assert: Conversation history holds all 3 tool steps (3 Assistant + 3 Tool) + final Assistant summary
         let guard = rig.state.harness.lock();
@@ -1465,13 +1615,21 @@ async fn step_ceiling_breach_disables_tools_and_forces_spoken_summary_pass() {
             .iter()
             .filter(|m| m.role == Role::Tool)
             .collect();
-        assert_eq!(tool_msgs.len(), 3, "All 3 tool observations must be committed");
+        assert_eq!(
+            tool_msgs.len(),
+            3,
+            "All 3 tool observations must be committed"
+        );
         let assistant_msgs: Vec<_> = harness
             .messages()
             .iter()
             .filter(|m| m.role == Role::Assistant)
             .collect();
-        assert_eq!(assistant_msgs.len(), 4, "3 intermediate tool calls + 1 final summary pass");
+        assert_eq!(
+            assistant_msgs.len(),
+            4,
+            "3 intermediate tool calls + 1 final summary pass"
+        );
     })
     .await
     .expect("test timed out");
@@ -1619,7 +1777,9 @@ async fn identical_tool_call_loop_triggers_strike_one_warning_then_strike_two_ci
 
         // Pass 4 (Forced Summary Pass with allow_tools == false)
         rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Token("Synthesized summary after circuit break.".to_string()));
+            let _ = tx.send(LlmResponse::Token(
+                "Synthesized summary after circuit break.".to_string(),
+            ));
             let _ = tx.send(LlmResponse::Finished);
         });
 
@@ -1643,7 +1803,10 @@ async fn identical_tool_call_loop_triggers_strike_one_warning_then_strike_two_ci
         assert!(requests[1].1, "Pass 1 must offer tools");
         assert!(requests[2].1, "Pass 2 must offer tools");
         assert!(requests[3].1, "Pass 3 must offer tools");
-        assert!(!requests[4].1, "Pass 4 (summary pass) must be tool-free (allow_tools == false)");
+        assert!(
+            !requests[4].1,
+            "Pass 4 (summary pass) must be tool-free (allow_tools == false)"
+        );
 
         let guard = rig.state.harness.lock();
         let harness = guard.as_ref().expect("Harness must be mounted");
@@ -1731,7 +1894,9 @@ async fn ping_pong_alternating_tool_loop_triggers_two_strike_circuit_breaker() {
 
         // Step 5: Summary pass (allow_tools == false)
         rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Token("Summary after ping pong break.".to_string()));
+            let _ = tx.send(LlmResponse::Token(
+                "Summary after ping pong break.".to_string(),
+            ));
             let _ = tx.send(LlmResponse::Finished);
         });
 
@@ -1751,8 +1916,14 @@ async fn ping_pong_alternating_tool_loop_triggers_two_strike_circuit_breaker() {
             "Expected 6 dispatches (5 tool steps + 1 summary pass), got {}",
             requests.len()
         );
-        assert!(requests[0..=4].iter().all(|(_, tools)| *tools), "Steps 0..=4 must offer tools");
-        assert!(!requests[5].1, "Pass following Strike 2 must have allow_tools == false");
+        assert!(
+            requests[0..=4].iter().all(|(_, tools)| *tools),
+            "Steps 0..=4 must offer tools"
+        );
+        assert!(
+            !requests[5].1,
+            "Pass following Strike 2 must have allow_tools == false"
+        );
 
         let guard = rig.state.harness.lock();
         let harness = guard.as_ref().expect("Harness must be mounted");
@@ -1761,7 +1932,10 @@ async fn ping_pong_alternating_tool_loop_triggers_two_strike_circuit_breaker() {
             .iter()
             .filter(|m| m.role == Role::Tool)
             .collect();
-        assert!(tool_msgs.len() >= 4, "At least 4 tool observations must be committed");
+        assert!(
+            tool_msgs.len() >= 4,
+            "At least 4 tool observations must be committed"
+        );
         let fourth_obs = &tool_msgs[3].content;
         assert!(
             fourth_obs.contains("[SYSTEM WARNING:") && fourth_obs.contains("ping_pong"),
@@ -1827,7 +2001,9 @@ async fn consecutive_error_steps_trigger_two_strike_guardrail_and_force_summary(
 
         // Step 4: Summary pass (allow_tools == false)
         rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Token("Summary after consecutive error circuit break.".to_string()));
+            let _ = tx.send(LlmResponse::Token(
+                "Summary after consecutive error circuit break.".to_string(),
+            ));
             let _ = tx.send(LlmResponse::Finished);
         });
 
@@ -1847,7 +2023,10 @@ async fn consecutive_error_steps_trigger_two_strike_guardrail_and_force_summary(
             "Expected 5 dispatches (4 failing steps + 1 summary pass), got {}",
             requests.len()
         );
-        assert!(requests[0..=3].iter().all(|(_, tools)| *tools), "Steps 0..=3 must offer tools");
+        assert!(
+            requests[0..=3].iter().all(|(_, tools)| *tools),
+            "Steps 0..=3 must offer tools"
+        );
         assert!(!requests[4].1, "Pass 4 must have allow_tools == false");
 
         let guard = rig.state.harness.lock();
@@ -1857,7 +2036,10 @@ async fn consecutive_error_steps_trigger_two_strike_guardrail_and_force_summary(
             .iter()
             .filter(|m| m.role == Role::Tool)
             .collect();
-        assert!(tool_msgs.len() >= 3, "At least 3 tool observations must be committed");
+        assert!(
+            tool_msgs.len() >= 3,
+            "At least 3 tool observations must be committed"
+        );
         let step2_obs = &tool_msgs[2].content;
         assert!(
             step2_obs.contains("[SYSTEM WARNING:") && step2_obs.contains("error_cascade"),
@@ -1899,7 +2081,9 @@ async fn oversized_tool_observation_spills_to_tier4_cache_and_commits_head_tail_
         });
 
         rig.scripted_llm.push_step(|tx| {
-            let _ = tx.send(LlmResponse::Token("Turn completed after tool execution.".to_string()));
+            let _ = tx.send(LlmResponse::Token(
+                "Turn completed after tool execution.".to_string(),
+            ));
             let _ = tx.send(LlmResponse::Finished);
         });
 
@@ -1923,10 +2107,22 @@ async fn oversized_tool_observation_spills_to_tier4_cache_and_commits_head_tail_
         let obs = &tool_msgs[0].content;
 
         // Check head and tail sentinels and truncation notice
-        assert!(obs.contains("HEAD_SENTINEL_LINE_1"), "Observation must preserve head sentinel");
-        assert!(obs.contains("TAIL_SENTINEL_LINE_500"), "Observation must preserve tail sentinel");
-        assert!(obs.contains("Output truncated"), "Observation must contain truncation notice marker");
-        assert!(!obs.contains("MIDDLE_SECRET_PAYLOAD"), "Observation must NOT contain stripped middle payload");
+        assert!(
+            obs.contains("HEAD_SENTINEL_LINE_1"),
+            "Observation must preserve head sentinel"
+        );
+        assert!(
+            obs.contains("TAIL_SENTINEL_LINE_500"),
+            "Observation must preserve tail sentinel"
+        );
+        assert!(
+            obs.contains("Output truncated"),
+            "Observation must contain truncation notice marker"
+        );
+        assert!(
+            !obs.contains("MIDDLE_SECRET_PAYLOAD"),
+            "Observation must NOT contain stripped middle payload"
+        );
 
         // Verify Tier 4 spillover file exists on disk
         let spillover_file = vox_lib::utils::paths::session_tool_outputs_dir(rig.session_id)
@@ -1936,7 +2132,8 @@ async fn oversized_tool_observation_spills_to_tier4_cache_and_commits_head_tail_
             "Spillover cache file must exist at {:?}",
             spillover_file
         );
-        let spilled_content = std::fs::read_to_string(&spillover_file).expect("read spillover file");
+        let spilled_content =
+            std::fs::read_to_string(&spillover_file).expect("read spillover file");
         assert!(spilled_content.contains("HEAD_SENTINEL_LINE_1"));
         assert!(spilled_content.contains("MIDDLE_SECRET_PAYLOAD"));
         assert!(spilled_content.contains("TAIL_SENTINEL_LINE_500"));
@@ -2001,7 +2198,10 @@ async fn truncation_policy_none_preserves_full_output_without_disk_spillover() {
 
             assert!(obs.contains("POLICY_NONE_HEAD"));
             assert!(obs.contains("POLICY_NONE_TAIL"));
-            assert!(!obs.contains("Output truncated"), "Truncation notice must NOT appear for Policy::None");
+            assert!(
+                !obs.contains("Output truncated"),
+                "Truncation notice must NOT appear for Policy::None"
+            );
         }
 
         // Zero files created in session tool outputs dir
@@ -2013,7 +2213,10 @@ async fn truncation_policy_none_preserves_full_output_without_disk_spillover() {
         } else {
             0
         };
-        assert_eq!(file_count, 0, "Zero spillover files must be created for TruncationPolicy::None");
+        assert_eq!(
+            file_count, 0,
+            "Zero spillover files must be created for TruncationPolicy::None"
+        );
 
         // Provenance assert: session_tool_calls must record truncated = 0 (bounded poll for async persistence)
         let conn = rig.state.db.connect().expect("db connect");
@@ -2268,10 +2471,7 @@ impl ToolDefinition for SimpleTestTool {
         _ctx: &'a ToolExecutionContext,
     ) -> BoxFuture<'a, Result<ToolResult, ToolError>> {
         use futures_util::future::FutureExt;
-        async move {
-            Ok(ToolResult::new("done simple"))
-        }
-        .boxed()
+        async move { Ok(ToolResult::new("done simple")) }.boxed()
     }
 }
 
@@ -2316,9 +2516,7 @@ async fn stop_turn_aborts_active_turn_and_transitions_to_ready_without_ending_se
 
         let req = rig.turn_request("Active query before StopTurn", turn_id);
         let harness_arc = Arc::clone(&rig.state.harness);
-        let handle = tokio::spawn(async move {
-            Harness::execute_turn(&harness_arc, req).await
-        });
+        let handle = tokio::spawn(async move { Harness::execute_turn(&harness_arc, req).await });
 
         // Wait until tool starts executing in Working
         entered_rx.recv().await.expect("tool entered");
@@ -2327,31 +2525,28 @@ async fn stop_turn_aborts_active_turn_and_transitions_to_ready_without_ending_se
             InteractionState::Working,
             "pipeline must be in Working state while tool executes"
         );
-        assert!(rig.state.pipeline.is_turn_open());
 
         // Esc Step 1: send StopTurn event
         rig.send_event(VoxEvent::StopTurn);
 
         // Assert pipeline transitions to Ready (bounded 500ms check)
         assert!(
-            rig.wait_for_state(InteractionState::Ready, Duration::from_millis(500)).await,
+            rig.wait_for_state(InteractionState::Ready, Duration::from_millis(500))
+                .await,
             "pipeline must transition to Ready on StopTurn"
         );
 
         // Assert harness remains mounted and inbox is cleared
         {
             let guard = rig.state.harness.lock();
-            let harness = guard.as_ref().expect("Harness must remain mounted in app_state");
+            let harness = guard
+                .as_ref()
+                .expect("Harness must remain mounted in app_state");
             assert!(
                 harness.inbox().is_empty(),
                 "StepInbox must be synchronously cleared on StopTurn"
             );
         }
-
-        assert!(
-            !rig.state.pipeline.is_turn_open(),
-            "turn_open must be reset to false on StopTurn"
-        );
 
         let _ = release_tx.send(()).await;
         let outcome = handle.await.expect("turn join");
@@ -2401,9 +2596,7 @@ async fn ready_state_disengages_session_to_idle_on_second_esc() {
 
         let req = rig.turn_request("Query for two-step Esc", turn_id);
         let harness_arc = Arc::clone(&rig.state.harness);
-        let handle = tokio::spawn(async move {
-            Harness::execute_turn(&harness_arc, req).await
-        });
+        let handle = tokio::spawn(async move { Harness::execute_turn(&harness_arc, req).await });
 
         entered_rx.recv().await.expect("tool entered");
         assert_eq!(rig.state.pipeline.state(), InteractionState::Working);
@@ -2411,7 +2604,8 @@ async fn ready_state_disengages_session_to_idle_on_second_esc() {
         // Esc Step 1: StopTurn aborts active turn to Ready
         rig.send_event(VoxEvent::StopTurn);
         assert!(
-            rig.wait_for_state(InteractionState::Ready, Duration::from_millis(500)).await,
+            rig.wait_for_state(InteractionState::Ready, Duration::from_millis(500))
+                .await,
             "first Esc must transition pipeline to Ready"
         );
         assert!(
@@ -2422,7 +2616,8 @@ async fn ready_state_disengages_session_to_idle_on_second_esc() {
         // Esc Step 2: EndSession disengages session from Ready to Idle
         rig.send_event(VoxEvent::EndSession);
         assert!(
-            rig.wait_for_state(InteractionState::Idle, Duration::from_millis(500)).await,
+            rig.wait_for_state(InteractionState::Idle, Duration::from_millis(500))
+                .await,
             "second Esc must transition pipeline to Idle"
         );
         assert!(
@@ -2437,12 +2632,12 @@ async fn ready_state_disengages_session_to_idle_on_second_esc() {
     .expect("test timed out");
 }
 
-/// PURPOSE:  Scenario A (Step 0 Thinking, !has_committed_steps_this_turn) barge-in rolls back premature Step 0 user turn, stashes prompt in continuation prefix, and merges with new speech.
+/// PURPOSE:  Scenario A (Step 0 Thinking, phase != Committed) barge-in discards the staged query, stashes it as continuation prefix, and merges with new speech.
 /// SCENARIO: User speaks "search for"; model streams interim tokens in Step 0 Thinking; user interrupts with " the budget report".
 /// ASSERTS:  Stream aborts; Step 0 user turn is rolled back from history; continuation_prefix contains "search for"; on TranscriptFinal, merged prompt "search for the budget report" is dispatched.
 /// CLASS:    contract
 /// REQUIRES: none
-/// MUTANT:   In Scenario A, omit rollback_last_user_turn().
+/// MUTANT:   In Scenario A (`interrupt.rs`), omit `take_staged_query()`.
 #[tokio::test]
 async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
     tokio::time::timeout(Duration::from_secs(15), async {
@@ -2451,8 +2646,8 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
 
         // Verify Step 0 provenance
         assert!(
-            !rig.state.harness.lock().as_ref().unwrap().has_committed_steps_this_turn(),
-            "has_committed_steps_this_turn must be false at turn onset"
+            rig.state.harness.lock().as_ref().unwrap().turn_phase() != TurnPhase::Committed,
+            "turn phase must be Thinking at turn onset"
         );
 
         // Model starts streaming in Step 0 Thinking (streaming paused to simulate in-flight thinking)
@@ -2471,13 +2666,13 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
 
         let req = rig.turn_request("search for", turn_id);
         let harness_arc = Arc::clone(&rig.state.harness);
-        let _turn_handle = tokio::spawn(async move {
-            Harness::execute_turn(&harness_arc, req).await
-        });
+        let _turn_handle =
+            tokio::spawn(async move { Harness::execute_turn(&harness_arc, req).await });
 
         // Wait until pipeline enters Thinking and stream begins
         assert!(
-            rig.wait_for_state(InteractionState::Thinking, Duration::from_millis(500)).await,
+            rig.wait_for_state(InteractionState::Thinking, Duration::from_millis(500))
+                .await,
             "pipeline must enter Thinking in Step 0"
         );
 
@@ -2487,7 +2682,8 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
         });
 
         assert!(
-            rig.wait_for_state(InteractionState::Listening, Duration::from_millis(500)).await,
+            rig.wait_for_state(InteractionState::Listening, Duration::from_millis(500))
+                .await,
             "pipeline must transition to Listening on SpeechStart"
         );
 
@@ -2497,7 +2693,9 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
             let harness = guard.as_ref().unwrap();
             let messages = harness.messages();
             assert!(
-                !messages.iter().any(|m| m.role == Role::User && m.content == "search for"),
+                !messages
+                    .iter()
+                    .any(|m| m.role == Role::User && m.content == "search for"),
                 "Step 0 user query must be rolled back from history on Scenario A interrupt"
             );
         }
@@ -2528,7 +2726,8 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         assert_eq!(
-            rig.dispatch_count(), 2,
+            rig.dispatch_count(),
+            2,
             "merged query must dispatch to LLM in Thinking"
         );
 
@@ -2540,9 +2739,9 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
                 guard
                     .as_ref()
                     .map(|h| {
-                        h.messages()
-                            .iter()
-                            .any(|m| m.role == Role::User && m.content == "search for the budget report")
+                        h.messages().iter().any(|m| {
+                            m.role == Role::User && m.content == "search for the budget report"
+                        })
                     })
                     .unwrap_or(false)
             };
@@ -2554,7 +2753,10 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
         let guard = rig.state.harness.lock();
         let harness = guard.as_ref().unwrap();
         assert!(
-            harness.messages().iter().any(|m| m.role == Role::User && m.content == "search for the budget report"),
+            harness
+                .messages()
+                .iter()
+                .any(|m| m.role == Role::User && m.content == "search for the budget report"),
             "history must record merged prompt as single Role::User message"
         );
     })
@@ -2562,7 +2764,7 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
     .expect("test timed out");
 }
 
-/// PURPOSE:  Scenario B (Step K >= 1 Thinking, has_committed_steps_this_turn == true) barge-in preserves committed tool steps, clears accumulator without continuation prefix, and appends standalone Role::User.
+/// PURPOSE:  Scenario B (Step K >= 1 Thinking, phase Committed) barge-in preserves committed tool steps, clears accumulator without continuation prefix, and appends standalone Role::User.
 /// SCENARIO: Turn executes Step 0 tool; in Step 1 Thinking, user interrupts with "Also check the weather".
 /// ASSERTS:  Step 1 stream aborts; Step 0 [User, Assistant(call), Tool(result)] preserved in history; continuation_prefix is EMPTY; new speech commits as standalone Role::User on top of tool history.
 /// CLASS:    contract
@@ -2609,9 +2811,8 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
 
         let req = rig.turn_request("Initial query for Scenario B", turn_id);
         let harness_arc = Arc::clone(&rig.state.harness);
-        let _turn_handle = tokio::spawn(async move {
-            Harness::execute_turn(&harness_arc, req).await
-        });
+        let _turn_handle =
+            tokio::spawn(async move { Harness::execute_turn(&harness_arc, req).await });
 
         // Wait until Step 0 completes tool execution and advances to Step 1 Thinking (500ms max)
         let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
@@ -2620,7 +2821,7 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
                 let guard = rig.state.harness.lock();
                 guard
                     .as_ref()
-                    .map(|h| h.has_committed_steps_this_turn())
+                    .map(|h| h.turn_phase() == TurnPhase::Committed)
                     .unwrap_or(false)
             };
             if committed {
@@ -2633,8 +2834,8 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
             let guard = rig.state.harness.lock();
             let harness = guard.as_ref().unwrap();
             assert!(
-                harness.has_committed_steps_this_turn(),
-                "has_committed_steps_this_turn must be true after Step 0 commits tool"
+                harness.turn_phase() == TurnPhase::Committed,
+                "turn phase must be Committed after Step 0 commits tool"
             );
         }
 
@@ -2644,7 +2845,8 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
         });
 
         assert!(
-            rig.wait_for_state(InteractionState::Listening, Duration::from_millis(500)).await,
+            rig.wait_for_state(InteractionState::Listening, Duration::from_millis(500))
+                .await,
             "pipeline must transition to Listening on Scenario B interrupt"
         );
 
@@ -2654,11 +2856,17 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
             let harness = guard.as_ref().unwrap();
             let messages = harness.messages();
             assert!(
-                messages.iter().any(|m| m.role == Role::User && m.content == "Initial query for Scenario B"),
+                messages
+                    .iter()
+                    .any(|m| m.role == Role::User && m.content == "Initial query for Scenario B"),
                 "Step 0 user query must remain in history"
             );
             assert!(
-                messages.iter().any(|m| m.role == Role::Assistant && m.tool_calls.as_ref().map(|c| !c.is_empty()).unwrap_or(false)),
+                messages.iter().any(|m| m.role == Role::Assistant
+                    && m.tool_calls
+                        .as_ref()
+                        .map(|c| !c.is_empty())
+                        .unwrap_or(false)),
                 "Step 0 tool call must remain in history"
             );
             assert!(
@@ -2697,7 +2905,9 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
         let guard = rig.state.harness.lock();
         let harness = guard.as_ref().unwrap();
         let messages = harness.messages();
-        let standalone_user = messages.iter().find(|m| m.role == Role::User && m.content == "Also check the weather");
+        let standalone_user = messages
+            .iter()
+            .find(|m| m.role == Role::User && m.content == "Also check the weather");
         assert!(
             standalone_user.is_some(),
             "Scenario B must append new speech as standalone Role::User, not merged with Step 0"
@@ -2712,7 +2922,7 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
 /// ASSERTS:  turn_token is NOT cancelled on SpeechStart in Working; inbox speech_hold_active is true; steering message injected as Role::User into Step 1.
 /// CLASS:    contract
 /// REQUIRES: none
-/// MUTANT:   In on_interrupt during Working, call state.pipeline.turn_token().cancel().
+/// MUTANT:   In on_interrupt during Working, call state.pipeline.turn_cancel_token().cancel().
 #[tokio::test]
 async fn active_working_speech_buffers_in_step_inbox_and_injects_at_step_boundary() {
     tokio::time::timeout(Duration::from_secs(15), async {
@@ -2750,9 +2960,8 @@ async fn active_working_speech_buffers_in_step_inbox_and_injects_at_step_boundar
 
         let req = rig.turn_request("Scenario C query", turn_id);
         let harness_arc = Arc::clone(&rig.state.harness);
-        let turn_handle = tokio::spawn(async move {
-            Harness::execute_turn(&harness_arc, req).await
-        });
+        let turn_handle =
+            tokio::spawn(async move { Harness::execute_turn(&harness_arc, req).await });
 
         // Wait until tool is executing in Working
         entered_rx.recv().await.expect("tool entered");
@@ -2767,7 +2976,7 @@ async fn active_working_speech_buffers_in_step_inbox_and_injects_at_step_boundar
 
         // Assert tool execution was NOT cancelled
         assert!(
-            !rig.state.pipeline.turn_token().is_cancelled(),
+            !rig.state.pipeline.turn_cancel_token().is_cancelled(),
             "turn_token must NOT be cancelled during Working SpeechStart"
         );
 
@@ -2800,7 +3009,9 @@ async fn active_working_speech_buffers_in_step_inbox_and_injects_at_step_boundar
         let guard = rig.state.harness.lock();
         let harness = guard.as_ref().unwrap();
         let messages = harness.messages();
-        let steering_msg = messages.iter().find(|m| m.role == Role::User && m.content == "Mid-work steering instruction");
+        let steering_msg = messages
+            .iter()
+            .find(|m| m.role == Role::User && m.content == "Mid-work steering instruction");
         assert!(
             steering_msg.is_some(),
             "steering instruction must be injected into history at step boundary"
@@ -2951,9 +3162,8 @@ async fn active_working_empty_speech_releases_hold_and_resumes_react_loop_withou
 
         let req = rig.turn_request("Query with false VAD cough", turn_id);
         let harness_arc = Arc::clone(&rig.state.harness);
-        let turn_handle = tokio::spawn(async move {
-            Harness::execute_turn(&harness_arc, req).await
-        });
+        let turn_handle =
+            tokio::spawn(async move { Harness::execute_turn(&harness_arc, req).await });
 
         // Empty speech arrives on event channel
         rig.send_event(VoxEvent::TranscriptFinal {
@@ -3035,8 +3245,14 @@ async fn step_inbox_drains_immediate_messages_and_retains_turn_boundary_messages
         ));
 
         let drained = inbox.drain_immediate();
-        assert_eq!(drained.len(), 2, "drain_immediate must return exactly the 2 Immediate messages");
-        assert!(drained.iter().all(|m| m.delivery == QueuedMessageDelivery::Immediate));
+        assert_eq!(
+            drained.len(),
+            2,
+            "drain_immediate must return exactly the 2 Immediate messages"
+        );
+        assert!(drained
+            .iter()
+            .all(|m| m.delivery == QueuedMessageDelivery::Immediate));
         assert_eq!(inbox.len(), 1, "TurnBoundary message must remain in inbox");
 
         // 2. Seam invariant check: coordinator drains Immediate messages into history at step boundary
@@ -3087,11 +3303,14 @@ async fn step_inbox_drains_immediate_messages_and_retains_turn_boundary_messages
         let harness = guard.as_ref().unwrap();
         let messages = harness.messages();
         assert!(
-            messages.iter().any(|m| m.role == Role::User && m.content == "Immediate steering in harness"),
+            messages
+                .iter()
+                .any(|m| m.role == Role::User && m.content == "Immediate steering in harness"),
             "coordinator must drain Immediate message and inject it into history at step boundary"
         );
         assert_eq!(
-            harness.inbox().len(), 1,
+            harness.inbox().len(),
+            1,
             "TurnBoundary message must remain retained in inbox across step boundaries"
         );
     })
@@ -3121,7 +3340,9 @@ fn lint_arch_enforces_rule_harn_01_and_forbids_actor_commands_in_loop_and_steps(
         "lint-arch.sh must verify that harness/stages/tools does not exist"
     );
     assert!(
-        script_content.contains("TtsCommand") && script_content.contains("LlmCommand") && script_content.contains("PersistenceEvent"),
+        script_content.contains("TtsCommand")
+            && script_content.contains("LlmCommand")
+            && script_content.contains("PersistenceEvent"),
         "lint-arch.sh must forbid raw actor commands in loop.rs and steps.rs"
     );
 
@@ -3168,7 +3389,3 @@ async fn sibling_tools_chassis_executes_isolated_from_stages() {
         "ToolRegistry must successfully vend search_memory tool definition"
     );
 }
-
-
-
-

@@ -65,7 +65,7 @@ async fn real_synthesis_is_ingested_and_arms_the_pre_roll() {
         state.pipeline.set_state(vox_lib::core::state::InteractionState::Thinking);
 
         let cancel_flag = Arc::new(AtomicBool::new(false));
-        let pending_jobs = Arc::clone(&state.pipeline.pending_synthesis_jobs);
+        let pending_jobs = Arc::clone(&state.pipeline.pending_tts_jobs);
         pending_jobs.store(1, Ordering::Relaxed);
 
         let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
@@ -251,6 +251,7 @@ async fn short_utterance_needs_a_flush_to_arm_the_pre_roll() {
             state_atomic: Arc::new(AtomicU32::new(0)),
             current_turn_id: Arc::clone(&current_turn_id),
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
+            sink_occupied: Arc::new(AtomicBool::new(false)),
             playback_intent: Arc::new(AtomicU8::new(0)),
             event_tx: event_tx.clone(),
             is_playback_muted: Arc::new(AtomicBool::new(false)),

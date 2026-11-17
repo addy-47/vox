@@ -273,7 +273,10 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let mut demuxer = ThinkTagDemuxer::new();
 
-        demuxer.feed("こんにちは 🤖 <THINK> 思案中... 🚀 </THINK> さようなら 🎉", &tx);
+        demuxer.feed(
+            "こんにちは 🤖 <THINK> 思案中... 🚀 </THINK> さようなら 🎉",
+            &tx,
+        );
         demuxer.flush(&tx);
 
         let events: Vec<_> = rx.try_iter().collect();

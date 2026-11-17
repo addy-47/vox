@@ -17,12 +17,12 @@
 
 mod common;
 
-use ringbuf::traits::Observer;
 use std::{
-    sync::{Arc, atomic::Ordering},
+    sync::{atomic::Ordering, Arc},
     time::{Duration, Instant},
 };
 
+use ringbuf::traits::Observer;
 use vox_lib::{
     core::{
         events::{InteractionMode, PipelineMode, VoxEvent},
@@ -31,16 +31,14 @@ use vox_lib::{
     services::vad::VadBackendOption,
 };
 
-
-
-
 fn scene_vad_config() -> vox_lib::services::vad::actor::VadActorConfig {
-
-    use vox_lib::core::defaults::{
-        DEFAULT_VAD_PTT_NOISE_GATE, DEFAULT_VAD_SILENCE_DURATION_MS,
-        DEFAULT_VAD_SPEECH_ONSET_MS, DEFAULT_VAD_THRESHOLD,
+    use vox_lib::{
+        config::AudioOutputMode,
+        core::defaults::{
+            DEFAULT_VAD_PTT_NOISE_GATE, DEFAULT_VAD_SILENCE_DURATION_MS,
+            DEFAULT_VAD_SPEECH_ONSET_MS, DEFAULT_VAD_THRESHOLD,
+        },
     };
-    use vox_lib::config::AudioOutputMode;
 
     vox_lib::services::vad::actor::VadActorConfig {
         initial_threshold: DEFAULT_VAD_THRESHOLD,
@@ -78,11 +76,7 @@ async fn turn_row(state: &AppState, session_id: i64) -> Option<(String, String)>
     }
 }
 
-async fn wait_for_state(
-    state: &AppState,
-    expected: InteractionState,
-    timeout: Duration,
-) -> bool {
+async fn wait_for_state(state: &AppState, expected: InteractionState, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if state.pipeline.state() == expected {
@@ -125,7 +119,9 @@ impl SceneFixture {
             settings.memory.context_retrieval_enabled = false;
             settings.interaction.web_search_enabled = false;
         }
-        state.owner.store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
+        state
+            .owner
+            .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
         state.pipeline.set_state(InteractionState::Idle);
         state
             .conversation_id
@@ -188,7 +184,8 @@ async fn full_conversational_turn_runs_from_idle_to_ready_and_persists_the_turn(
 
         // Watch state before we touch anything — streaming + synthesis take ~10s,
         // so we must register the transient Listening/Thinking/Speaking windows.
-        let (seen_bits, watcher_join) = common::harness::spawn_state_watcher(&state, Duration::from_secs(45));
+        let (seen_bits, watcher_join) =
+            common::harness::spawn_state_watcher(&state, Duration::from_secs(45));
 
         rig.event_tx
             .send(VoxEvent::SessionStart {
@@ -217,9 +214,7 @@ async fn full_conversational_turn_runs_from_idle_to_ready_and_persists_the_turn(
         // CPAL drains the sink in 10 ms stereo slices; mirror that here.
         let mut speaker_out = [0.0f32; 960];
         let drain_deadline = Instant::now() + Duration::from_secs(30);
-        while Instant::now() < drain_deadline
-            && state.pipeline.state() != InteractionState::Ready
-        {
+        while Instant::now() < drain_deadline && state.pipeline.state() != InteractionState::Ready {
             rig.sink.process_output_buffer(&mut speaker_out);
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
@@ -237,7 +232,10 @@ async fn full_conversational_turn_runs_from_idle_to_ready_and_persists_the_turn(
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         let (user_text, assistant_text) = persisted.expect("turn must persist to the database");
-        assert!(!user_text.trim().is_empty(), "persisted user text must be non-empty");
+        assert!(
+            !user_text.trim().is_empty(),
+            "persisted user text must be non-empty"
+        );
         assert_eq!(assistant_text, "Hello! How can I help you today?");
         std::process::exit(0); //// ORT FastGelu teardown throws otherwise (F-004, see findings)
     })
@@ -291,7 +289,10 @@ async fn true_acoustic_barge_in_during_speaking_cancels_and_completes() {
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        assert!(seen_speaking, "turn 1 must reach Speaking before the barge-in");
+        assert!(
+            seen_speaking,
+            "turn 1 must reach Speaking before the barge-in"
+        );
         let turn_before = state.pipeline.turn_id.load(Ordering::Relaxed);
 
         // True acoustic double-talk: speaker echo (120 ms late, 0.5x attenuation) + the user's voice.
@@ -549,7 +550,10 @@ async fn sub_300ms_cough_recovers_to_ready_without_deadlock() {
         // 260 ms voiced burst lifted from the clip's high-energy window.
         const BURST_START: usize = 9_200;
         const BURST_END: usize = 13_360;
-        common::audio::stream_audio_to_ring_buffer(&audio[BURST_START..BURST_END], &mut rig.cap_prod);
+        common::audio::stream_audio_to_ring_buffer(
+            &audio[BURST_START..BURST_END],
+            &mut rig.cap_prod,
+        );
         common::audio::stream_silence_frames(&mut rig.cap_prod, 60);
 
         // Drain/pump to keep Kokoro teardown consistent with other F-004 scenes.

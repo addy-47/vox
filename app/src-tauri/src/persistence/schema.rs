@@ -249,7 +249,9 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
 
         if current_version > 0 && current_version < 16 {
             let has_tool_kind: bool = {
-                let mut rows = conn.query("PRAGMA table_info(session_tool_calls);", ()).await?;
+                let mut rows = conn
+                    .query("PRAGMA table_info(session_tool_calls);", ())
+                    .await?;
                 let mut found = false;
                 while let Some(row) = rows.next().await? {
                     let col_name: String = row.get(1)?;
@@ -289,7 +291,11 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
                 .await?;
 
                 conn.execute("DROP TABLE session_tool_calls;", ()).await?;
-                conn.execute("ALTER TABLE session_tool_calls_v2 RENAME TO session_tool_calls;", ()).await?;
+                conn.execute(
+                    "ALTER TABLE session_tool_calls_v2 RENAME TO session_tool_calls;",
+                    (),
+                )
+                .await?;
 
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_tool_calls_session_turn ON session_tool_calls(session_id, turn_id);",
@@ -350,7 +356,9 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
 
             if has_tool_calls {
                 let has_step_id: bool = {
-                    let mut rows = conn.query("PRAGMA table_info(session_tool_calls);", ()).await?;
+                    let mut rows = conn
+                        .query("PRAGMA table_info(session_tool_calls);", ())
+                        .await?;
                     let mut found = false;
                     while let Some(row) = rows.next().await? {
                         let col_name: String = row.get(1)?;
@@ -390,8 +398,11 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
                     .await?;
 
                     conn.execute("DROP TABLE session_tool_calls;", ()).await?;
-                    conn.execute("ALTER TABLE session_tool_calls_v17 RENAME TO session_tool_calls;", ())
-                        .await?;
+                    conn.execute(
+                        "ALTER TABLE session_tool_calls_v17 RENAME TO session_tool_calls;",
+                        (),
+                    )
+                    .await?;
 
                     conn.execute(
                         "CREATE INDEX IF NOT EXISTS idx_tool_calls_session_turn ON session_tool_calls(session_id, turn_id);",
@@ -420,10 +431,18 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             let step_cols = get_table_columns(conn, "session_steps").await?;
             if !step_cols.is_empty() {
                 if !step_cols.contains("prompt_tokens") {
-                    conn.execute("ALTER TABLE session_steps ADD COLUMN prompt_tokens INTEGER;", ()).await?;
+                    conn.execute(
+                        "ALTER TABLE session_steps ADD COLUMN prompt_tokens INTEGER;",
+                        (),
+                    )
+                    .await?;
                 }
                 if !step_cols.contains("completion_tokens") {
-                    conn.execute("ALTER TABLE session_steps ADD COLUMN completion_tokens INTEGER;", ()).await?;
+                    conn.execute(
+                        "ALTER TABLE session_steps ADD COLUMN completion_tokens INTEGER;",
+                        (),
+                    )
+                    .await?;
                 }
                 if !step_cols.contains("guardrail_strike") {
                     conn.execute("ALTER TABLE session_steps ADD COLUMN guardrail_strike INTEGER NOT NULL DEFAULT 0;", ()).await?;
@@ -439,7 +458,11 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
                     conn.execute("ALTER TABLE session_tool_calls ADD COLUMN truncated INTEGER NOT NULL DEFAULT 0;", ()).await?;
                 }
                 if !tool_cols.contains("spillover_path") {
-                    conn.execute("ALTER TABLE session_tool_calls ADD COLUMN spillover_path TEXT;", ()).await?;
+                    conn.execute(
+                        "ALTER TABLE session_tool_calls ADD COLUMN spillover_path TEXT;",
+                        (),
+                    )
+                    .await?;
                 }
             }
         }
@@ -554,9 +577,12 @@ async fn ensure_voice_metadata_columns(conn: &Connection) -> Result<()> {
     )
     .await?;
 
-    conn.execute("DROP TABLE IF EXISTS voice_favorites;", ()).await?;
-    conn.execute("DROP TABLE IF EXISTS voice_recents;", ()).await?;
-    conn.execute("DROP TABLE IF EXISTS remote_voice_cache;", ()).await?;
+    conn.execute("DROP TABLE IF EXISTS voice_favorites;", ())
+        .await?;
+    conn.execute("DROP TABLE IF EXISTS voice_recents;", ())
+        .await?;
+    conn.execute("DROP TABLE IF EXISTS remote_voice_cache;", ())
+        .await?;
 
     Ok(())
 }

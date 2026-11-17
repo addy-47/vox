@@ -695,7 +695,7 @@ async fn pause_transitions_to_paused_cancels_the_turn_and_yields_ownership() {
             .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
         state.pipeline.set_state(InteractionState::Ready);
 
-        let token_before_pause = state.pipeline.turn_token();
+        let token_before_pause = state.pipeline.turn_cancel_token();
         assert!(!token_before_pause.is_cancelled());
 
         let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
@@ -708,7 +708,7 @@ async fn pause_transitions_to_paused_cancels_the_turn_and_yields_ownership() {
 
         wait_for_state(&state, InteractionState::Paused, Duration::from_secs(5)).await;
 
-        assert!(state.pipeline.cancel_flag.load(Ordering::Relaxed));
+        assert!(state.pipeline.turn_cancel_token().is_cancelled());
         assert!(
             token_before_pause.is_cancelled(),
             "Turn token must be cancelled on pause"
@@ -841,8 +841,8 @@ async fn resume_restores_ready_and_the_assistant_ownership() {
             InteractionOwner::Assistant as u32,
             "Owner must be restored to Assistant on resume"
         );
-        assert!(!state.pipeline.turn_token().is_cancelled());
-        assert!(!state.pipeline.cancel_flag.load(Ordering::Relaxed));
+        assert!(!state.pipeline.turn_cancel_token().is_cancelled());
+        assert!(!state.pipeline.turn_cancel_token().is_cancelled());
 
         // The VAD must be restored to the assistant's passive mode.
         let vad_cmd_resume = vad_cmd_rx
@@ -1242,8 +1242,8 @@ async fn session_end_cancels_the_in_flight_turn() {
 
         wait_for_state(&state, InteractionState::Idle, Duration::from_secs(5)).await;
 
-        assert!(state.pipeline.turn_token().is_cancelled());
-        assert!(state.pipeline.cancel_flag.load(Ordering::Relaxed));
+        assert!(state.pipeline.turn_cancel_token().is_cancelled());
+        assert!(state.pipeline.turn_cancel_token().is_cancelled());
 
         shutdown_router(event_tx, router_handle).await;
     })

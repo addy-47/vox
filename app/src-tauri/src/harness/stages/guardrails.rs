@@ -1,5 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::hash::{Hash, Hasher};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    hash::{Hash, Hasher},
+};
 
 use serde_json::Value;
 
@@ -224,7 +226,10 @@ fn check_error_cascade(fingerprints: &[ToolCallFingerprint]) -> Option<String> {
     let s2 = steps[m - 1];
 
     if s1.0 == s0.0 + 1 && s2.0 == s1.0 + 1 && s0.1 && s1.1 && s2.1 {
-        let last_tool = fingerprints.last().map(|f| f.tool_name.clone()).unwrap_or_default();
+        let last_tool = fingerprints
+            .last()
+            .map(|f| f.tool_name.clone())
+            .unwrap_or_default();
         Some(last_tool)
     } else {
         None

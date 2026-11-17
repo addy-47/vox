@@ -23,18 +23,9 @@ use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use vox_lib::{
     core::{
-        events::{AudioIntent, PipelineMode},
+        events::{AudioIntent, InteractionMode, PipelineMode},
         metrics::TurnMetricsCollector,
-        state::InteractionOwner,
-    },
-    persistence::{
-        facts::{insert_observation, insert_vector, ObservationRecord},
-        schema::run_migrations,
-        worker::spawn_persistence_worker,
-    },
-    core::{
-        events::InteractionMode,
-        state::InteractionState,
+        state::{InteractionOwner, InteractionState},
     },
     harness::{
         chassis::Harness,
@@ -45,13 +36,18 @@ use vox_lib::{
         tools::{ToolDomain, ToolError, ToolExecutionContext, ToolFilter, ToolRegistry},
         Role, TurnExecutionRequest, TurnOutcome,
     },
+    persistence::{
+        facts::{insert_observation, insert_vector, ObservationRecord},
+        schema::run_migrations,
+        worker::spawn_persistence_worker,
+    },
     services::{
         llm::{
-            transport::{ConnectionConfig, RemoteTransport},
             actor::{spawn_llm_worker, LlmResponse},
-            CanonicalToolCall, CanonicalToolDefinition,
-            GenerationPurpose, GenerationRequest, OutputConstraint, ReasoningMode,
-            ConversationInput, GenerationOptions, LlmProvider, LlmStreamEvent,
+            transport::{ConnectionConfig, RemoteTransport},
+            CanonicalToolCall, CanonicalToolDefinition, ConversationInput, GenerationOptions,
+            GenerationPurpose, GenerationRequest, LlmProvider, LlmStreamEvent, OutputConstraint,
+            ReasoningMode,
         },
         tts::actor::TtsCommand,
     },
@@ -174,7 +170,7 @@ async fn terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity() {
         let req = TurnExecutionRequest {
             turn_id: 1,
             query: "Let's discuss Rust async concurrency".to_string(),
-            cancel: state.pipeline.turn_token(),
+            cancel: state.pipeline.turn_cancel_token(),
             emitter: Arc::new(app.clone()),
             app_state: Arc::clone(&state),
             routing_ctx: vox_lib::pipeline::RoutingContext::from_app_state(&state),
@@ -184,9 +180,12 @@ async fn terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity() {
             llm_tx: Some(llm_tx),
             provider: None,
             accumulator: Arc::clone(&state.pipeline_accumulator),
-            pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_synthesis_jobs),
+            pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_tts_jobs),
             db: Arc::clone(&state.db),
         };
+
+        // The router allocates the active turn id before dispatch in production.
+        state.pipeline.turn_id.store(1, Ordering::Relaxed);
 
         // Execute the full harness turn through the real dispatch path.
         let outcome = Harness::execute_turn(&state.harness, req).await;
@@ -399,7 +398,7 @@ async fn search_memory_retrieval_is_non_terminal_and_drops_the_scratchpad() {
         let req = TurnExecutionRequest {
             turn_id: 1,
             query: "What graphics card do I have?".to_string(),
-            cancel: state.pipeline.turn_token(),
+            cancel: state.pipeline.turn_cancel_token(),
             emitter: Arc::new(app.clone()),
             app_state: Arc::clone(&state),
             routing_ctx: vox_lib::pipeline::RoutingContext::from_app_state(&state),
@@ -409,9 +408,12 @@ async fn search_memory_retrieval_is_non_terminal_and_drops_the_scratchpad() {
             llm_tx: Some(llm_tx),
             provider: None,
             accumulator: Arc::clone(&state.pipeline_accumulator),
-            pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_synthesis_jobs),
+            pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_tts_jobs),
             db: Arc::clone(&state.db),
         };
+
+        // The router allocates the active turn id before dispatch in production.
+        state.pipeline.turn_id.store(1, Ordering::Relaxed);
 
         // Drive the full turn: intake -> search_memory -> answer.
         let outcome = Harness::execute_turn(&state.harness, req).await;
@@ -487,8 +489,11 @@ async fn tool_call_preserves_the_buffered_preamble_clause() {
         let cancel_atomic = Arc::new(AtomicBool::new(false));
         let (pipeline_tx, _pipeline_rx) = mpsc::channel();
 
+        state.pipeline.turn_id.store(1, Ordering::Relaxed);
+
         let stream_handles = StreamRoutingHandles {
             turn_id: 1,
+            live_turn_id: Arc::clone(&state.pipeline.turn_id),
             owner: InteractionOwner::Assistant,
             accumulator: Arc::clone(&state.pipeline_accumulator),
             tts_tx: Some(tts_tx),
@@ -945,9 +950,7 @@ async fn web_search_flows_through_the_harness_turn_without_network() {
         state
             .owner
             .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
-        state
-            .conversation_id
-            .store(501u64, Ordering::Relaxed);
+        state.conversation_id.store(501u64, Ordering::Relaxed);
         state.pipeline.set_state(InteractionState::Thinking);
 
         common::harness::attach_mock_engine_with_pipeline_tx_to_state(
@@ -989,7 +992,9 @@ async fn web_search_flows_through_the_harness_turn_without_network() {
                         ),
                     ),
                 ],
-                vec![common::harness::ScriptedEvent::Token("Rust 2026 ships major runtime shifts.".to_string())],
+                vec![common::harness::ScriptedEvent::Token(
+                    "Rust 2026 ships major runtime shifts.".to_string(),
+                )],
             ],
             "scripted-websearch-two-pass",
         )) as Arc<dyn LlmProvider>;
@@ -1006,7 +1011,7 @@ async fn web_search_flows_through_the_harness_turn_without_network() {
         let req = TurnExecutionRequest {
             turn_id: 501,
             query: "What shipped in Rust 2026?".to_string(),
-            cancel: state.pipeline.turn_token(),
+            cancel: state.pipeline.turn_cancel_token(),
             emitter: Arc::new(app.clone()),
             app_state: Arc::clone(&state),
             routing_ctx: vox_lib::pipeline::RoutingContext::from_app_state(&state),
@@ -1016,9 +1021,12 @@ async fn web_search_flows_through_the_harness_turn_without_network() {
             llm_tx: Some(llm_tx),
             provider: None,
             accumulator: Arc::clone(&state.pipeline_accumulator),
-            pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_synthesis_jobs),
+            pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_tts_jobs),
             db: Arc::clone(&state.db),
         };
+
+        // The router allocates the active turn id before dispatch in production.
+        state.pipeline.turn_id.store(501, Ordering::Relaxed);
 
         let outcome = Harness::execute_turn(&state.harness, req).await;
 
@@ -1038,12 +1046,7 @@ async fn web_search_flows_through_the_harness_turn_without_network() {
         // InterimFiller must reach the TTS from the non-terminal tool phase.
         let mut saw_filler = false;
         while let Ok(cmd) = tts_rx.try_recv() {
-            if let TtsCommand::Generate {
-                intent,
-                text,
-                ..
-            } = cmd
-            {
+            if let TtsCommand::Generate { intent, text, .. } = cmd {
                 if intent == AudioIntent::InterimFiller && text.contains("search") {
                     saw_filler = true;
                 }
@@ -1086,9 +1089,7 @@ fn tool_filter_hides_the_title_tool_once_the_title_is_set() {
         web_search_enabled: true,
     });
     assert!(
-        without_title
-            .iter()
-            .any(|t| t.name == "set_title"),
+        without_title.iter().any(|t| t.name == "set_title"),
         "an untitled session must offer the title tool"
     );
 }

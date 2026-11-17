@@ -780,7 +780,9 @@ where
 /// skipped, not fatal. The link must drop the offending message and keep
 /// waiting for the next one — it must not report an error to the caller and
 /// it must not close.
-async fn skippable_violation_does_not_end_the_receive<L, F, Fut>(make_pair: &F) -> Result<(), String>
+async fn skippable_violation_does_not_end_the_receive<L, F, Fut>(
+    make_pair: &F,
+) -> Result<(), String>
 where
     L: RawLink + 'static,
     F: Fn() -> Fut,

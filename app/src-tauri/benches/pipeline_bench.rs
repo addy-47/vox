@@ -398,7 +398,7 @@ fn main() {
 
         let pending = state
             .pipeline
-            .pending_synthesis_jobs
+            .pending_tts_jobs
             .load(Ordering::Relaxed);
         let pump_drained = captured_audio_buf.lock().is_empty();
         let sink_draining = pump_drained;

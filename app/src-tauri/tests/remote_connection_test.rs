@@ -1301,3 +1301,115 @@ async fn controller_reconnect_preserves_reconnecting_on_transient_error_and_fail
         controller_manager.state()
     );
 }
+
+/// PURPOSE:  Tier 2 transport rejection (UnknownPeer) must never delete durable Tier 1 pairing trust (paired_devices DB).
+/// SCENARIO: Controller has a paired host in Turso DB; dials host, but host rejects with UnknownPeer (DHCP re-route, reset host, or stale mDNS).
+/// ASSERTS:  paired_devices table on the controller retains the host record; Tier 1 trust is preserved despite Tier 2 link failure.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   In session/dialer.rs:handle_dial_peer_rejection, call paired_devices::delete_paired_device on UnknownPeer.
+#[tokio::test]
+async fn controller_dial_unknown_peer_rejection_preserves_paired_device_trust() {
+    let dir = tempdir().expect("tempdir");
+    vox_lib::utils::paths::init_with_root(dir.path().to_path_buf());
+
+    let (controller_db, controller_conn) =
+        open_migrated_db(dir.path(), "ctrl_unknown_peer_trust.db").await;
+
+    let host_key = DeviceKey::generate().expect("host key");
+    let host_id = derive_device_id(host_key.public_key()).to_string();
+    let host_pk = host_key.public_key().to_vec();
+
+    let listener = within_ok(
+        "bind listener",
+        bind("127.0.0.1:0".parse().expect("valid loopback")),
+    )
+    .await;
+    let valid_port = listener.local_addr().expect("local addr").port();
+    spawn_rejecting_host_listener(listener, host_id.clone(), host_key);
+
+    // Pre-pair host in controller's paired_devices DB (Tier 1 trust)
+    insert_paired_device(
+        &controller_conn,
+        &NewPairedDevice {
+            device_id: host_id.clone(),
+            public_key: host_pk,
+            display_name: "Desktop Host".to_string(),
+            role: PairedDeviceRole::Host,
+            trust_level: "full".to_string(),
+            hints: vec![serde_json::json!({ "addr": format!("127.0.0.1:{valid_port}") })],
+        },
+    )
+    .await
+    .expect("insert paired host");
+
+    let controller_manager = Arc::new(RemoteSessionManager::new(SessionRole::Controller));
+
+    let res = controller_manager
+        .clone()
+        .dial_and_connect(Arc::new(controller_db), host_id.clone(), None)
+        .await;
+
+    // Transport dialing should fail because host returned UnknownPeer
+    assert!(res.is_err(), "dial_and_connect must fail on UnknownPeer");
+    assert!(
+        matches!(controller_manager.state(), RemoteLinkState::Failed { .. }),
+        "State must be Failed, got: {:?}",
+        controller_manager.state()
+    );
+
+    // ARCHITECTURAL INVARIANT (§2.1): Tier 2 transport failure must NEVER mutate Tier 1 trust.
+    // The device must remain in the controller's paired_devices table!
+    let paired = get_paired_device(&controller_conn, &host_id)
+        .await
+        .expect("query paired_devices");
+    assert!(
+        paired.is_some(),
+        "CRITICAL REGRESSION (F-07): UnknownPeer transport rejection deleted Tier 1 paired_devices row!"
+    );
+}
+
+/// PURPOSE:  Controller disconnect or link loss must never fabricate synthetic state events with turn_id 0.
+/// SCENARIO: Controller session is actively running on turn 42; controller initiates disconnect or suffers cutoff.
+/// ASSERTS:  Any state_changed event pushed via on_remote_event carries the active turn_id (42) and never fabricated turn_id: 0.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   In session/manager.rs:794-808, hardcode "turn_id": 0 in state_changed emission.
+#[tokio::test]
+async fn controller_disconnect_preserves_active_turn_identity() {
+    let controller_manager = Arc::new(RemoteSessionManager::new(SessionRole::Controller));
+
+    let emitted_turn_ids = Arc::new(parking_lot::Mutex::new(Vec::new()));
+    let emitted_ids_clone = Arc::clone(&emitted_turn_ids);
+    controller_manager.set_on_remote_event(Arc::new(
+        move |event: &str, payload: serde_json::Value| {
+            if event == "state_changed" {
+                if let Some(tid) = payload.get("turn_id").and_then(|v| v.as_u64()) {
+                    emitted_ids_clone.lock().push(tid);
+                }
+            }
+        },
+    ));
+
+    // Simulate an active turn in Speaking state
+    controller_manager.set_pipeline_state("Speaking");
+    controller_manager.set_state(RemoteLinkState::Connected);
+
+    // Disconnect controller
+    controller_manager
+        .disconnect_controller_initiated()
+        .await
+        .expect("disconnect");
+
+    let ids = emitted_turn_ids.lock().clone();
+    assert!(
+        !ids.is_empty(),
+        "state_changed event must be emitted on active session disconnect"
+    );
+    for id in ids {
+        assert_ne!(
+            id, 0,
+            "CRITICAL REGRESSION (F-03): Fabricated state_changed event with turn_id: 0 on disconnect!"
+        );
+    }
+}

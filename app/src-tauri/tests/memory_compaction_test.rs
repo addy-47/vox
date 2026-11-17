@@ -17,6 +17,7 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use vox_lib::{
     core::state::InteractionState,
+    harness::stages::compaction::{CompactionStage, MIN_MESSAGES_FOR_COMPACTION},
     persistence::{
         compactions::{
             commit_compaction_output, fetch_latest_compaction_run, fetch_turns_for_compaction,
@@ -24,7 +25,6 @@ use vox_lib::{
         },
         notifications::find_notification_by_group,
     },
-    harness::stages::compaction::{CompactionStage, MIN_MESSAGES_FOR_COMPACTION},
     services::{
         llm::LlmCustomServer,
         memory::compaction::coordinator::{build_history_messages, CompactionCoordinator},

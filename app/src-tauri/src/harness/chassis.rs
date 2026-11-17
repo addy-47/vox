@@ -13,7 +13,6 @@ use crate::{
         events::PipelineMode,
         state::AppState,
     },
-    persistence::TurnRow,
     harness::{
         stages::{
             budget::{ContextBudgetStage, ContextStatus},
@@ -27,11 +26,20 @@ use crate::{
         tools::{ToolDefinition, ToolFilter, ToolRegistry},
         ChatMessage, Role,
     },
+    persistence::TurnRow,
     services::{
         llm::{actor::LlmCommand, CanonicalToolCall, GenerationOptions, ReasoningMode},
         memory::compaction::CompactionResult,
     },
 };
+
+/// Lifecycle of the currently staged conversational turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnPhase {
+    Idle,
+    Thinking,
+    Committed,
+}
 
 /// The session-scoped conversational orchestrator and stage chassis.
 pub struct Harness {
@@ -57,8 +65,8 @@ pub struct Harness {
     pub(crate) guardrails_state: TurnGuardrailsState,
     pub(crate) is_compacted_this_turn: bool,
     pub(crate) inbox: Arc<StepInbox>,
-    pub(crate) has_committed_steps_this_turn: bool,
-    pub(crate) uncommitted_user_turn_id: Option<u32>,
+    pub(crate) turn_phase: TurnPhase,
+    pub(crate) pending_user_query: Option<(u32, String)>,
 }
 
 /// Dynamic per-model execution parameters resolved from database models table.
@@ -132,8 +140,8 @@ impl Harness {
             guardrails_state: TurnGuardrailsState::default(),
             is_compacted_this_turn: false,
             inbox: Arc::new(StepInbox::new()),
-            has_committed_steps_this_turn: false,
-            uncommitted_user_turn_id: None,
+            turn_phase: TurnPhase::Idle,
+            pending_user_query: None,
         }
     }
 
@@ -176,8 +184,8 @@ impl Harness {
             guardrails_state: TurnGuardrailsState::default(),
             is_compacted_this_turn: false,
             inbox: Arc::new(StepInbox::new()),
-            has_committed_steps_this_turn: false,
-            uncommitted_user_turn_id: None,
+            turn_phase: TurnPhase::Idle,
+            pending_user_query: None,
         }
     }
 
@@ -245,20 +253,20 @@ impl Harness {
         }
     }
 
-    /// Records a user turn and applies the production intake and critical-compaction decision.
-    pub fn intake_recorded_turn(&mut self, turn_id: u32, query: String) -> bool {
-        self.uncommitted_user_turn_id = Some(turn_id);
-        self.has_committed_steps_this_turn = false;
+    /// Stages a user query without mutating canonical history until the first assistant artifact.
+    pub fn stage_user_query(&mut self, turn_id: u32, query: String) -> bool {
+        self.pending_user_query = Some((turn_id, query.clone()));
+        self.turn_phase = TurnPhase::Thinking;
         self.has_played_filler = false;
         self.guardrails_state = TurnGuardrailsState::default();
         self.is_compacted_this_turn = false;
-        self.history.push_user_turn(query);
         let assembled_system = self.prompt.assemble();
         self.history.sync_system_prompt(&assembled_system);
         let Some(budget) = self.budget.as_ref() else {
             return false;
         };
-        let tracked_tokens = budget.calculate_tracked_tokens(self.history.messages());
+        let tracked_tokens = budget.calculate_tracked_tokens(self.history.messages())
+            + crate::services::memory::ml::estimate_tokens(&query);
         let (_, status) = budget.evaluate_utilization(tracked_tokens);
         if status != ContextStatus::Critical {
             return false;
@@ -337,22 +345,60 @@ impl Harness {
         state: Arc<AppState>,
         harness_lock: Arc<Mutex<Option<Harness>>>,
     ) {
-        self.uncommitted_user_turn_id = None;
         let tracked_turns = self.check_quiet_compaction_eligibility();
         if let Some(ref mut watcher) = self.watcher {
             watcher.on_turn_completed(state, harness_lock, tracked_turns);
         }
     }
 
+    /// Commits the staged query and tool artifacts as one atomic turn boundary.
     pub fn commit_tool_step(
         &mut self,
         preamble: String,
         calls: Vec<CanonicalToolCall>,
         results: Vec<(String, String)>,
     ) {
-        self.uncommitted_user_turn_id = None;
-        self.has_committed_steps_this_turn = true;
+        self.flush_staged_user_query();
+        self.turn_phase = TurnPhase::Committed;
         self.history.commit_tool_step(preamble, calls, results);
+    }
+
+    /// Commits the staged query and the final assistant response atomically.
+    pub fn commit_completed_turn(&mut self, assistant_response: String) {
+        if assistant_response.trim().is_empty() {
+            self.pending_user_query = None;
+            return;
+        }
+        self.flush_staged_user_query();
+        self.turn_phase = TurnPhase::Committed;
+        self.history.push_assistant_turn(assistant_response);
+    }
+
+    /// Drops a staged query when its turn terminates without an assistant artifact.
+    pub fn discard_pending_turn(&mut self, turn_id: u32) {
+        if matches!(self.pending_user_query, Some((id, _)) if id == turn_id)
+            && self.turn_phase == TurnPhase::Thinking
+        {
+            self.pending_user_query = None;
+            self.turn_phase = TurnPhase::Idle;
+        }
+    }
+
+    /// Takes the staged query for Scenario A prompt continuation.
+    pub fn take_staged_query(&mut self, turn_id: u32) -> Option<String> {
+        if matches!(self.pending_user_query, Some((id, _)) if id == turn_id) {
+            let (_, text) = self.pending_user_query.take()?;
+            self.turn_phase = TurnPhase::Idle;
+            Some(text)
+        } else {
+            None
+        }
+    }
+
+    fn flush_staged_user_query(&mut self) {
+        if let Some((_, text)) = self.pending_user_query.take() {
+            self.history.push_user_turn(text);
+        }
     }
 
     pub fn abort_watcher(&mut self) {
@@ -456,15 +502,18 @@ impl Harness {
         }
         let assembled_prompt = self.prompt.assemble();
 
-        // 1. Extract the active turn's trailing slice (from the last Role::User message onward)
-        let active_turn_tail: Vec<ChatMessage> = {
-            let msgs = self.history.messages();
-            if let Some(last_user_idx) = msgs.iter().rposition(|m| m.role == Role::User) {
-                msgs[last_user_idx..].to_vec()
+        // 1. Extract the active turn's trailing slice. A staged query is not in
+        // canonical history yet, so it is the entire active tail before Step 0 commits.
+        let active_turn_tail: Vec<ChatMessage> =
+            if let Some((_, staged)) = self.pending_user_query.as_ref() {
+                vec![ChatMessage::new(Role::User, staged.clone())]
             } else {
-                Vec::new()
-            }
-        };
+                let msgs = self.history.messages();
+                msgs.iter()
+                    .rposition(|m| m.role == Role::User)
+                    .map(|idx| msgs[idx..].to_vec())
+                    .unwrap_or_default()
+            };
 
         // 2. Reset conversation history with the newly compacted system prompt
         self.history.clear();
@@ -489,17 +538,8 @@ impl Harness {
         &self.inbox
     }
 
-    pub fn has_committed_steps_this_turn(&self) -> bool {
-        self.has_committed_steps_this_turn
-    }
-
-    pub fn rollback_user_turn(&mut self, turn_id: u32) -> Option<ChatMessage> {
-        if self.uncommitted_user_turn_id == Some(turn_id) {
-            self.uncommitted_user_turn_id = None;
-            self.history.rollback_last_user_turn()
-        } else {
-            None
-        }
+    pub fn turn_phase(&self) -> TurnPhase {
+        self.turn_phase
     }
 
     pub async fn execute_turn(
