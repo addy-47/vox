@@ -106,7 +106,7 @@ The tool is governed by four system axioms:
 ```
 
 ### 4.1 Invocation & Non-Blocking Parallel Audio
-1. If the model speaks natural preamble text before proposing `web_search` (e.g. *"Let me look up the latest news"*), the 3-Stream Demuxer streams those clauses as `AudioIntent::InterimFiller`.
+1. If the model speaks natural preamble text before proposing `web_search` (e.g. *"Let me look up the latest news"*), the 3-Stream Demuxer streams those clauses eagerly to speech synthesis.
 2. Upon receiving the tool call, the Harness coordinator transitions the pipeline from `Thinking` to `InteractionState::Working`.
 3. Preamble audio continues physical playback concurrently on the sound card while `nexus-rs` executes search in the background with zero blocking.
 

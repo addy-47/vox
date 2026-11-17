@@ -63,7 +63,6 @@ pub struct Harness {
     pub max_steps: Option<usize>,
     pub(crate) guardrails: GuardrailsStage,
     pub(crate) guardrails_state: TurnGuardrailsState,
-    pub(crate) is_compacted_this_turn: bool,
     pub(crate) inbox: Arc<StepInbox>,
     pub(crate) turn_phase: TurnPhase,
     pub(crate) pending_user_query: Option<(u32, String)>,
@@ -138,7 +137,6 @@ impl Harness {
             max_steps: None,
             guardrails: GuardrailsStage,
             guardrails_state: TurnGuardrailsState::default(),
-            is_compacted_this_turn: false,
             inbox: Arc::new(StepInbox::new()),
             turn_phase: TurnPhase::Idle,
             pending_user_query: None,
@@ -182,7 +180,6 @@ impl Harness {
             max_steps: None,
             guardrails: GuardrailsStage,
             guardrails_state: TurnGuardrailsState::default(),
-            is_compacted_this_turn: false,
             inbox: Arc::new(StepInbox::new()),
             turn_phase: TurnPhase::Idle,
             pending_user_query: None,
@@ -259,7 +256,6 @@ impl Harness {
         self.turn_phase = TurnPhase::Thinking;
         self.has_played_filler = false;
         self.guardrails_state = TurnGuardrailsState::default();
-        self.is_compacted_this_turn = false;
         let assembled_system = self.prompt.assemble();
         self.history.sync_system_prompt(&assembled_system);
         let Some(budget) = self.budget.as_ref() else {
@@ -315,7 +311,6 @@ impl Harness {
     }
 
     pub fn fallback_fifo_shift(&mut self) {
-        self.is_compacted_this_turn = true;
         if let Some(ref budget) = self.budget {
             budget.execute_fifo_shift(&mut self.history);
         }
@@ -494,7 +489,6 @@ impl Harness {
     }
 
     pub fn apply_session_context(&mut self, session_context: &str, active_query: &str) {
-        self.is_compacted_this_turn = true;
         self.prompt
             .set_session_context(Some(session_context.to_string()));
         if let Some(ref mut compaction) = self.compaction {

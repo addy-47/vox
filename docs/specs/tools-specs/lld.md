@@ -71,7 +71,7 @@ Tool execution cannot commence on partial JSON fragments. Provider adapters must
 Every cognitive tool in Vox conforms to a single universal contract:
 1. **Zero Flow Categorization**: The runtime does not differentiate between terminal and non-terminal tools. Every tool is an asynchronous function taking clean JSON parameters and returning a `ToolResult`.
 2. **Zero Speech Schema Parameters**: Tools MUST NOT include `spoken_filler`, `spoken_response`, or any speech generation parameters in their JSON schemas. The language model formulates speech naturally through the standard content token stream.
-3. **Preamble Speech Autonomy**: If the model speaks before proposing a tool call (e.g., *"Let me search your notes"*), the 3-Stream Demuxer eagerly chunks and streams those introductory tokens to speech synthesis with `AudioIntent::InterimFiller`. Audio plays concurrently while tools execute.
+3. **Preamble Speech Autonomy**: If the model speaks before proposing a tool call (e.g., *"Let me search your notes"*), the 3-Stream Demuxer eagerly chunks and streams those introductory tokens to speech synthesis. Audio plays concurrently on speakers while tools execute in the background.
 
 ### 4.2 Multi-Tool Batch Execution & Barriers
 1. **Batch Ingress**: When the model proposes $1..N$ tool calls in a single generation pass, the router collects all calls into an ordered batch before execution begins.

@@ -152,6 +152,8 @@ Finalized user and assistant dialogue exchanges.
 Tracks rolling contextual compaction runs and retains raw output for audits and context seeding.
 - `id` (INTEGER, PK AUTOINCREMENT): Compaction identifier.
 - `session_id` (INTEGER, NOT NULL, FK -> `sessions.id` ON DELETE CASCADE): Target session.
+- `turn_id` (INTEGER, NULLABLE): Turn counter during which compaction executed (NULL if session-boundary).
+- `step_id` (TEXT, NULLABLE, FK -> `session_steps.id` ON DELETE SET NULL): Associated cognitive step if triggered mid-loop.
 - `trigger_kind` (TEXT, NOT NULL): Closed enum (`critical`, `soft`, `manual`, `auto`, `boot_auto`).
 - `from_turn_id` (INTEGER, NOT NULL): Initial turn included in slice.
 - `to_turn_id` (INTEGER, NOT NULL): Final turn included in slice.
@@ -161,6 +163,7 @@ Tracks rolling contextual compaction runs and retains raw output for audits and 
 - `created_at` (INTEGER, NOT NULL): Start timestamp in milliseconds.
 - `finished_at` (INTEGER, NULLABLE): Finish timestamp in milliseconds.
 *Constraint*: Partial unique index `(status) WHERE status = 'in_progress'` enforces universal global mutual exclusion: at most one running compaction across the entire application and database at any time.
+*Index*: `(step_id)`.
 
 ### 5.5 `personal_memory` (Semantic Knowledge Profile)
 Append-only historical versions of user knowledge. The canonical representation is structured JSON (`{ "sections": [...] }`).
@@ -255,18 +258,17 @@ Durable notification feed and task receipts (governed by `notifications-spec.md`
 *Indexes*: `(status, created_at DESC)`, `(group_key, status)`, `(session_id)`.
 
 ### 5.11 `session_steps` (Cognitive Trajectory Step Ledger)
-Relational record of iterative ReAct steps within multi-step conversational turns.
+Relational record of iterative ReAct steps within multi-step conversational turns. All steps belong strictly to assistant cognitive execution passes; user utterances are persisted exclusively in `turns`.
 - `id` (TEXT, PK): Unique step UUID.
 - `session_id` (INTEGER, NOT NULL, FK -> `sessions.id` ON DELETE CASCADE): Associated session.
 - `turn_id` (INTEGER, NOT NULL): Associated turn counter within session.
 - `step_index` (INTEGER, NOT NULL): 0-indexed step counter within the turn.
-- `preamble_text` (TEXT, NULLABLE): Introductory spoken preamble preceding tool execution.
+- `content` (TEXT, NULLABLE): Preamble, reasoning, or spoken text generated in this cognitive step.
 - `tool_count` (INTEGER, NOT NULL DEFAULT 0): Count of tool calls executed in this step.
 - `duration_ms` (INTEGER, NULLABLE): Aggregate step duration in milliseconds.
 - `prompt_tokens` (INTEGER, NULLABLE): Input prompt token count for this cognitive step.
 - `completion_tokens` (INTEGER, NULLABLE): Output completion token count for this cognitive step.
 - `guardrail_strike` (INTEGER, NOT NULL DEFAULT 0): Guardrail strike count (0, 1, or 2) triggered in this step.
-- `is_compacted` (INTEGER, NOT NULL DEFAULT 0): Boolean indicator whether mid-loop memory compaction executed on this step.
 - `created_at` (INTEGER, NOT NULL): Millisecond epoch timestamp.
 *Indexes*: `(session_id, turn_id, step_index)`, `(created_at DESC)`.
 

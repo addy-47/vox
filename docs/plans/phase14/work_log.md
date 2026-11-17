@@ -1,5 +1,34 @@
 # Phase 14 Work Log
 
+## 2026-11-17 — Two-Stage Barge-In Interruption & Dialogue Turn SSOT Formalization
+
+- **Architectural Breakthrough:** Decoupled acoustic VAD reaction (`SpeechStart`) from semantic dialogue turn resolution (`TranscriptFinal`). Unified user messages as strictly new turns in `turns` table and eliminated synthetic user steps in `session_steps`.
+- **Two-Stage Interruption Lifecycle (`events-spec.md §4.3`, `harness-spec.md §4.3`):**
+  - **Stage 1 (`SpeechStart` across all states):** Mutes audio playback immediately via `playback_engine.cancel()`. Cancels in-flight LLM stream pass via `stream_cancel_token.cancel()`. Transitions to `Listening`. Preserves `turn_id` and `turn_cancel_token` intact. Tools in `Working` state run uninterrupted.
+  - **Stage 2 (`TranscriptFinal`):**
+    - Empty speech (cough, sigh, acoustic spike): preserves active turn. Transitions to `Ready` (if `llm_done`), `Working` (if tools running), or rearms `stream_cancel_token` and resumes `Thinking`.
+    - Non-empty speech (real user utterance): cancels prior active turn via `cancel_active_turn()`, extracts Step 0 staged query for rapid burst concatenation (`RULE-EVT-08A`), allocates `next_turn()`, and dispatches query as brand new dialogue turn.
+- **Specs & Plans Updated:**
+  - `docs/specs/events-spec.md`: Formalized `RULE-EVT-08` (Two-Stage Interruption Protocol), `RULE-EVT-08A` (Rapid Query Burst Concatenation), `RULE-EVT-08B` (Mid-Turn Interruption & History Invariant), `RULE-EVT-08C` (Working State Tool Non-Destruction), updated `RULE-EVT-01A` (Utterance vs Turn Identity Binding) and the State Transition Matrix.
+  - `docs/specs/harness-spec.md`: Formalized `stream_cancel_token` vs `turn_cancel_token` cancellation scopes in `RULE-HARN-12` and `RULE-HARN-18`. Confirmed `session_steps` is strictly for LLM tool/thought steps.
+  - `docs/plans/phase14/pipeline-refactor-plan.md` & `pipeline-refactor-checklist.md`: Structured Batch 0 with `stream_cancel_token` methods and Two-Stage Interruption wiring across `interrupt.rs`, `transcript.rs`, and `step5_dispatch_llm.rs`.
+- **Elimination of Obsolete `step_kind`:** With all user utterances formalized as canonical turns in `turns` and `session_steps` storing assistant steps only, `step_kind` was purged across `schema.rs`, `persistence/mod.rs`, `persistence/steps.rs`, `stages/persistence.rs`, `database_persistence_boundary_test.rs`, `db-spec.md`, `harness-spec.md`, and `pipeline-refactor-checklist.md`.
+- **Status:** Specs and plans aligned and ready for lead validation. Compile gate passed (`./scripts/verify-targets.sh` 100% green across desktop, sidecars, and Android targets).
+
+## 2026-11-17 — Local DB schema repair (manual, data preserved)
+
+- **Symptom:** Local `~/.vox/data/db/vox.db` missing columns added by `persistence/schema.rs`: `session_steps.step_kind`, `session_steps.content`, `session_compactions.turn_id`, `session_compactions.step_id`. Missing index `idx_compactions_step`.
+- **Root cause (confirmed):** `PRAGMA user_version = 18` while `SCHEMA_VERSION = 1` (`schema.rs:11`). `run_migrations` only runs `CREATE TABLE IF NOT EXISTS` when `current_version < SCHEMA_VERSION`, so with 18 > 1 migrations never re-ran and the columns were never added. `CREATE TABLE IF NOT EXISTS` also cannot add columns to existing tables anyway.
+- **Fix applied (per user instruction, manual `tursodb` ALTERs — no `rm -rf`):**
+  - `ALTER TABLE session_steps ADD COLUMN step_kind TEXT NOT NULL DEFAULT 'llm';`
+  - `ALTER TABLE session_steps ADD COLUMN content TEXT;`
+  - `ALTER TABLE session_compactions ADD COLUMN turn_id INTEGER;`
+  - `ALTER TABLE session_compactions ADD COLUMN step_id TEXT;`
+  - `CREATE INDEX IF NOT EXISTS idx_compactions_step ON session_compactions(step_id);`
+  - `PRAGMA user_version = 1;`
+- **Verified:** all 4 columns + index present via `.schema`; `user_version = 1`; data intact (100 sessions, 5168 turns, 50 session_compactions). No rows lost.
+- **Known divergence (not fixed — would require table rebuild, risks data):** added columns lack the `CHECK (step_kind IN ('llm','user'))` and the `REFERENCES` clauses on `turn_id`/`step_id` from `schema.rs`, and `session_compactions` lacks `step_id` FK `ON DELETE SET NULL`. Functional for app reads/writes (explicit column lists in `steps.rs`/`compactions.rs`). Left extra legacy columns/tables (`preamble_text`, `is_compacted`, `favorite_models`) untouched for data safety.
+
 ## 2026-11-16 — Domain 4 Adversarial Architecture Audit (Remote Session & IPC Protocol)
 
 - **Role & Scope:** Principal System Architect adversarial review of Domain 4 per `.agents/rules/system-architect.md`, `architectural-invariants.md`, and `/review`. Scope: `services/remote/{control/,session/,audio/,mod.rs}`, `ipc/{dispatcher,pipeline,persistence,mod}.rs`; cross-boundary evidence from `ipc/remote.rs`, `control/{guard,gateway,routing}.rs`, `core/{events,state}.rs`, `pipeline/{atomics,router}.rs`, `security/pairing.rs`, `lib.rs`. Calibrated to production scale. Spec SSOT: `remote-control-spec.md` (read in full), `ipc-spec.md`, `events-spec.md`.

@@ -2367,33 +2367,30 @@ async fn mid_loop_critical_budget_triggers_compaction_while_preserving_active_tu
             );
         }
 
-        // 5. Provenance assert: session_steps must record is_compacted = 1
+        // 5. Provenance assert: session_compactions must record the completed compaction
         let conn = rig.state.db.connect().expect("db connect");
         let start = std::time::Instant::now();
         let mut found_compacted = false;
         while start.elapsed() < Duration::from_secs(5) {
             let mut rows = conn
                 .query(
-                    "SELECT is_compacted FROM session_steps WHERE session_id = ? AND turn_id = ?;",
-                    (rig.session_id, turn_id as i64),
+                    "SELECT COUNT(*) FROM session_compactions WHERE session_id = ? AND status = 'completed';",
+                    (rig.session_id,),
                 )
                 .await
-                .expect("query session_steps");
-            while let Some(row) = rows.next().await.expect("fetch row") {
-                let is_compacted: i64 = row.get(0).expect("is_compacted");
-                if is_compacted == 1 {
+                .expect("query session_compactions");
+            if let Some(row) = rows.next().await.expect("fetch row") {
+                let count: i64 = row.get(0).expect("count");
+                if count >= 1 {
                     found_compacted = true;
                     break;
                 }
-            }
-            if found_compacted {
-                break;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         assert!(
             found_compacted,
-            "session_steps must record is_compacted = 1 when mid-loop compaction triggers"
+            "session_compactions must record completed compaction when mid-loop compaction triggers"
         );
     })
     .await

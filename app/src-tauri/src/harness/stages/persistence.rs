@@ -35,7 +35,6 @@ pub fn persist_step_and_tools(
     prompt_tokens: u32,
     completion_tokens: u32,
     strike_count: u32,
-    is_compacted: bool,
 ) -> Result<(), PersistenceError> {
     let tx = persist_tx.ok_or_else(|| channel_error(turn_id))?;
     let now = current_timestamp_ms();
@@ -47,13 +46,12 @@ pub fn persist_step_and_tools(
             session_id,
             turn_id,
             step_index,
-            preamble_text,
+            content: preamble_text,
             tool_count: outcomes.len() as u32,
             duration_ms: Some(duration_ms),
             prompt_tokens: Some(prompt_tokens),
             completion_tokens: Some(completion_tokens),
             guardrail_strike: strike_count,
-            is_compacted,
             created_at: now,
         },
         PERSIST_SEND_TIMEOUT,

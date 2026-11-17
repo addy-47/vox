@@ -1,165 +1,271 @@
-# Phase 14 Master Implementation Plan: Pipeline Atomics & Architectural Upstream Refactor
+# Phase 14 Master Implementation Plan: Pipeline Atomics, Duplex State Machine & Upstream Refactor
 
-**Status:** APPROVED FOR EXECUTION  
-**Author:** Senior Backend Engineer & System Architect  
-**Scope:** Core Pipeline, Cognitive Harness, Audio Hot-Path, Remote Session Protocol  
-**Invariants Enforced:** Zero Backward Compatibility (ZBC), Spec-First SSOT, Zero Shadow Booleans, Sacred Audio Hot-Path, Single-Writer Event Router  
+**Status:** READY FOR LEAD VALIDATION & TICKET EXECUTION  
+**Author:** Principal System Architect  
+**Scope:** Core Pipeline, Interaction State Machine, Cognitive Harness, Audio Hot-Path, Remote Session Protocol  
+**Authoritative Specs:** `docs/specs/events-spec.md`, `docs/specs/harness-spec.md`, `docs/specs/remote-control-spec.md`  
+**Invariants Enforced:** Zero Backward Compatibility (ZBC), Spec-First SSOT, Zero Shadow Booleans, Sacred Audio Hot-Path, Single-Writer Event Router, Bijective State Space  
 
 ---
 
 ## 1. Executive Summary & Target End-State
 
-The Vox runtime previously carried systemic technical debt where downstream components babysat upstream race conditions and overloaded primitives.
+The Vox runtime previously carried systemic technical debt where downstream components babysat upstream race conditions and overloaded primitives. Tickets 1–4 laid the groundwork by separating `turn_id` from `utterance_id` and introducing staged user queries, but left 6 concrete defects in the working tree (off-thread transitions, premature `Ready` drops, broken hardware cancellation, TOCTOU query staging races, and stale sink occupancy).
 
-### Target End-State
-1. **Atomics & Primitives**:
-   - `turn_id` is decoupled from physical audio capture. Physical microphone chunks correlate on `utterance_id`. Conversational user/assistant ledger records correlate on `turn_id`.
-   - Shadow booleans (`cancel_flag`, `turn_open`, `drained_while_open`) are deleted.
-   - `turn_cancel_token` (`CancellationToken`) is the sole cancellation authority.
-   - Atomics are renamed to explicit, layman identifiers (`pending_tts_jobs`, `assistant_state_atomic`, `current_activity`).
-2. **Cognitive Harness**:
-   - User queries are staged in memory during Step 0 Thinking and committed atomically to history only when assistant speech or tools are produced.
-   - All rollback hacks (`rollback_user_turn`, `rollback_last_user_turn`, `uncommitted_user_turn_id`, `has_committed_steps_this_turn`) are deleted.
-3. **Audio Hot-Path & Inference**:
-   - The single-writer event router (`vox-router`) is the sole allocator of turn and utterance IDs. VAD and STT never guess or increment IDs (`wrapping_add(1)` is deleted).
-   - Audio sink is a pure renderer with zero mutex locks, zero string formatting, and zero channel sends in the active CPAL callback.
-   - Quiescence is governed by a single authority; duplicate `PlaybackFinished` emissions are eliminated.
-4. **Remote Session & IPC**:
-   - Controller admission uses an atomic `ControllerLease` to prevent concurrent controller connection races (TOCTOU eliminated).
-   - `AttachSnapshot` carries canonical `StateChangedPayload` rather than synthetic `turn_open as u32`.
-   - Tier 1 trust (`paired_devices` DB) is decoupled from Tier 2 transport rejections (`UnknownPeer` never erases pairing).
+This master plan resolves all 6 defects and formalizes the **Duplex State Machine** (`(Thinking | Working) <==> Speaking`), eliminating `AudioIntent` from state gating and establishing a deterministic single-writer quiescence lifecycle.
 
----
+### Target End-State Plainly Stated
 
-## 2. Defect Taxonomy: Why Tests Pass & How Findings Classify
+1. **Deterministic Duplex Interaction State Machine (`events-spec.md §3, §4.3`)**:
+   - `InteractionState` retains its canonical 8 variants (`Idle`, `Ready`, `Listening`, `Thinking`, `Working`, `Speaking`, `Paused`, `Sleeping`, `Error`). Zero new synthetic state variants (`Finalizing` or `Briefing`).
+   - `PlaybackStarted` transitions `Thinking` or `Working` $\to$ `Speaking`, preserving `current_activity` intact.
+   - `PlaybackFinished` evaluates the **Duplex Quiescence Law**:
+     - If `llm_done == true`: transitions `Speaking` $\to$ `Ready`.
+     - If `llm_done == false` AND `current_activity.is_some()`: transitions `Speaking` $\to$ `Working` (restoring active tool envelope).
+     - If `llm_done == false` AND `current_activity.is_none()`: transitions `Speaking` $\to$ `Thinking`.
+   - `LlmFinished` marks `llm_done = true` for the active turn epoch. If audio is already completely drained (`pending_tts_jobs == 0 && !sink_occupied`), it transitions immediately to `Ready`.
+   - `AudioIntent` is permanently removed from the playback completion contract.
 
-A critical question is: **If there are so many findings, why does the test suite currently pass?**
+2. **Cognitive Staging & Transition Hygiene (`harness-spec.md §4.1, §4.4, §4.5`)**:
+   - User queries are staged in `pending_user_query: Option<(u32, String)>` on the Harness during Step 0 and committed to history only upon assistant speech or tool artifact emission.
+   - Redundant shadow enum `TurnPhase` is completely deleted. `pending_user_query.is_some()` is the sole check for Step 0 uncommitted state. Positional history rollback (`rollback_last_user_turn`) is permanently eliminated.
+   - Off-thread state transitions in `steps.rs` are replaced by `transition_harness_phase` enforcing an **Epoch & Cancel Guard** (never overwrites `Listening`) and a **Duplex Audio Priority Guard** (leaves `Speaking` intact while preamble audio plays).
 
-The answer is twofold:
-1. **Compensating Band-Aids Mask Upstream Flaws**: When an upstream race broke a test, developers historically added downstream conditionals (e.g. `turn_id + 1 == peek_turn_id()`, `rollback_user_turn`, `current_turn_id() != turn_id`) to make the test green. The tests pass *because* the band-aids are babysitting the flaws.
-2. **Synthetic Single-Threaded Test Timing**: Unit tests run sequentially in microseconds. Real-world concurrency bugs (Wi-Fi packet reordering, Bluetooth buffer underruns, human barge-in jitter) only surface under real asynchronous timing.
+3. **Hardware Cancellation Authority (`engine.rs`, `pipeline/atomics.rs`)**:
+   - Disconnected anonymous `cancel_flag` instances in `engine.rs:184, 417, 586` are replaced by a shared `hardware_cancel_flag: Arc<AtomicBool>` owned by `PipelineAtomics`.
+   - `cancel_active_turn()` atomically cancels `turn_cancel_token` and sets `hardware_cancel_flag = true`.
+   - `rearm_turn_cancel_token()` resets `hardware_cancel_flag = false`. C++ loops in STT, TTS, and Playback cancel deterministically on barge-in.
 
-### The 4 Finding Classes
+4. **Audio Hot-Path & Inference (`vad/`, `stt/`, `sink.rs`)**:
+   - Router allocates monotonic `utterance_id` on `SpeechStart`. VAD and STT bind physical chunks to `utterance_id` via `VadCommand::BindUtterance`. All `wrapping_add(1)` prediction hacks in VAD/STT are deleted.
+   - Scenario C non-destructive speech hold preserves `turn_id` while issuing a fresh `utterance_id`.
+   - Mutexes, allocations, and string logging are removed from the real-time CPAL output callback. `sink_occupied` is published lock-free.
 
-* **[Type 1] Latent Concurrency & Edge-Case Bugs**: True defects that cause misbehavior, state stalls, or data loss under specific asynchronous timing.
-* **[Type 2] Compensating Band-Aids**: Downstream hacks added to appease broken tests by babysitting upstream flaws.
-* **[Type 3] Architectural Anti-Patterns & Shadow State**: Dead state, duplicate booleans, or SSOT violations that degrade system maintainability.
-* **[Type 4] Real-Time Hot-Path Violations**: Mutex locks, logging, or allocations inside real-time CPAL callbacks that risk audio glitches.
-
----
-
-## 3. Master Defect Catalog: Classification, Priority & Blast Radius
-
-| Ticket ID | Domain | Structural Finding | Defect Type | Priority | Complexity | Blast Radius | Assigned Owner |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **T-CORE-01** | Pipeline | Atomics cleanup (`cancel_flag`, `turn_open`, `drained_while_open`), `utterance_id` split, router epoch gate, `transcript.rs:233` regression | **Type 1 & Type 3** | **P0 (Blocker)** | High | Wide (Pipeline, Router, Core) | **Senior Backend Engineer** |
-| **T-HARN-01** | Harness | Eager intake & 3-site rollback cluster (`rollback_user_turn`, `uncommitted_user_turn_id`, positional rollback in `llm.rs`) | **Type 2 (Band-Aid)** | **P0 (Blocker)** | Medium | Localized (`harness/`, `llm.rs`) | **Domain 2 Subagent** |
-| **T-HARN-02** | Harness | Router engine blocking lock in `llm.rs:111`, stream routing epoch verification, lock-free `sink_occupied` | **Type 4 (Hot-Path)** | **P1 (High)** | Medium | Localized (`harness/`, `router.rs`) | **Domain 2 Subagent** |
-| **T-HARN-03** | Harness | Compaction `JoinHandle` ownership, cross-session epoch leak prevention, bounded persistence backpressure | **Type 1 (Latent Bug)**| **P1 (High)** | Medium | Localized (`harness/stages/`) | **Domain 2 Subagent** |
-| **T-AUDIO-01** | Audio | VAD/STT guessing turn IDs via `wrapping_add(1)`, router-issued `utterance_id` / `turn_id` binding | **Type 2 (Band-Aid)** | **P0 (Blocker)** | High | Medium (`vad/`, `stt/`, `actor.rs`) | **Domain 3 Subagent** |
-| **T-AUDIO-02** | Audio | Split-brain quiescence: duplicate `PlaybackFinished` from TTS actor and audio sink, dead `drained_while_open` | **Type 1 & Type 3** | **P0 (Blocker)** | Medium | Medium (`sink.rs`, `tts/actor.rs`) | **Domain 3 Subagent** |
-| **T-AUDIO-03** | Audio | Sacred hot-path violations: `SharedRingProducer` mutex in CPAL callback, TTS ignoring `engine_shutdown` | **Type 4 (Hot-Path)** | **P1 (High)** | Medium | Medium (`device.rs`, `tts/actor.rs`) | **Domain 3 Subagent** |
-| **T-REMOTE-01**| Remote | TOCTOU controller admission race, `AttachSnapshot` serializing `turn_open as u32`, `HostAdmission` evaluator | **Type 1 & Type 3** | **P0 (Blocker)** | High | Medium (`services/remote/`) | **Domain 4 Subagent** |
-| **T-REMOTE-02**| Remote | Tier 2 `UnknownPeer` wiping Tier 1 `paired_devices`, fabricated `state_changed { turn_id: 0 }`, advertiser poll | **Type 1 (Latent Bug)**| **P1 (High)** | Medium | Localized (`dialer.rs`, `manager.rs`) | **Domain 4 Subagent** |
-| **T-REMOTE-03**| Remote | Detached per-chunk task spawns in `controller_runtime.rs`, bridge tasks ignoring cancel token, event queue gaps | **Type 1 & Type 4** | **P1 (High)** | Medium | Localized (`remote/audio/`) | **Domain 4 Subagent** |
-| **T-INT-01**   | Cross | Cross-target compilation gate (`verify-targets.sh`), test suite validation, regression audit | **Gate** | **P0 (Gate)** | High | Global Workspace | **Senior Backend Engineer** |
+5. **Remote Control Protocol & Trust Decoupling (`services/remote/`)**:
+   - Controller admission uses an atomic `ControllerLease` to eliminate TOCTOU connection races.
+   - `AttachSnapshot` carries canonical `StateChangedPayload` from the router's last state cache.
+   - Tier 1 trust (`paired_devices` DB) is decoupled from Tier 2 transport rejections (`UnknownPeer` never erases pairing rows).
 
 ---
 
-## 3. Dependency Graph & Sequencing
+## 2. Grill-Me Resolution Ledger (All Open Decisions Settled)
+
+Every design branch and question raised during architectural exploration is settled below. No open assumptions remain:
+
+| Question / Fork | Alternatives Considered | Settled Decision | Rationale |
+| :--- | :--- | :--- | :--- |
+| **Quiescence Authority** | A. Re-add `turn_open: AtomicBool`<br/>B. Re-introduce `llm_finished_this_turn` atomic across files<br/>C. Router-owned `llm_done` flag + Duplex state machine | **Option C: Router-owned `llm_done` flag in Duplex state machine** | `llm_done` is written exclusively on the `vox-router` OS thread upon receiving `VoxEvent::LlmFinished`. Zero shadow booleans across worker threads. |
+| **State Machine Topology** | A. Add `Finalizing` state to `InteractionState`<br/>B. Add `Briefing` state to `InteractionState`<br/>C. Duplex `(Thinking \| Working) <==> Speaking` | **Option C: Duplex Model** | Keeps `InteractionState` at canonical 8 states. Reflects physical speaker audio truthfully. Eliminates silent `Speaking` state when LLM pauses between sentences. Zero frontend CSS churn. |
+| **Audio Intent Redundancy** | A. Keep `AudioIntent` discriminator in `PlaybackFinished`<br/>B. Drop `AudioIntent` from playback completion gating | **Option B: Eliminate `AudioIntent` from state gating** | If audio drains and `llm_done == false`, router drops to `Working` (if tool active) or `Thinking`. Intent tagging is unnecessary when the state machine itself tracks active activity. |
+| **`chassis.rs` TurnPhase** | A. Keep `TurnPhase { Idle, Thinking, Committed }`<br/>B. Delete `TurnPhase` | **Option B: Delete `TurnPhase`** | `pending_user_query.is_some()` already encodes whether Step 0 is uncommitted. `TurnPhase` is 100% duplicate shadow state. |
+| **Off-Thread Transitions** | A. Add `VoxEvent::TurnWorking`<br/>B. Direct `transition()` calls on Tokio<br/>C. Guarded `transition_harness_phase` helper | **Option C: Guarded `transition_harness_phase` helper** | Avoids channel allocation overhead while enforcing Epoch & Cancel guard (stops overwriting `Listening`) and Duplex Audio Priority guard (preserves active preamble speech). |
+| **Worker Cancellation** | A. Keep anonymous `AtomicBool::new(false)` in `engine.rs`<br/>B. Wire `turn_cancel_token` into C++ threads<br/>C. Shared `hardware_cancel_flag` in `PipelineAtomics` | **Option C: Shared `hardware_cancel_flag`** | C++ inference loops (Whisper/ONNX/CPAL) need lock-free atomic reads without mutex contention. Flipped in lockstep with `turn_cancel_token`. |
+| **TOCTOU Query Staging** | A. Stage on Tokio task in `step1_intake`<br/>B. Stage synchronously on `vox-router` thread | **Option B: Stage synchronously on `vox-router`** | Calling `harness.stage_user_query()` on the router thread in `transcript.rs` and `text.rs` guarantees the query is staged before any barge-in `take_staged_query` can execute. |
+
+---
+
+## 3. Blast-Radius & Dependency Clustering
+
+Work is sequenced into **4 strictly ordered batches** based on real structural and verification dependencies:
 
 ```mermaid
 graph TD
-    T_CORE_01["T-CORE-01: Core Pipeline Atomics & Utterance Split (Backend Eng)"]
+    B0["Batch 0: Core Duplex State Machine & Staging Hygiene<br/>(T-CORE-02 + T-HARN-04)"]
     
-    T_HARN_01["T-HARN-01: Step-0 Staging (Domain 2)"]
-    T_HARN_02["T-HARN-02: Stream Epoch & Lock-Free Latch (Domain 2)"]
-    T_HARN_03["T-HARN-03: Compaction & Persistence (Domain 2)"]
+    B1["Batch 1: Audio Hot-Path & Utterance Binding<br/>(T-AUDIO-01 + T-AUDIO-02)"]
+    B2["Batch 2: Remote Control Protocol & Trust Decoupling<br/>(T-REMOTE-01 + T-REMOTE-02 + T-REMOTE-03)"]
     
-    T_AUDIO_01["T-AUDIO-01: Router Utterance Binding (Domain 3)"]
-    T_AUDIO_02["T-AUDIO-02: Single Quiescence Authority (Domain 3)"]
-    T_AUDIO_03["T-AUDIO-03: Audio Hot-Path Hygiene (Domain 3)"]
-    
-    T_REMOTE_01["T-REMOTE-01: Controller Lease & Snapshot (Domain 4)"]
-    T_REMOTE_02["T-REMOTE-02: Trust/Transport Decoupling (Domain 4)"]
-    T_REMOTE_03["T-REMOTE-03: Audio Uplink FIFO & Reaping (Domain 4)"]
-    
-    T_INT_01["T-INT-01: Integration Gate & Verification (Backend Eng)"]
+    B3["Batch 3: Integration Verification & Seam Audit<br/>(T-INT-01)"]
 
-    T_CORE_01 --> T_HARN_01
-    T_CORE_01 --> T_HARN_02
-    T_HARN_01 --> T_HARN_03
-
-    T_CORE_01 --> T_AUDIO_01
-    T_CORE_01 --> T_AUDIO_02
-    T_AUDIO_01 --> T_AUDIO_03
-
-    T_CORE_01 --> T_REMOTE_01
-    T_CORE_01 --> T_REMOTE_02
-    T_REMOTE_01 --> T_REMOTE_03
-
-    T_HARN_03 --> T_INT_01
-    T_AUDIO_03 --> T_INT_01
-    T_REMOTE_03 --> T_INT_01
+    B0 --> B1
+    B0 --> B2
+    B1 --> B3
+    B2 --> B3
 ```
 
----
-
-## 4. Work Delegation & Ownership Matrix
-
-### Batch 1: Core Foundation (Owner: Senior Backend Engineer)
-* **Ticket**: `T-CORE-01`
-* **Files**: `pipeline/atomics.rs`, `pipeline/router.rs`, `core/state.rs`, `core/events.rs`, `pipeline/assistant/{transcript.rs, interrupt.rs, speech.rs, session.rs, ptt.rs, playback.rs}`
-* **Deliverable**:
-  - Delete `cancel_flag`, `turn_open`, `drained_while_open`.
-  - Add `utterance_id: Arc<AtomicU32>`.
-  - Rename atomics to clean layman names (`turn_cancel_token`, `pending_tts_jobs`, `assistant_state_atomic`, `current_activity`).
-  - Revert `transcript.rs:233` gate to `current_state != InteractionState::Thinking`.
-  - Remove `turn_id + 1 == peek_turn_id()` arithmetic in `transcript.rs:222`.
-  - Router drops stale events where `event.turn_id != active_turn_id`.
-
-### Batch 2: Cognitive Harness (Owner: Domain 2 Subagent)
-* **Tickets**: `T-HARN-01`, `T-HARN-02`, `T-HARN-03`
-* **Files**: `app/src-tauri/src/harness/` (`chassis.rs`, `loop.rs`, `steps.rs`, `stages/history.rs`, `stages/compaction.rs`, `stages/persistence.rs`), `pipeline/assistant/llm.rs`
-* **Deliverable**:
-  - Replace eager intake with `stage_user_query` / `commit_turn_artifact`. Delete all `rollback_user_turn` calls and fields.
-  - Delete `engine.blocking_lock()` from `llm.rs:111`; read lock-free `sink_occupied`.
-  - Retain `JoinHandle` in `QuietCompactionWatcher`; gate summary application on `session_id`.
-  - Use bounded blocking send in `persistence.rs` to guarantee parent step rows precede child tool call rows.
-
-### Batch 3: Audio Hot-Path & Inference (Owner: Domain 3 Subagent)
-* **Tickets**: `T-AUDIO-01`, `T-AUDIO-02`, `T-AUDIO-03`
-* **Files**: `app/src-tauri/src/services/audio/` (`sink.rs`, `playback.rs`, `device.rs`), `services/vad/` (`segmenter.rs`, `actor.rs`), `services/stt/actor.rs`, `services/tts/actor.rs`
-* **Deliverable**:
-  - Remove `wrapping_add(1)` turn guessing from VAD and STT. Bind speech frames via router-issued `utterance_id` and `turn_id`.
-  - Delete duplicate `PlaybackFinished` from `tts/actor.rs:132-140`; audio sink is sole completion emitter.
-  - Remove mutex from `SharedRingProducer` in CPAL input callback.
-  - Respect `engine_shutdown` in TTS worker loop and join handle in `cool_down_tts`.
-
-### Batch 4: Remote Session & IPC Protocol (Owner: Domain 4 Subagent)
-* **Tickets**: `T-REMOTE-01`, `T-REMOTE-02`, `T-REMOTE-03`
-* **Files**: `app/src-tauri/src/services/remote/` (`session/listener.rs`, `session/dialer.rs`, `session/manager.rs`, `session/supervisor.rs`, `audio/controller_runtime.rs`, `audio/sender.rs`), `app/src-tauri/src/ipc/`
-* **Deliverable**:
-  - Implement `ControllerLease` to make admission atomic. Delete `turn_open` checks in `listener.rs`.
-  - Update `AttachSnapshot` wire type to carry canonical `StateChangedPayload`.
-  - Remove `paired_devices` deletion on `UnknownPeer` in `dialer.rs:143-160`.
-  - Remove fabricated `state_changed { turn_id: 0 }` on transport disconnect.
-  - Replace per-chunk `tokio::spawn` in `controller_runtime.rs` with sequential blocking sends.
-
-### Batch 5: Integration & Verification (Owner: Senior Backend Engineer)
-* **Ticket**: `T-INT-01`
-* **Files**: Full Workspace
-* **Deliverable**:
-  - Run compile gate: `cd app/src-tauri && ./scripts/verify-targets.sh`.
-  - Run full test suite: `RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1 --no-fail-fast`.
-  - Audit git diff across all four domains to ensure zero residual shadow booleans or shims.
+### Why this boundary exists:
+- **Batch 0** MUST land first. It fixes the broken cancellation flag in `engine.rs`, eliminates premature `Ready` drops in `playback.rs`, implements Duplex transitions in `router.rs`, and deletes `TurnPhase`. Without Batch 0, neither audio tests nor remote session tests can pass reliably.
+- **Batch 1 (Audio)** and **Batch 2 (Remote)** are structurally independent of each other and depend solely on Batch 0. They can be implemented in parallel or sequentially.
+- **Batch 3 (Verification)** verifies full cross-target compilation and runs the entire integration test suite.
 
 ---
 
-## 5. Verification Gate & Success Metrics
+## 4. Detailed Batch Specifications
 
-1. **Compile Gate**: `./scripts/verify-targets.sh` builds green across desktop and mobile targets in `--release`.
-2. **Zero Shadow Booleans**: `git grep -E "cancel_flag|turn_open|drained_while_open"` returns 0 hits in `src/`.
-3. **Zero Turn Guessing**: `git grep "wrapping_add(1)"` returns 0 hits in `services/vad/` and `services/stt/`.
-4. **Zero Rollback Band-Aids**: `git grep "rollback_user_turn"` returns 0 hits in `harness/` and `pipeline/`.
-5. **Deterministic Hot-Path**: Zero mutexes and zero allocations in CPAL audio callbacks.
+### Batch 0: Core Duplex State Machine, Hardware Cancellation & Staging Hygiene
+
+**Tickets:** `T-CORE-02`, `T-HARN-04`  
+**Dependencies:** None (builds directly on checkpoint commit).  
+**Build Health:** In-progress builds may be red until all call sites in `router.rs`, `playback.rs`, and `steps.rs` are aligned. Once Batch 0 completes, `cargo check --lib --release` must pass 100% green.  
+**Completion Gate:** `cargo test --test playback_test --test transcript_ingestion_test --release -- --test-threads=1` passes 100% green.
+
+#### Components & Changes:
+
+1. **`pipeline/atomics.rs`**:
+   - Add `pub hardware_cancel_flag: Arc<AtomicBool>` to `PipelineAtomics`.
+   - Add `pub llm_done: Arc<AtomicBool>` to `PipelineAtomics`.
+   - Add `pub stream_cancel_token: Arc<parking_lot::Mutex<tokio_util::sync::CancellationToken>>` to `PipelineAtomics`.
+   - In `cancel_active_turn()`: cancel `turn_cancel_token` AND store `hardware_cancel_flag.store(true, Ordering::SeqCst)`.
+   - In `rearm_turn_cancel_token()`: store `hardware_cancel_flag.store(false, Ordering::SeqCst)`.
+   - Add `pub fn stream_cancel_token(&self) -> tokio_util::sync::CancellationToken` and `pub fn cancel_active_stream(&self)`.
+   - Add `pub fn rearm_stream_cancel_token(&self) -> tokio_util::sync::CancellationToken`.
+   - In `next_turn()`: reset `llm_done.store(false, Ordering::SeqCst)`, rearm `turn_cancel_token`, and rearm `stream_cancel_token`.
+   - Add `pub fn is_llm_done(&self) -> bool` and `pub fn set_llm_done(&self, done: bool)`.
+   - **Call Site Sweep**: Replace all direct `state.pipeline.turn_cancel_token().cancel()` calls in `error.rs` (lines 52, 62), `interrupt.rs` (lines 81, 132), `ptt.rs` (line 232), and `session.rs` (lines 411, 573, 598) with `state.pipeline.cancel_active_turn()`.
+
+2. **`core/engine.rs`**:
+   - In `create_playback_engine`, `init_audio_stream`, and `spawn_stt_worker`:
+   - Replace disconnected `Arc::new(AtomicBool::new(false))` with `Arc::clone(&state.pipeline.hardware_cancel_flag)`.
+
+3. **`pipeline/router.rs`**:
+   - In `transition()`: When `target == InteractionState::Speaking`, do NOT clear `current_activity`. Only clear `current_activity` when transitioning to `Thinking`, `Listening`, `Ready`, `Paused`, or `Idle`.
+   - Add `pub fn transition_harness_phase(...)`:
+     - Guard 1 (Epoch & Cancel): If `turn_id != state.pipeline.peek_turn_id() || state.pipeline.turn_cancel_token().is_cancelled() || state.pipeline.state() == InteractionState::Listening { return; }`.
+     - Guard 2 (Duplex Audio Priority): Always update `state.pipeline.set_current_activity(activity)`. If `state.pipeline.state() == InteractionState::Speaking`, return early without forcing state change (audio is actively playing on speakers).
+     - Otherwise, call `transition(new_state, activity, ...)`.
+
+4. **`pipeline/assistant/playback.rs` & AudioIntent Clean Sweep**:
+   - `on_playback_started`: Transitions `Thinking` or `Working` $\to$ `Speaking`. Does not inspect `AudioIntent`. Does not clear `current_activity`. If already `Speaking` (e.g. fast turn where `LlmFinished` transitioned early), still record TTFA metrics via `record_playback_started`.
+   - `on_playback_finished`: Only processes if `current_state == InteractionState::Speaking`. If `pending_tts_jobs > 0 || state.pipeline.sink_occupied.load(Ordering::Relaxed)`, return early. When `pending_tts_jobs == 0` and sink drained:
+     - If `state.pipeline.is_llm_done()`: transition `Speaking` $\to$ `InteractionState::Ready`.
+     - Else if let Some(act) = `state.pipeline.current_activity()`: transition `Speaking` $\to$ `InteractionState::Working` with `act`.
+     - Else: transition `Speaking` $\to$ `InteractionState::Thinking`.
+   - **AudioIntent Elimination Scope**: Remove `AudioIntent` from `core/events.rs`, `services/audio/sink.rs`, `services/audio/playback.rs`, `harness/stages/streaming/router.rs`, `harness/stages/speech.rs`, and `services/tts/actor.rs`.
+
+5. **`pipeline/assistant/llm.rs`**:
+   - In `on_llm_finished`: Set `state.pipeline.set_llm_done(true)`.
+   - In `evaluate_synthesis_latch`:
+     - If `pending_jobs > 0 || sink_active`: if state != `Speaking`, transition to `Speaking`.
+     - If `pending_jobs == 0 && !sink_active`: transition immediately to `Ready`.
+
+6. **`harness/chassis.rs`**:
+   - Delete `pub enum TurnPhase` completely.
+   - Delete `turn_phase: TurnPhase` from `struct Harness`.
+   - `take_staged_query(turn_id)`: takes `pending_user_query`. If matches, returns `Some(text)`.
+   - `discard_pending_turn(turn_id)`: clears `pending_user_query` if turn matches.
+   - Delete `has_played_filler: bool` from `Harness`; move to `NonTerminalContext`.
+
+7. **`harness/steps.rs` & `stages/step5_dispatch_llm.rs`**:
+   - Replace all off-thread `pipeline::router::transition(...)` calls at lines 144, 265, 766 with `transition_harness_phase`.
+   - In `step5_dispatch_llm.rs` and `step6_run_stream_pass.rs`: select on `stream_cancel_token.cancelled()` in addition to `turn_cancel_token.cancelled()`, allowing mid-turn acoustic pauses to halt in-flight model generation without aborting the turn.
+
+8. **`pipeline/assistant/transcript.rs` & `text.rs`**:
+   - Call `harness.stage_user_query(turn_id, query.clone())` synchronously under `state.harness.lock()` on `vox-router` *before* calling `spawn_harness_turn_task`.
+
+9. **`pipeline/assistant/interrupt.rs` & `transcript.rs` (Two-Stage Interruption)**:
+   - **Stage 1 (`on_interrupt` on `SpeechStart`)**:
+     - Mute sound card audio immediately via `playback_engine.cancel()`.
+     - Cancel in-flight model stream pass via `state.pipeline.cancel_active_stream()`.
+     - Transition state immediately to `InteractionState::Listening`.
+     - Do NOT cancel `turn_cancel_token`. Do NOT call `next_turn()`. Background tools remain active.
+   - **Stage 2 (`on_transcript_final` in `transcript.rs`)**:
+     - **Empty Transcript (Cough / Noise / Breath)**:
+       - Turn is NOT cancelled.
+       - If `state.pipeline.is_llm_done()`: transition `Listening` $\to$ `Ready`.
+       - Else if `state.pipeline.current_activity().is_some()`: transition `Listening` $\to$ `Working` with existing activity.
+       - Else: rearm `stream_cancel_token`, transition `Listening` $\to$ `Thinking`, and resume the cognitive loop.
+     - **Non-Empty Transcript (Real User Words)**:
+       - Cancel prior active turn cleanly via `state.pipeline.cancel_active_turn()`.
+       - Check Step 0 rapid burst concatenation (`RULE-EVT-08A`): if `let Some(staged) = harness.take_staged_query(interrupted_turn_id)`, prepend to new query (`format!("{} {}", staged, query)`).
+       - Allocate new turn via `state.pipeline.next_turn()`.
+       - Transition to `Thinking` and dispatch query as `user_text` of a brand new dialogue turn.
+
+10. **`services/audio/playback.rs` & `sink.rs`**:
+    - In `PlaybackEngine::ingest_chunk`: `sink_occupied.store(true, Ordering::Relaxed)`.
+    - In `PlaybackEngine::cancel`: `sink_occupied.store(false, Ordering::Relaxed)`.
+
+11. **`persistence/steps.rs` & `harness/steps.rs` (Trajectory Provenance & Relational Ledger)**:
+    - `session_steps` relationally stores strictly assistant thoughts, tool calls, and LLM text generation steps. User utterances are strictly stored in `turns` table.
+    - Note: `step6_execute_tool_batch` already persists `llm` steps; do NOT add redundant persistence in `step6_run_stream_pass`.
+
+12. **`persistence/compactions.rs` & `harness/steps.rs` (Compaction Step Linkage)**:
+    - In `step3_execute_compaction`: pass `turn_id` and `step_id` to `record_compaction_start` so `session_compactions` links directly to the triggering step (`step_id`), eliminating upward-reaching boolean flags from `session_steps`.
+
+---
+
+### Batch 1: Audio Hot-Path Hygiene & Utterance Binding
+
+**Tickets:** `T-AUDIO-01`, `T-AUDIO-02`, `T-AUDIO-03`  
+**Dependencies:** Batch 0.  
+**Build Health:** Must maintain green build across `services/vad/`, `services/stt/`, and `services/audio/`.  
+**Completion Gate:** `cargo test --test vad_segmentation_test --test audio_capture_aec_test --release -- --test-threads=1` passes 100% green.
+
+#### Components & Changes:
+
+1. **`core/events.rs`**:
+   - Add `VadCommand::BindUtterance { turn_id: u32, utterance_id: u32 }`.
+
+2. **`services/vad/actor.rs` & `segmenter.rs`**:
+   - Handle `VadCommand::BindUtterance`: store `binding: Option<(u32, u32)>` and flush held pre-roll as first `SttCommand::StreamChunk`.
+   - Delete turn prediction at lines 176–196 and atomic re-syncs at lines 251–254 and 388–392. No chunk leaves without an explicit binding.
+
+3. **`services/stt/actor.rs`**:
+   - Add `utterance_id` to `StreamChunk`, `Partial`, and `Final`.
+   - Delete `wrapping_add(1)` branches at lines 134 and 206. Unknown IDs trigger provider reset.
+
+4. **`pipeline/assistant/speech.rs` & `dictation/speech.rs`**:
+   - Send `VadCommand::BindUtterance { turn_id, utterance_id }` after allocating `utterance_id`.
+
+5. **`services/audio/device.rs` & `sink.rs`**:
+   - Delete `Mutex` in `SharedRingProducer`. CPAL callback uses single-writer `HeapProd`.
+   - Remove string formatting and logging from `process_output_buffer`.
+
+6. **`services/tts/actor.rs` (Duplicate PlaybackFinished Elimination — T-AUDIO-02)**:
+   - Delete lines 132–140 in `tts/actor.rs` where TTS worker emits `VoxEvent::PlaybackFinished`. Audio sink (`sink.rs`) MUST be the sole logical emitter of playback completion.
+
+7. **`services/tts/actor.rs` & `services/tts/mod.rs` (TTS Shutdown Hygiene — T-AUDIO-03)**:
+   - In `spawn_tts_worker`: respect `engine_shutdown: Arc<AtomicBool>` in the worker loop.
+   - In `cool_down_tts`: join the worker thread handle stored in `handles.tts_handle`.
+
+---
+
+### Batch 2: Remote Control Protocol, Leasing & Trust Decoupling
+
+**Tickets:** `T-REMOTE-01`, `T-REMOTE-02`, `T-REMOTE-03`  
+**Dependencies:** Batch 0.  
+**Build Health:** Builds cleanly; touches `services/remote/` and `app/src/services/remoteService.ts`.  
+**Completion Gate:** `cargo test --test remote_connection_test --test remote_link_test --release -- --test-threads=1` passes 100% green.
+
+#### Components & Changes:
+
+1. **`services/remote/session/manager.rs` & `listener.rs`**:
+   - Add `ControllerLease { device_id, lease_id }` with atomic reservation before `build_attach_snapshot`.
+   - Send `LinkRefused(controller_attached)` if lease is held.
+
+2. **`services/remote/session/dialer.rs`**:
+   - Remove `delete_paired_device` on `UnknownPeer`. Emit `RemoteFailureKind::UnknownPeer` without touching database trust rows.
+
+3. **`services/remote/session/supervisor.rs`**:
+   - Replace `current_pipeline_state: RwLock<String>` with `current_pipeline_view: RwLock<PipelineView { state, turn_id }>`.
+   - On disconnect/link-loss, emit `state_changed { state: "Paused", turn_id: view.turn_id }`.
+
+4. **`services/remote/audio/controller_runtime.rs`**:
+   - Replace detached `tauri::async_runtime::spawn` calls with `blocking_send` on dedicated VAD OS thread to guarantee FIFO wire ordering.
+
+---
+
+### Batch 3: Verification & Cross-Target Regression Gate
+
+**Ticket:** `T-INT-01`  
+**Dependencies:** Batches 0, 1, 2.  
+**Build Health:** Global workspace must compile with 0 warnings across all targets.  
+**Completion Gate:** `./scripts/verify-targets.sh` succeeds; full nextest suite passes 100% green.
+
+#### Execution:
+1. Run `./scripts/lint-arch.sh` to enforce `RULE-HARN-01` and layering invariants.
+2. Run desktop release compile: `cargo clippy --bin Vox --lib --release --no-default-features -D warnings`.
+3. Run Android cross-compile: `cargo clippy --target aarch64-linux-android --lib --release -D warnings -D clippy::disallowed_methods`.
+4. Run full integration test suite:
+   ```bash
+   RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1 --no-fail-fast
+   ```
+
+---
+
+## 5. Risk & Inference Matrix
+
+| Risk / Inference | Impact | Mitigation Strategy |
+| :--- | :--- | :--- |
+| **Synthetic Tests Bypassing LlmFinished** | `playback_test.rs` sets `Speaking` manually and expects `Ready` on `PlaybackFinished` without sending `LlmFinished`. | Update the 4 headless tests to emit `VoxEvent::LlmFinished` before asserting `Ready`, matching production wiring. |
+| **CPAL Hot-Path Ingestion Latch** | `sink_occupied` read in `on_llm_finished` could be stale if written only on CPAL ticks. | `PlaybackEngine::ingest_chunk` sets `sink_occupied = true` on sample push; `cancel()` sets `false`. |
+| **Preamble Barge-In Echo** | If state transitions out of `Speaking` while audio plays, echo cancellation is disabled. | Duplex Audio Priority Guard in `transition_harness_phase` guarantees state remains `Speaking` until playback drains. |

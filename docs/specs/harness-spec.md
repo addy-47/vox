@@ -51,32 +51,28 @@ flowchart TD
     StreamDemux -- Thinking Stream --> Quarantine[Isolate to Memory Buffer & Telemetry - Zero Unthrottled IPC]
     
     StreamDemux -- Text Tokens --> EagerChunk[Eager Clause Chunker]
-    EagerChunk --> ResolveIntent{"Tools Enabled in Step?"}
-    ResolveIntent -- "Yes (allow_tools == true)" --> InterimTTS[Dispatch Clause as InterimFiller]
-    ResolveIntent -- "No (allow_tools == false)" --> FinalTTS[Dispatch Clause as TurnResponse]
-    InterimTTS --> SoundCard[Audio Output Engine]
-    FinalTTS --> SoundCard
+    EagerChunk --> StreamTTS[Dispatch Clause to Speech Synthesis]
+    StreamTTS --> SoundCard[Audio Output Engine]
+    SoundCard -- "PlaybackStarted" --> TransSpeaking[Transition to InteractionState::Speaking]
     
     StreamDemux -- Tool Invocations --> BatchCollector[Multi-Tool Batch Collector]
     
     StreamDemux -- Finished --> EvaluatePass{"Tool Calls in Batch?"}
     
-    EvaluatePass -- "Yes (1..N Tools)" --> TransWorking[Transition to InteractionState::Working]
+    EvaluatePass -- "Yes (1..N Tools)" --> TransWorking["transition_harness_phase(Working, Activity)"]
     TransWorking --> ExecBatch[Execute Tool Batch: Parallel / Exclusive Barrier]
     SoundCard -.-> ExecBatch
     ExecBatch --> CommitStep[Commit Step Boundary to History]
     CommitStep --> CheckSteps{"Step Index < 20?"}
     CheckSteps -- Yes --> EvalBudget
     CheckSteps -- No --> ForceText[Final Generation Pass without Tools]
-    ForceText --> FinalTTS
+    ForceText --> StreamTTS
     
-    EvaluatePass -- "No (0 Tools - Final Response)" --> CloseTurn[Harness Closes Turn: turn_open = false]
-    CloseTurn --> EmitFinished[Emit VoxEvent::LlmFinished]
-    SoundCard -- "PlaybackStarted" --> TransSpeaking[Transition to InteractionState::Speaking]
-    TransSpeaking --> LatchWait{"Two-Key Quiescence Latch:<br/>turn_open == false AND<br/>Audio Output Drained?"}
-    SoundCard -- "PlaybackFinished" --> LatchWait
-    CloseTurn --> LatchWait
+    EvaluatePass -- "No (0 Tools - Final Response)" --> EmitFinished[Emit VoxEvent::LlmFinished]
+    SoundCard -- "PlaybackFinished" --> LatchWait{"Duplex Quiescence Latch:<br/>llm_done == true AND<br/>Audio Output Drained?"}
+    EmitFinished --> LatchWait
     LatchWait -- "Both Satisfied" --> FinalizeTurn[Transition to InteractionState::Ready]
+    LatchWait -- "Audio Drains, llm_done == false" --> ReturnDuplex["Return to Working (if active tool) or Thinking"]
     FinalizeTurn --> IdleWatch[Arm 20s Quiet Debounce Watcher]
     IdleWatch --> Done([Ready for Next Turn])
 ```
@@ -94,6 +90,11 @@ flowchart TD
     3. **Tier 3 (Step Sequencing — `steps.rs`)**: Sequences discrete turn phases. Delegates strictly to `stages/` and `tools/`. Direct actor channel sending from `steps.rs` is strictly forbidden.
     4. **Tier 4 (Stages & Tools — `stages/` and `tools/`)**: Sibling modules under `services/harness/`. They encapsulate domain algorithms and exclusively own all downstream actor and persistence message dispatch.
   - This layering invariant is deterministically enforced by `./scripts/lint-arch.sh`.
+- **RULE-HARN-01A (Off-Thread State Transition Protocol — transition_harness_phase)**:
+  - Cognitive workers executing on Tokio background tasks MUST NOT call raw `pipeline::router::transition(...)` directly.
+  - Intermediate phase transitions (`Thinking` $\to$ `Working` / `Thinking`) MUST invoke the guarded helper `transition_harness_phase(turn_id, target_state, activity, ...)` on `router.rs`:
+    1. **Epoch & Cancel Guard**: If `turn_id != state.pipeline.peek_turn_id()`, or `turn_cancel_token().is_cancelled()`, or `state.pipeline.state() == InteractionState::Listening`, the call MUST drop immediately without mutating state. This prevents asynchronous Tokio tasks from overwriting user speech or barge-in transitions.
+    2. **Duplex Audio Priority Guard**: The helper ALWAYS updates `state.pipeline.set_current_activity(activity)`. If the current pipeline state is `InteractionState::Speaking` (preamble audio is actively playing on the sound card), the helper MUST NOT force the pipeline out of `Speaking`. It updates `current_activity` and leaves the state in `Speaking`; when the preamble audio finishes playing, `on_playback_finished` automatically drops to `Working(activity)`.
 - **RULE-HARN-02 (1:1 Session Mapping)**: The Harness lifecycle MUST map 1:1 to user session engagement:
   - Mounted when a session starts; loads persona prompt, personal memory, and uncompacted historical turns.
   - Deconstructed when a session ends; flushes pending metrics, cancels background timers, and retains zero conversational memory in RAM during idle state.
@@ -156,13 +157,17 @@ flowchart TD
 - **RULE-HARN-10A (Preamble Speech Preservation)**:
   - If the model emits spoken tokens prior to tool calls in a generation pass (e.g. *"Let me search the files for that"*), the router MUST NOT clear the chunker or discard accumulated characters.
   - The preamble text MUST be preserved in `StreamPassOutcome::ToolCallsReceived` and recorded in conversation history as the assistant message initiating the tool calls.
-- **RULE-HARN-10B (Stream Audio Intent & Two-Key Quiescence Latch)**:
-  1. In any step where tools are enabled (`allow_tools == true`), mid-stream clauses extracted before `LlmResponse::Finished` MUST be dispatched to TTS with `AudioIntent::InterimFiller` (since the router cannot know in advance whether tool calls will follow). If `allow_tools == false`, all clauses are dispatched as `AudioIntent::TurnResponse`.
-  2. While `turn_open == true` (the cognitive ReAct loop is still active), audio playback onset (`on_playback_started`) for `AudioIntent::InterimFiller` MUST NOT transition the pipeline to `Speaking`, and audio playback completion (`on_playback_finished`) MUST return early (`if state.pipeline.is_turn_open() { return; }`) so the pipeline remains stably in `Thinking` or `Working`.
-  3. Preamble audio playback on the sound card and background tool execution MUST execute concurrently. The coordinator MUST NOT await audio draining before launching tool futures.
-  4. When a generation pass finishes with zero tool calls (`StreamPassOutcome::Completed`), the cognitive turn is complete: any unpunctuated tail is flushed as `AudioIntent::TurnResponse`, and `loop.rs` emits `VoxEvent::LlmFinished { turn_id }`.
-  5. Upon receiving `VoxEvent::LlmFinished`, `on_llm_finished` sets `turn_open = false` (**Key 1**). If audio synthesis or playback is still in progress (`pending_synthesis_jobs > 0` or sink active), `on_llm_finished` (or `on_playback_started` when `turn_open == false`) transitions the pipeline to `InteractionState::Speaking`.
-  6. Transition to `InteractionState::Ready` is governed strictly by the **Two-Key Quiescence Latch** (`turn_open == false` AND `pending_synthesis_jobs == 0` with sound card buffer drained), evaluated in both `on_llm_finished` and `on_playback_finished` **regardless of whether the draining audio chunks were originally dispatched with `InterimFiller` or `TurnResponse`**.
+- **RULE-HARN-10B (Streaming Speech Delivery & Duplex Quiescence Latch)**:
+  1. Mid-stream clauses extracted by `ClauseChunker` MUST be dispatched to speech synthesis eagerly to guarantee $<800\text{ms}$ speech onset.
+  2. Preamble audio playback on the sound card and background tool execution MUST execute concurrently. The coordinator MUST NOT await audio draining before launching tool futures.
+  3. When audio playback begins on the sound card (`PlaybackStarted`), the pipeline transitions `Thinking` or `Working` $\to$ `Speaking`. The active `ActivityEnvelope` in `current_activity` MUST NOT be cleared.
+  4. When a generation pass finishes with zero tool calls (`StreamPassOutcome::Completed`), the cognitive ReAct loop is complete, and `loop.rs` emits `VoxEvent::LlmFinished { turn_id }`.
+  5. Upon receiving `VoxEvent::LlmFinished`, `on_llm_finished` marks `llm_done = true` for the active turn. If audio synthesis and playback have already completely drained (`pending_tts_jobs == 0 && !sink_occupied`), `on_llm_finished` transitions the pipeline immediately to `InteractionState::Ready`.
+  6. Transition to `InteractionState::Ready` is governed strictly by the **Duplex Quiescence Law**, evaluated on `PlaybackFinished` (`pending_tts_jobs == 0` with sound card buffer drained):
+     - If `llm_done == true`: transitions `Speaking` $\to$ `InteractionState::Ready`.
+     - If `llm_done == false` AND `current_activity.is_some()`: transitions `Speaking` $\to$ `InteractionState::Working` restoring the active activity envelope.
+     - If `llm_done == false` AND `current_activity.is_none()`: transitions `Speaking` $\to$ `InteractionState::Thinking` while the model continues generating subsequent clauses.
+  7. Audio intent classification (`AudioIntent`) is eliminated from the playback completion contract. `PlaybackFinished` carries no intent discriminator and evaluates quiescence strictly against `llm_done` and `current_activity`.
 
 ### 4.5 Agentic Tool Execution Chassis
 - **RULE-HARN-11 (ZBC Universal Tool Interface & Concurrency Mode)**:
@@ -178,22 +183,30 @@ flowchart TD
   - The tool execution engine (`ToolExecutor::execute_batch`) schedules batch execution using Harness-owned barriers: contiguous `Parallel` tools run concurrently via `futures_util::future::join_all`, while `Exclusive` tools form strict sequential barriers that drain preceding waves before executing alone.
   - Outcomes MUST be committed to history in the exact sequence declared by the model, preserving deterministic declaration order across concurrent completions.
 - **RULE-HARN-11B (Coordinator State Machine Authority & Immediate Step Commits)**:
-  - The Harness coordinator (`loop.rs`) exclusively owns state machine transitions (`Thinking` $\to$ `Working` $\to$ `Speaking` $\to$ `Ready`).
+  - The Harness coordinator (`loop.rs`) exclusively owns cognitive step state transitions via `transition_harness_phase`.
   - When a tool batch is received, the coordinator transitions the pipeline to `InteractionState::Working` with the active `ActivityEnvelope`. Downstream tools and audio callbacks MUST NOT initiate pipeline state transitions.
-  - Intermediate cognitive ReAct iterations MUST NOT be accumulated in volatile turn-scoped scratchpads. At each step boundary, the assistant preamble message and all associated tool observations MUST be committed immediately to `ConversationHistoryStage` via `commit_tool_step`.
+  - Intermediate cognitive ReAct iterations MUST NOT be accumulated in volatile turn-scoped scratchpads. At each step boundary, the assistant preamble message and all associated tool observations MUST be committed immediately to `ConversationHistoryStage` via `commit_tool_step`. On Step 0, `commit_tool_step` flushes the staged user query (`pending_user_query`) to canonical history before recording tool steps.
   - If batch execution is cancelled or suspended mid-batch (`cancel.is_cancelled()` or `SuspendForUser`), `commit_tool_step` MUST synthesize `"Tool execution cancelled"` fallback observations for all unexecuted calls in the batch, guaranteeing a strict 1:1 `tool_calls` $\leftrightarrow$ `Role::Tool` bijection and preventing provider HTTP 400 errors on subsequent turns.
 - **RULE-HARN-11C (Reentrant Step Loop Ceiling & Mandatory Summary Pass)**:
   - The coordinator supports iterative ReAct execution up to `MAX_TOOL_STEPS = 20`.
-  - If step 20 is reached without a terminal answer, the coordinator disables tools (`allow_tools = false`) and executes a mandatory final summary generation pass, producing a complete spoken summary (`AudioIntent::TurnResponse`). The coordinator MUST NOT abort with an unhandled error unless the summary pass itself fails.
+  - If step 20 is reached without a terminal answer, the coordinator disables tools (`allow_tools = false`) and executes a mandatory final summary generation pass, producing a complete spoken summary. The coordinator MUST NOT abort with an unhandled error unless the summary pass itself fails.
 - **RULE-HARN-11D (Relational Trajectory SSOT in Turso DB)**:
   - Cognitive trajectories MUST be persisted relationally in the local Turso database engine under a 1:N hierarchy:
     `sessions (1)` $\to$ `turns (N)` $\to$ `session_steps (M)` $\to$ `session_tool_calls (K)`.
   - `PersistenceWorker` processes events in FIFO order. `PersistenceEvent::StepCompleted` MUST be dispatched before the batch's `PersistenceEvent::ToolCallExecuted` events to guarantee the foreign key parent row exists before child rows are inserted.
 - **RULE-HARN-12 (Interruption, Cancellation & Non-Rollback Invariant)**:
-  - When a turn is interrupted (barge-in):
-    - Active tool execution tasks and child futures MUST be aborted via `CancellationToken`.
-    - User turn rollback (`rollback_last_user_turn`) is strictly restricted to Step 0 interruptions where zero assistant speech and zero tool executions have occurred (`last.role == Role::User`).
-    - Once Step 1 tools have commenced execution or spoken a preamble, `commit_tool_step` has run (`last.role == Role::Tool`), and rollback is strictly forbidden. Preceding tool observations remain permanently preserved in history.
+  - Interruption and steering lifecycle transitions are governed authoritatively by `docs/specs/events-spec.md §4.3` (SSOT: `RULE-EVT-08`, `RULE-EVT-08A`, `RULE-EVT-08B`, `RULE-EVT-08C`).
+  - **Cancellation Tokens & Scopes**:
+    - `stream_cancel_token`: Scoped to the individual in-flight LLM streaming pass. Cancelled immediately upon `SpeechStart` across all states to stop model token generation with zero latency.
+    - `turn_cancel_token`: Scoped to the active conversational turn. Cancelled only upon terminal abort (`stop_turn`) or upon non-empty `TranscriptFinal` confirming real user barge-in.
+  - **Tool Task Cancellation Boundaries**:
+    - Terminal Turn Abort (`stop_turn` or barge-in on non-empty `TranscriptFinal` per `RULE-EVT-08`): Active tool execution tasks and child futures MUST be aborted via `turn_cancel_token`.
+    - Mid-Work Acoustic Pause (`RULE-EVT-08C`): Active background tool tasks MUST NOT be aborted (`turn_cancel_token` is NOT cancelled). Tools run to completion while acoustic pause mutes audio and in-flight stream cancels via `stream_cancel_token`. If user speech yields empty transcript, tools continue and turn proceeds. If non-empty, `cancel_active_turn()` signals `turn_cancel_token`, aborting the prior turn cleanly.
+  - **User Query Staging & Non-Rollback Law**:
+    - User query staging (`pending_user_query: Option<(u32, String)>`) guarantees that uncommitted Step 0 user queries never pollute `ConversationHistoryStage`.
+    - Interrupted Step 0 turns (`RULE-EVT-08A`) extract the staged query via `take_staged_query(turn_id)` into continuation prefix (`stash_for_continuation`). Positional rollback from history (`rollback_last_user_turn`) is permanently eliminated.
+    - Once Step 0 tools commit (`commit_tool_step`), preceding tool observations remain permanently preserved in history. Query discarding is strictly forbidden.
+    - Mid-turn barge-in in Step $K \ge 1$ (`RULE-EVT-08B`) preserves all committed tool steps, re-prompting Step $K$ on empty speech or committing a brand new dialogue turn with `user_text` on non-empty speech.
 - **RULE-HARN-13 (Zero Unbounded Observations & Safe Truncation)**:
   - No tool execution outcome may inject content exceeding `max_observation_tokens` into conversation history.
   - Slicing MUST reserve marker overhead and snap to nearest newline `\n` within 200 bytes of the cut point, falling back to UTF-8 character-boundary snapping for single-line or minified payloads. Unaligned byte slicing is strictly forbidden.
@@ -205,7 +218,7 @@ flowchart TD
     - Ping-Pong Loop: $A \to B \to A \to B$ alternation across steps.
     - Error Cascade: consecutive erroring steps across step boundaries (not intra-batch parallel calls on Step 0).
   - Strike 1 MUST inject an authoritative system steering warning into the observation.
-  - Strike 2 MUST strip tools (`allow_tools = false`) and force a final spoken summary pass (`AudioIntent::TurnResponse`).
+  - Strike 2 MUST strip tools (`allow_tools = false`) and force a final spoken summary pass.
 - **RULE-HARN-15 (Tier 4 Disk Cache Isolation & TTL)**:
   - Tool spillover files MUST reside exclusively under `paths::session_tool_outputs_dir(session_id)`.
   - Wiped on session deletion; startup sweep purges orphaned session folders, files with `mtime > 7 days`, and enforces a 100MB LRU directory ceiling.
@@ -213,21 +226,23 @@ flowchart TD
   - The coordinator MUST evaluate token budget before every reentrant pass. If utilization reaches $\ge 85\%$, inline compaction MUST trigger transparently with user-visible activity events.
   - Silent FIFO turn drops are forbidden while an LLM provider is available.
 - **RULE-HARN-17 (Granular Step Provenance SSOT)**:
-  - Every ReAct step MUST persist its latency, `prompt_tokens`, `completion_tokens`, compaction status (`is_compacted`), and `guardrail_strike` to `session_steps` in Turso DB.
+  - Every ReAct step MUST persist its `content`, `prompt_tokens`, `completion_tokens`, and `guardrail_strike` to `session_steps` in Turso DB. Mid-loop compaction links directly to `session_compactions.step_id`.
   - Every tool invocation MUST persist `truncated` and `spillover_path` in `session_tool_calls`.
   - Structured logs (`[StepAudit]`, `[TruncationAudit]`, `[GuardrailAudit]`) MUST be emitted at step and tool completion.
 - **RULE-HARN-18 (Two-Phase Mid-Work Interruption, Step Steering & Disengage UX)**:
+  - **SSOT Reference**: Interaction state transitions and steering definitions are governed authoritatively by `docs/specs/events-spec.md §4.3` (`RULE-EVT-08A`, `RULE-EVT-08B`, `RULE-EVT-08C`).
   - **Two-Step Disengage UX**:
     1. Step 1 (Active Turn Abort): When the user presses `Esc` or clicks the Stop button during an active turn (`Thinking`, `Working`, `Speaking`, `Listening`), the active turn aborts immediately to `InteractionState::Ready` via `stop_turn`. Active work cancels; sound card playback mutes; session remains engaged; models stay warm in RAM.
     2. Step 2 (Session Disengage): When the user presses `Esc` or clicks the Disengage button while in `InteractionState::Ready`, the session disengages cleanly to `InteractionState::Idle` via `end_session`. Audio capture stops and models cool down.
-  - **Three-Scenario Steering Protocol**:
-    1. Scenario A (Pre-Working Thinking — Step 0): In-flight LLM stream cancels immediately; proposed tool calls are discarded; premature Step 0 user turn rolls back from history (`rollback_last_user_turn`); new speech merges into prompt; model re-prompts in `Thinking`.
-    2. Scenario B (Mid-Turn Thinking — Step $K \ge 1$): In-flight LLM stream cancels immediately; uncommitted tool calls are discarded; committed tool steps remain in history; new speech commits as `Role::User`; model re-prompts in `Thinking`.
-    3. Scenario C (Active Working): Sound card mutes immediately; in-flight tools complete current step; speech buffers into `StepInbox`; step boundary commits tool results and user message; loop advances to Step $K+1$.
+  - **Harness Steering Execution & Storage SSOT**:
+    - Rapid Query Burst (Step 0 per `RULE-EVT-08A`): In-flight LLM stream cancels immediately via `stream_cancel_token`; uncommitted Step 0 user query is extracted via `take_staged_query(turn_id)` into continuation prefix (`stash_for_continuation`); new speech merges into combined prompt; model re-prompts in `Thinking`. Positional history rollback is permanently eliminated.
+    - Mid-Turn Real Barge-In (Step $K \ge 1$ per `RULE-EVT-08B`): In-flight Step $K$ LLM stream cancels immediately via `stream_cancel_token`; committed tool steps remain in history; on non-empty `TranscriptFinal`, `cancel_active_turn()` finalizes the prior turn; allocates a new `turn_id` via `next_turn()`; new speech commits as a standard `Role::User(new_speech)` turn in `turns` table on top of tool history; model prompts in `Thinking`.
+    - Active Working Tool Protection (`RULE-EVT-08C`): Sound card mutes immediately; in-flight tools complete current step uninterrupted; `stream_cancel_token` aborts token generation; on empty transcript, turn loop resumes without lost tool results; on non-empty transcript, prior turn is aborted cleanly and new turn begins.
   - **`StepInbox` Delivery SSOT**:
-    - Messages buffer with `QueuedMessageDelivery::{Immediate, TurnBoundary}` in `stages/inbox.rs`.
-    - `Immediate` messages drain at step boundaries into `ConversationHistoryStage`.
+    - Buffers external programmatic notifications (e.g. sidecar alerts, scheduled jobs) with `QueuedMessageDelivery::{Immediate, TurnBoundary}` in `stages/inbox.rs`.
+    - `Immediate` messages drain at step boundaries into `ConversationHistoryStage` via `step6_await_and_drain_inbox`.
     - `TurnBoundary` messages drain upon terminal turn completion to trigger the next conversational turn.
+    - User voice barge-in creates standard dialogue turns in `turns` table and does NOT inject synthetic user messages into `StepInbox` or `session_steps`.
 
 ---
 
@@ -253,9 +268,9 @@ To avoid formatting errors, prompt assembly uses strict XML tags:
 | Decision | Choice | Rationale | Rejected Alternative |
 | :--- | :--- | :--- | :--- |
 | **3-Stream Demuxing** | Demux thinking, content tokens, and tool calls in a single pass | Natively isolates reasoning tokens and collects multi-tool batches while preserving sub-800ms speech onset. | Monolithic text stream (leaked reasoning tokens into audio and truncated parallel tool calls). |
-| **Natural Preamble Preservation** | Stream introductory text as `AudioIntent::InterimFiller` without chunker wipe | Preserves conversational flow; user hears the assistant start working without awkward dead air. | Dropping preamble speech (`acc.chunker.clear()`) and patching with schema-bloated `spoken_filler`. |
+| **Natural Preamble Preservation** | Stream introductory text eagerly to speech synthesis without chunker wipe | Preserves conversational flow; user hears the assistant start working without awkward dead air. | Dropping preamble speech (`acc.chunker.clear()`) and patching with schema-bloated `spoken_filler`. |
 | **Universal Tool Interface (ZBC)** | Zero flow classification (`Terminal`/`NonTerminal`) and zero speech parameters | Enforces clean separation of concerns: tools execute logic; the LLM speaks naturally; the coordinator manages state. | Legacy `Terminal` vs `NonTerminal` dual classification with artificial `spoken_response` and `spoken_filler` schema bloat. |
-| **Harness-Owned State Transitions** | Coordinator (`loop.rs`) drives `Working` and `Ready` states | Decouples audio playback callbacks from state machines, eliminating mid-turn state inversion bugs. | Playback callbacks driving `Speaking` and `Ready` transitions on audio buffer draining. |
+| **Duplex Quiescence Latch** | Router coordinates `(Thinking \| Working) <==> Speaking` with `llm_done` latch | Reflects physical audio truthfully, prevents silent `Speaking` state when LLM pauses, and eliminates `AudioIntent` from gating. | Artificial `AudioIntent` discriminator or loose multi-thread atomics (`turn_open`, `drained_while_open`). |
 | **Fixed Prompt Prefix Order** | Static persona first, then memory, then summary | Maximizes KV-cache prefix hits across turns, cutting prefill latency and compute cost. | Dynamic prompt concatenation (invalidated KV-cache on every turn, causing latency spikes). |
 | **Adaptive Runaway Chunker** | Backwards scan for syntax seams at 22 words | Prevents monotonic, runaway sentences while preserving natural prosodic clauses. | Fixed word-count splitting (chopped sentences mid-phrase, causing robotic audio artifacts). |
 | **Fail-Fast FIFO Fallback** | Fall back to FIFO window shift on compaction failure | Guarantees the voice turn is never blocked when summarization fails or models stall. | Infinite compaction retry loop (froze voice interaction when compaction encountered errors). |
@@ -267,7 +282,7 @@ To avoid formatting errors, prompt assembly uses strict XML tags:
 - **Eager Streaming Latency**: Measure time from speech end to first audio sample generated. Verify that first audio playback begins in $<800\text{ms}$ on standard hardware.
 - **Preamble Speech Preservation**: Trigger a tool-calling query where the model speaks an introductory phrase. Verify that the preamble is synthesized, played on speakers, and committed to conversation history without truncation.
 - **Multi-Tool Batch Collection**: Trigger a query invoking multiple tools. Verify that all tool calls in the pass are collected, scheduled across execution barriers, and executed without early return on the first tool call.
-- **Interim Audio State Isolation**: Verify that preamble audio playback tagged `AudioIntent::InterimFiller` does NOT transition the pipeline to `Speaking` or `Ready` while tools are running.
+- **Duplex State Isolation**: Verify that preamble audio playback does NOT cause premature termination to `Ready` while tools are running, and transitions cleanly back to `Working` upon audio drain when `llm_done == false`.
 - **Thinking Token Isolation**: Stream reasoning tokens (`<think>` or `reasoning_content`). Verify that thinking tokens are quarantined, never dispatched to `ClauseChunker`, never emitted to `IpcEvent::LlmToken`, and never persisted to `turns.assistant_text`.
 - **Compaction Threshold Invariant**: Simulate conversation exceeding 85% context utilization. Verify that inline compaction executes before response generation, prunes history, and updates the session context.
-- **Interrupted Turn Rollback**: Interrupt assistant speech within the first 100ms before words are synthesized. Verify that the turn is rolled back cleanly from history with zero partial turn artifacts.
+- **Interrupted Turn Staging Discard**: Interrupt assistant speech within the first 100ms before artifacts are committed. Verify that the staged query is discarded via `discard_pending_turn` or stashed with zero history rollback.

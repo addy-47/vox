@@ -694,19 +694,8 @@ pub async fn step6_execute_tool_batch(
     // Dispatch persistence events in strict parent-then-child FIFO order
     let step_duration_ms = step_start.elapsed().as_millis() as u64;
 
-    let is_compacted = {
-        let mut guard = ctx.harness_arc.lock();
-        if let Some(ref mut h) = *guard {
-            let was = h.is_compacted_this_turn;
-            h.is_compacted_this_turn = false;
-            was
-        } else {
-            false
-        }
-    };
-
     log::info!(
-        "[StepAudit] session_id={} turn_id={} step_index={} duration_ms={} prompt_tokens={} completion_tokens={} tool_count={} guardrail_strike={} is_compacted={}",
+        "[StepAudit] session_id={} turn_id={} step_index={} duration_ms={} prompt_tokens={} completion_tokens={} tool_count={} guardrail_strike={}",
         ctx.session_id,
         turn_id,
         step_index,
@@ -714,8 +703,7 @@ pub async fn step6_execute_tool_batch(
         prompt_tokens,
         completion_tokens,
         outcomes.len(),
-        strike_count,
-        is_compacted
+        strike_count
     );
 
     let persist_lock = ctx.req.app_state.persist_tx.lock();
@@ -731,7 +719,6 @@ pub async fn step6_execute_tool_batch(
         prompt_tokens,
         completion_tokens,
         strike_count as u32,
-        is_compacted,
     ) {
         log::error!(
             "[Harness::Persistence] Step {} provenance lost for turn {}: {}",

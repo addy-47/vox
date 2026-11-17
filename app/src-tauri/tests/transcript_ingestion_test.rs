@@ -185,6 +185,7 @@ impl Rig {
     }
 
     /// Waits until the assistant response of the running turn is populated.
+    #[allow(dead_code)]
     fn await_assistant_response(&self) -> String {
         let deadline = std::time::Instant::now() + DEADLINE;
         while std::time::Instant::now() < deadline {

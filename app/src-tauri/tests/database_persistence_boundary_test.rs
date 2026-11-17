@@ -1468,13 +1468,12 @@ async fn multi_step_turn_persists_session_steps_and_foreign_key_linked_tool_call
                 session_id,
                 turn_id,
                 step_index: 0,
-                preamble_text: Some("Checking notes.".to_string()),
+                content: Some("Checking notes.".to_string()),
                 tool_count: 2,
                 duration_ms: Some(120),
                 prompt_tokens: None,
                 completion_tokens: None,
                 guardrail_strike: 0,
-                is_compacted: false,
                 created_at: now + 10,
             })
             .expect("StepCompleted 0");
@@ -1522,13 +1521,12 @@ async fn multi_step_turn_persists_session_steps_and_foreign_key_linked_tool_call
                 session_id,
                 turn_id,
                 step_index: 1,
-                preamble_text: None,
+                content: None,
                 tool_count: 1,
                 duration_ms: Some(40),
                 prompt_tokens: None,
                 completion_tokens: None,
                 guardrail_strike: 0,
-                is_compacted: false,
                 created_at: now + 100,
             })
             .expect("StepCompleted 1");
@@ -1582,21 +1580,21 @@ async fn multi_step_turn_persists_session_steps_and_foreign_key_linked_tool_call
         // Verify Step 0 details
         let mut s0_rows = conn
             .query(
-                "SELECT tool_count, preamble_text FROM session_steps WHERE id = ?;",
+                "SELECT tool_count, content FROM session_steps WHERE id = ?;",
                 (step0_id.clone(),),
             )
             .await
             .expect("query step 0");
         let s0_row = s0_rows.next().await.unwrap().expect("step 0 row");
         let s0_tool_count: i64 = s0_row.get(0).unwrap();
-        let s0_preamble: Option<String> = s0_row.get(1).unwrap();
+        let s0_content: Option<String> = s0_row.get(1).unwrap();
         assert_eq!(s0_tool_count, 2);
-        assert_eq!(s0_preamble.as_deref(), Some("Checking notes."));
+        assert_eq!(s0_content.as_deref(), Some("Checking notes."));
 
         // Verify Step 1 details
         let mut s1_rows = conn
             .query(
-                "SELECT tool_count, preamble_text FROM session_steps WHERE id = ?;",
+                "SELECT tool_count, content FROM session_steps WHERE id = ?;",
                 (step1_id.clone(),),
             )
             .await
@@ -1664,7 +1662,7 @@ async fn session_hard_delete_cascades_to_session_steps_and_session_tool_calls() 
 
         // Insert 2 session_steps
         conn.execute(
-            "INSERT INTO session_steps (id, session_id, turn_id, step_index, preamble_text, tool_count, duration_ms, created_at)
+            "INSERT INTO session_steps (id, session_id, turn_id, step_index, content, tool_count, duration_ms, created_at)
              VALUES ('step-cas-0', ?, 1, 0, 'Preamble', 2, 100, ?);",
             (session_id, now),
         )
@@ -1672,7 +1670,7 @@ async fn session_hard_delete_cascades_to_session_steps_and_session_tool_calls() 
         .expect("insert step 0");
 
         conn.execute(
-            "INSERT INTO session_steps (id, session_id, turn_id, step_index, preamble_text, tool_count, duration_ms, created_at)
+            "INSERT INTO session_steps (id, session_id, turn_id, step_index, content, tool_count, duration_ms, created_at)
              VALUES ('step-cas-1', ?, 1, 1, NULL, 1, 50, ?);",
             (session_id, now),
         )
@@ -1773,13 +1771,12 @@ async fn schema_v18_persists_step_tokens_strikes_compaction_and_tool_spillover_m
                 session_id,
                 turn_id: 1,
                 step_index: 0,
-                preamble_text: Some("Analyzing query".to_string()),
+                content: Some("Analyzing query".to_string()),
                 tool_count: 1,
                 duration_ms: Some(120),
                 prompt_tokens: Some(420),
                 completion_tokens: Some(85),
                 guardrail_strike: 1,
-                is_compacted: true,
                 created_at: now,
             })
             .expect("Failed to send StepCompleted");
@@ -1813,7 +1810,7 @@ async fn schema_v18_persists_step_tokens_strikes_compaction_and_tool_spillover_m
             if !step_verified {
                 let mut rows = conn
                     .query(
-                        "SELECT prompt_tokens, completion_tokens, guardrail_strike, is_compacted FROM session_steps WHERE id = ?;",
+                        "SELECT prompt_tokens, completion_tokens, guardrail_strike, content FROM session_steps WHERE id = ?;",
                         (step_id.clone(),),
                     )
                     .await
@@ -1823,12 +1820,12 @@ async fn schema_v18_persists_step_tokens_strikes_compaction_and_tool_spillover_m
                     let prompt_tok: Option<i64> = row.get(0).expect("prompt_tokens");
                     let comp_tok: Option<i64> = row.get(1).expect("completion_tokens");
                     let strike: i64 = row.get(2).expect("guardrail_strike");
-                    let compacted: i64 = row.get(3).expect("is_compacted");
+                    let text: Option<String> = row.get(3).expect("content");
 
                     assert_eq!(prompt_tok, Some(420), "prompt_tokens must be 420");
                     assert_eq!(comp_tok, Some(85), "completion_tokens must be 85");
                     assert_eq!(strike, 1, "guardrail_strike must be 1");
-                    assert_eq!(compacted, 1, "is_compacted must be 1 (true)");
+                    assert_eq!(text.as_deref(), Some("Analyzing query"));
                     step_verified = true;
                 }
             }
