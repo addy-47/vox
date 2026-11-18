@@ -68,11 +68,14 @@ pub fn transition(
     state: &AppState,
 ) {
     let activity = match (new_state, activity) {
-        (InteractionState::Working, Some(act)) => Some(act),
-        (InteractionState::Working, None) => None,
+        (InteractionState::Working, Some(act)) => Some(act.clone()),
+        (InteractionState::Working, None) => state.pipeline.current_activity(),
+        (InteractionState::Listening | InteractionState::Speaking, act) => {
+            act.cloned().or_else(|| state.pipeline.current_activity())
+        }
         (_, Some(act)) => {
             log::warn!(
-                "[Pipeline] Discarding activity {:?} on non-Working state {:?}",
+                "[Pipeline] Discarding activity {:?} on terminal state {:?}",
                 act.name,
                 new_state
             );
@@ -83,9 +86,11 @@ pub fn transition(
 
     let previous = state.pipeline.state();
     if previous == new_state {
-        let activity_unchanged = match (activity, state.pipeline.current_activity()) {
+        let activity_unchanged = match (activity.as_ref(), state.pipeline.current_activity()) {
             (None, None) => true,
-            (Some(next), Some(current)) => current.kind == next.kind && current.name == next.name,
+            (Some(next), Some(current)) => {
+                current.kind == next.kind && current.name.as_str() == next.name.as_str()
+            }
             _ => false,
         };
         if activity_unchanged {
@@ -94,12 +99,12 @@ pub fn transition(
         log::info!(
             "[Pipeline] Re-entering {:?} with new activity {:?}",
             new_state,
-            activity.map(|a| a.name.as_str())
+            activity.as_ref().map(|a| a.name.as_str())
         );
     } else {
         state.pipeline.set_state(new_state);
     }
-    state.pipeline.set_current_activity(activity);
+    state.pipeline.set_current_activity(activity.as_ref());
 
     log::info!(
         "[Pipeline] State {:?} -> {:?} (owner {:?}, mode {:?}/{:?}, turn {}, activity {:?})",
@@ -109,7 +114,7 @@ pub fn transition(
         ctx.pipeline_mode,
         ctx.interaction_mode,
         state.pipeline.peek_turn_id(),
-        activity.map(|a| a.name.as_str())
+        activity.as_ref().map(|a| a.name.as_str())
     );
     let target = target_window(ctx.owner);
     let turn_id = state.pipeline.peek_turn_id();
@@ -128,7 +133,7 @@ pub fn transition(
         owner: ctx.owner,
         state: state_str.to_string(),
         turn_id,
-        activity: activity.cloned(),
+        activity: activity.clone(),
     };
 
     if let Err(e) = emitter.emit_ipc(target, IpcEvent::StateChanged(payload)) {
@@ -138,6 +143,29 @@ pub fn transition(
             e
         );
     }
+}
+
+/// Applies a harness phase update with epoch, cancellation, and duplex audio guards.
+pub fn transition_harness_phase(
+    turn_id: u32,
+    new_state: InteractionState,
+    activity: Option<&ActivityEnvelope>,
+    ctx: &RoutingContext,
+    emitter: &dyn crate::core::events::IpcEmitter,
+    state: &AppState,
+) {
+    if turn_id != state.pipeline.peek_turn_id()
+        || state.pipeline.turn_cancel_token().is_cancelled()
+        || state.pipeline.state() == InteractionState::Listening
+    {
+        return;
+    }
+
+    state.pipeline.set_current_activity(activity);
+    if state.pipeline.state() == InteractionState::Speaking {
+        return;
+    }
+    transition(new_state, None, ctx, emitter, state);
 }
 
 /// Routes an incoming pipeline event to canonical handlers based on snapshot context.

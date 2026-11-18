@@ -28,7 +28,7 @@ use std::{
 
 use ringbuf::traits::Consumer;
 use vox_lib::{
-    core::events::{AudioIntent, VoxEvent},
+    core::events::VoxEvent,
     services::tts::{
         providers::{
             devanagari::{
@@ -149,7 +149,6 @@ async fn supertonic_path_produces_non_silent_samples() {
         let cancel = Arc::new(AtomicBool::new(false));
         let ctx = SynthesisContext {
             turn_id: 401,
-            intent: AudioIntent::TurnResponse,
             cancel,
             playback: &playback,
             event_tx,
@@ -207,7 +206,6 @@ fn edge_tts_path_returns_the_explicit_availability_error() {
     let cancel = Arc::new(AtomicBool::new(false));
     let ctx = SynthesisContext {
         turn_id: 402,
-        intent: AudioIntent::TurnResponse,
         cancel,
         playback: &playback,
         event_tx,
@@ -378,7 +376,6 @@ fn provider_factory_resolves_exactly_one_provider() {
     );
     let ctx = SynthesisContext {
         turn_id: 403,
-        intent: AudioIntent::TurnResponse,
         cancel: Arc::new(AtomicBool::new(false)),
         playback: &playback,
         event_tx,
@@ -467,7 +464,6 @@ fn devanagari_route_reports_missing_supertonic_weights() {
     );
     let ctx = SynthesisContext {
         turn_id: 404,
-        intent: AudioIntent::TurnResponse,
         cancel: Arc::new(AtomicBool::new(false)),
         playback: &playback,
         event_tx,
@@ -642,7 +638,6 @@ fn devanagari_route_reuses_one_cached_engine() {
     );
     let ctx = SynthesisContext {
         turn_id: 405,
-        intent: AudioIntent::TurnResponse,
         cancel: Arc::new(AtomicBool::new(false)),
         playback: &playback,
         event_tx,

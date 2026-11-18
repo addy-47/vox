@@ -88,6 +88,7 @@ async fn run_cognitive_loop(
         tts_tx: req.tts_tx.clone(),
         pending_synthesis_jobs: Arc::clone(&req.pending_synthesis_jobs),
         cancel: Arc::clone(&cancel_atomic),
+        app_state: Arc::clone(&req.app_state),
         event_tx: pipeline_tx.clone(),
         emitter: Arc::clone(&req.emitter),
         turn_metrics: Arc::clone(&req.app_state.turn_metrics),
@@ -190,13 +191,8 @@ async fn execute_loop_iterations(
         };
 
         // === STEP 6: Stream Tokens & Intercept Tool Calls ===
-        let stream_res = step6_run_stream_pass(
-            ctx.stream_stage,
-            ctx.stream_handles,
-            response_rx,
-            allow_tools,
-        )
-        .await;
+        let stream_res =
+            step6_run_stream_pass(ctx.stream_stage, ctx.stream_handles, response_rx).await;
         match stream_res {
             Ok(pass_outcome) => {
                 let (action, circuit_broken) =
@@ -278,6 +274,27 @@ async fn handle_pass_outcome(
                     )),
                     false,
                 )
+            }
+        }
+        StreamPassOutcome::PausedForSpeech { partial_text } => {
+            if ctx.req.cancel.is_cancelled() || cancel_atomic.load(Relaxed) {
+                return (
+                    LoopAction::Terminal(step7_handle_cancelled(ctx.cancelled_ctx(partial_text))),
+                    false,
+                );
+            }
+            let inbox = ctx.harness_arc.lock().as_ref().map(|h| Arc::clone(h.inbox()));
+            if let Some(inbox) = inbox {
+                inbox.wait_if_speech_held(&ctx.req.cancel).await;
+            }
+            if ctx.req.cancel.is_cancelled() || cancel_atomic.load(Relaxed) {
+                (
+                    LoopAction::Terminal(step7_handle_cancelled(ctx.cancelled_ctx(partial_text))),
+                    false,
+                )
+            } else {
+                // False barge-in: Stage 2 rearmed the stream token; resume at Step 4.
+                (LoopAction::Continue, false)
             }
         }
         StreamPassOutcome::Cancelled { partial_text } => (

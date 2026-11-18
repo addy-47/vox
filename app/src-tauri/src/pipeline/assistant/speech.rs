@@ -28,10 +28,6 @@ pub fn on_speech_start<R: tauri::Runtime>(
         return;
     }
 
-    // Every physical speech onset allocates a monotonic utterance sequence ID,
-    // even if conversational turn_id remains held in Scenario C (Working state).
-    let active_utterance_id = state.pipeline.next_utterance_id();
-
     let active_turn_id = if current_state == InteractionState::Thinking
         || current_state == InteractionState::Speaking
         || current_state == InteractionState::Working
@@ -39,11 +35,21 @@ pub fn on_speech_start<R: tauri::Runtime>(
         on_interrupt(app, state, ctx)
     } else if current_state == InteractionState::Ready {
         let (new_turn_id, _) = state.pipeline.next_turn();
+        let utterance_id = state.pipeline.next_utterance_id();
         state.pipeline_accumulator.lock().clear();
 
         if let Ok(guard) = state.engine.try_lock() {
             if let Some(ref engine) = *guard {
                 engine.playback_engine.cancel();
+                if let Err(e) = engine
+                    .vad_tx
+                    .send(crate::services::vad::VadCommand::BindUtterance {
+                        turn_id: new_turn_id,
+                        utterance_id,
+                    })
+                {
+                    log::warn!("[Pipeline::Speech] Failed to bind utterance: {}", e);
+                }
             }
         }
 
@@ -57,7 +63,7 @@ pub fn on_speech_start<R: tauri::Runtime>(
     log::info!(
         "[Pipeline::Speech] Speech start processed (turn: {}, utterance: {})",
         active_turn_id,
-        active_utterance_id
+        state.pipeline.peek_utterance_id()
     );
 }
 

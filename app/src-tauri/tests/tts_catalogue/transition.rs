@@ -20,15 +20,12 @@ use std::{
 use ringbuf::traits::Consumer;
 use vox_lib::{
     core::{
-        events::{AudioIntent, VoxEvent},
+        events::VoxEvent,
         state::InteractionState,
     },
     harness::{Harness, TRANSITION_MESSAGES_EN},
     pipeline::{
-        assistant::{
-            playback::{on_playback_finished, on_playback_started},
-            transcript::on_transcript_final,
-        },
+        assistant::transcript::on_transcript_final,
         RoutingContext,
     },
     services::tts::{
@@ -145,6 +142,7 @@ async fn voice_switch_does_not_restart_the_tts_worker() {
             playback: Arc::clone(&playback_engine),
             event_tx: event_tx.clone(),
             cancel_flag: Arc::clone(&cancel_flag),
+            engine_shutdown: Arc::new(AtomicBool::new(false)),
             pending_synthesis_jobs: Some(Arc::clone(&pending_jobs)),
             telemetry_rtf: None,
             turn_metrics: None,
@@ -166,7 +164,6 @@ async fn voice_switch_does_not_restart_the_tts_worker() {
             .send(TtsCommand::Generate {
                 turn_id,
                 text: "First sentence in voice zero.".to_string(),
-                intent: AudioIntent::TurnResponse,
             })
             .expect("Failed to send first Generate command");
 
@@ -190,7 +187,6 @@ async fn voice_switch_does_not_restart_the_tts_worker() {
             .send(TtsCommand::Generate {
                 turn_id,
                 text: "Second sentence in voice two.".to_string(),
-                intent: AudioIntent::TurnResponse,
             })
             .expect("Failed to send second Generate command");
 
@@ -363,17 +359,8 @@ async fn compaction_filler_is_dispatched_and_counted() {
 
         let cmd = filler_received.expect("tts_rx must receive filler TtsCommand::Generate from real router dispatch");
         match cmd {
-            TtsCommand::Generate {
-                turn_id: tid,
-                text,
-                intent,
-            } => {
+            TtsCommand::Generate { turn_id: tid, text } => {
                 assert_eq!(tid, turn_id, "Filler turn_id must match current turn");
-                assert_eq!(
-                    intent,
-                    AudioIntent::InterimFiller,
-                    "Filler command must have InterimFiller intent"
-                );
                 assert!(
                     TRANSITION_MESSAGES_EN.contains(&text.as_str()),
                     "Filler text '{}' must belong to TRANSITION_MESSAGES_EN",
@@ -394,33 +381,6 @@ async fn compaction_filler_is_dispatched_and_counted() {
         assert!(
             state.pipeline.pending_tts_jobs.load(Ordering::Relaxed) >= 1,
             "pending_synthesis_jobs must be incremented when filler is dispatched"
-        );
-
-        // ---------------------------------------------------------------------
-        // Observable Exit 3: AudioIntent::InterimFiller Playback Gating Contracts
-        // ---------------------------------------------------------------------
-        // Interim filler playback onset must NOT transition to Speaking (must remain Working)
-        on_playback_started(turn_id, AudioIntent::InterimFiller, &app, &state, &ctx);
-        assert_eq!(
-            state.pipeline.state(),
-            InteractionState::Working,
-            "Interim filler playback started must keep pipeline locked in Working state"
-        );
-
-        // Interim filler playback finished must NOT transition to Ready (must remain Working)
-        on_playback_finished(turn_id, AudioIntent::InterimFiller, &app, &state, &ctx);
-        assert_eq!(
-            state.pipeline.state(),
-            InteractionState::Working,
-            "Interim filler playback finished must keep pipeline locked in Working state"
-        );
-
-        // Contrast with TurnResponse onset: transitions to Speaking
-        on_playback_started(turn_id, AudioIntent::TurnResponse, &app, &state, &ctx);
-        assert_eq!(
-            state.pipeline.state(),
-            InteractionState::Speaking,
-            "TurnResponse playback onset must transition state to Speaking"
         );
 
         // Cancel turn token to cleanly abort background compaction task

@@ -3,7 +3,7 @@ use std::sync::{
     mpsc,
 };
 
-use crate::{core::events::AudioIntent, services::tts::actor::TtsCommand};
+use crate::services::tts::actor::TtsCommand;
 
 pub type TtsSender = mpsc::Sender<TtsCommand>;
 
@@ -15,11 +15,7 @@ pub fn dispatch_tts_filler(
     pending_jobs: &AtomicU32,
 ) -> Result<(), String> {
     pending_jobs.fetch_add(1, Relaxed);
-    if let Err(e) = tts_tx.send(TtsCommand::Generate {
-        turn_id,
-        text,
-        intent: AudioIntent::InterimFiller,
-    }) {
+    if let Err(e) = tts_tx.send(TtsCommand::Generate { turn_id, text }) {
         pending_jobs.fetch_sub(1, Relaxed);
         return Err(format!("Failed to dispatch interim filler TTS: {}", e));
     }
@@ -34,11 +30,7 @@ pub fn dispatch_tts_response(
     pending_jobs: &AtomicU32,
 ) -> Result<(), String> {
     pending_jobs.fetch_add(1, Relaxed);
-    if let Err(e) = tts_tx.send(TtsCommand::Generate {
-        turn_id,
-        text,
-        intent: AudioIntent::TurnResponse,
-    }) {
+    if let Err(e) = tts_tx.send(TtsCommand::Generate { turn_id, text }) {
         pending_jobs.fetch_sub(1, Relaxed);
         return Err(format!("Failed to dispatch turn response TTS: {}", e));
     }

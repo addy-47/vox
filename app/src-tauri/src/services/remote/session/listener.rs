@@ -489,6 +489,26 @@ async fn respond_hello_and_attach(
         }))
         .await;
 
+    let lease = match state
+        .remote_manager
+        .try_reserve_controller(&peer_identity.device_id)
+    {
+        Some(lease) => lease,
+        None => {
+            log::warn!("[Remote] Inbound Hello refused: controller slot already leased");
+            let _ = ws_link
+                .send_control(ControlMessage::LinkRefused(LinkRefused {
+                    reason: LinkRefusedReason::ControllerAttached,
+                }))
+                .await;
+            return;
+        }
+    };
+    log::debug!(
+        "[Remote] Controller lease {} reserved for {}",
+        lease.lease_id,
+        lease.device_id
+    );
     let snapshot = build_attach_snapshot(state).await;
     let _ = ws_link
         .send_control(ControlMessage::AttachSnapshot(snapshot))

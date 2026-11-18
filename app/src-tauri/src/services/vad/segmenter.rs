@@ -167,38 +167,23 @@ pub fn process_and_emit_telemetry(
 pub fn handle_speech_start(
     state: &mut VadActorState,
     handles: &VadActorHandles,
-    stt_tx: &mpsc::Sender<SttCommand>,
+    _stt_tx: &mpsc::Sender<SttCommand>,
     vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
 ) {
     state.in_speech = true;
     state.voiced_samples = 0;
 
-    let prev_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
-    let interaction_state = InteractionState::from(handles.state_atomic.load(Ordering::Relaxed));
+    let current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
     let owner: InteractionOwner = handles.owner_atomic.load(Ordering::Relaxed).into();
 
-    // Predict the monotonic turn ID that `on_speech_start` will allocate on the Router thread
-    // so the pre-roll StreamChunk and subsequent chunks share the exact same turn_id.
-    let expected_turn_id = if matches!(
-        owner,
-        InteractionOwner::Assistant | InteractionOwner::Dictation
-    ) && matches!(
-        interaction_state,
-        InteractionState::Ready
-            | InteractionState::Thinking
-            | InteractionState::Speaking
-            | InteractionState::Working
-    ) {
-        prev_turn_id.wrapping_add(1)
-    } else {
-        prev_turn_id
-    };
-    state.current_turn_id = expected_turn_id;
+    // RULE-EVT-01A: never predict turn identity. Hold audio until the router binds it.
+    state.current_turn_id = current_turn_id;
+    state.awaiting_utterance_binding = true;
+    state.bound_utterance_id = None;
 
     log::info!(
-        "[VAD Actor] Speech Start (turn: {}, prev_atomic: {})",
-        state.current_turn_id,
-        prev_turn_id
+        "[VAD Actor] Speech Start (turn: {}, awaiting router binding)",
+        current_turn_id
     );
 
     if let Some(tx) = vox_event_tx {
@@ -221,15 +206,7 @@ pub fn handle_speech_start(
         state.utterance_buffer.len()
     );
 
-    if !state.utterance_buffer.is_empty() && state.realtime_tx.is_none() {
-        if let Err(e) = stt_tx.send(SttCommand::StreamChunk {
-            turn_id: state.current_turn_id,
-            audio: state.utterance_buffer.clone(),
-        }) {
-            log::warn!("[VAD Actor] Failed to send pre-roll chunk to STT: {}", e);
-        }
-    }
-
+    // Pre-roll stays buffered until BindUtterance supplies the authoritative identity.
     state.pre_roll_buffer.clear();
 }
 
@@ -266,7 +243,7 @@ pub fn handle_speech_end(
 
     if voiced_samples >= VAD_MIN_UTTERANCE_SAMPLES && state.realtime_tx.is_none() {
         if let Err(e) = stt_tx.send(SttCommand::Final {
-            turn_id: state.current_turn_id,
+            turn_id: state.current_turn_id, utterance_id: state.bound_utterance_id.unwrap_or(0),
             audio: state.utterance_buffer.clone(),
             owner,
         }) {
@@ -297,6 +274,7 @@ pub fn handle_speech_end(
     );
     state.utterance_buffer.clear();
     state.samples_since_partial = 0;
+    state.awaiting_utterance_binding = false;
 }
 
 /// Accumulates streaming audio frames during active speech and forwards chunks to STT worker.
@@ -308,13 +286,15 @@ pub fn accumulate_speech_frames(
     state.utterance_buffer.extend_from_slice(chunk);
     state.samples_since_partial += chunk.len();
 
-    if state.realtime_tx.is_none() {
-        if let Err(e) = stt_tx.send(SttCommand::StreamChunk {
-            turn_id: state.current_turn_id,
-            audio: chunk.to_vec(),
-        }) {
-            log::warn!("[VAD Actor] Failed to send streaming chunk to STT: {}", e);
-        }
+    if state.awaiting_utterance_binding || state.realtime_tx.is_some() {
+        return;
+    }
+    if let Err(e) = stt_tx.send(SttCommand::StreamChunk {
+        turn_id: state.current_turn_id,
+        utterance_id: state.bound_utterance_id.unwrap_or(0),
+        audio: chunk.to_vec(),
+    }) {
+        log::warn!("[VAD Actor] Failed to send streaming chunk to STT: {}", e);
     }
 }
 
@@ -466,7 +446,7 @@ pub fn process_windowed_validation(
     state.pre_roll_buffer.push(chunk);
     if state.window_stream_partials {
         if let Err(e) = channels.stt_tx.send(SttCommand::StreamChunk {
-            turn_id: state.current_turn_id,
+            turn_id: state.current_turn_id, utterance_id: state.bound_utterance_id.unwrap_or(0),
             audio: chunk.to_vec(),
         }) {
             log::warn!("[VAD Actor] Failed to send windowed chunk to STT: {}", e);
@@ -608,6 +588,20 @@ mod tests {
         fn commands(&mut self) -> Vec<SttCommand> {
             self.stt_rx.try_iter().collect()
         }
+
+        fn bind_utterance(&mut self, turn_id: u32) {
+            self.state.current_turn_id = turn_id;
+            self.state.bound_utterance_id = Some(1);
+            self.state.awaiting_utterance_binding = false;
+            self.handles.turn_id_atomic.store(turn_id, Ordering::Relaxed);
+            if self.state.realtime_tx.is_none() && !self.state.utterance_buffer.is_empty() {
+                let _ = self.stt_tx.send(SttCommand::StreamChunk {
+                    turn_id,
+                    utterance_id: 1,
+                    audio: self.state.utterance_buffer.clone(),
+                });
+            }
+        }
     }
 
     fn stream_and_final(commands: Vec<SttCommand>) -> (Vec<f32>, Option<Vec<f32>>) {
@@ -662,6 +656,7 @@ mod tests {
         let mut rig = Rig::new(32, 400, 0.01);
         rig.step_amp(0.05, true);
         rig.step_amp(0.06, true);
+        rig.bind_utterance(1);
 
         let (streamed, _) = stream_and_final(rig.commands());
         let chunks: Vec<&[f32]> = streamed.chunks_exact(256).collect();
@@ -679,7 +674,10 @@ mod tests {
     #[test]
     fn streamed_audio_matches_final_audio_without_overlap() {
         let mut rig = Rig::new(32, 100, 0.01);
-        for _ in 0..25 {
+        rig.step(true);
+        rig.step(true);
+        rig.bind_utterance(1);
+        for _ in 0..23 {
             rig.step(true); // >= 4800 voiced samples to qualify as an utterance
         }
         for _ in 0..50 {
@@ -708,8 +706,8 @@ mod tests {
         let mut rig = Rig::new(32, 100, 0.01);
         rig.handles.turn_id_atomic.store(7, Ordering::Relaxed);
         rig.step(true);
-        rig.step(true); // opens the turn and predicts turn 8
-        rig.handles.turn_id_atomic.store(8, Ordering::Relaxed); // router commits
+        rig.step(true); // opens the turn and triggers onset
+        rig.bind_utterance(8); // router commits turn 8
         for _ in 0..23 {
             rig.step(true); // >= 4800 voiced samples to emit Final
         }

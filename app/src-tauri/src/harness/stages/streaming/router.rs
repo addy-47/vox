@@ -8,9 +8,9 @@ use parking_lot::Mutex;
 
 use crate::{
     core::{
-        events::{AudioIntent, IpcEmitter, IpcEvent, LlmTokenPayload, VoxEvent},
+        events::{IpcEmitter, IpcEvent, LlmTokenPayload, VoxEvent},
         metrics::TurnMetricsCollector,
-        state::InteractionOwner,
+        state::{AppState, InteractionOwner},
     },
     harness::stages::streaming::TextNormalizer,
     pipeline::{assistant::TurnAccumulator, target_window},
@@ -35,6 +35,10 @@ pub enum StreamPassOutcome {
     Cancelled {
         partial_text: String,
     },
+    /// Stream pass paused by Stage 1 acoustic onset; the turn is still active.
+    PausedForSpeech {
+        partial_text: String,
+    },
     Superseded {
         stale: u32,
         current: u32,
@@ -51,6 +55,7 @@ pub struct StreamRoutingHandles {
     pub tts_tx: Option<Sender<TtsCommand>>,
     pub pending_synthesis_jobs: Arc<AtomicU32>,
     pub cancel: Arc<AtomicBool>,
+    pub app_state: Arc<AppState>,
     pub event_tx: Sender<VoxEvent>,
     pub emitter: Arc<dyn IpcEmitter>,
     pub turn_metrics: Arc<TurnMetricsCollector>,
@@ -66,6 +71,7 @@ impl Clone for StreamRoutingHandles {
             tts_tx: self.tts_tx.clone(),
             pending_synthesis_jobs: Arc::clone(&self.pending_synthesis_jobs),
             cancel: Arc::clone(&self.cancel),
+            app_state: Arc::clone(&self.app_state),
             event_tx: self.event_tx.clone(),
             emitter: Arc::clone(&self.emitter),
             turn_metrics: Arc::clone(&self.turn_metrics),
@@ -95,9 +101,8 @@ impl StreamRoutingStage {
         &self,
         handles: StreamRoutingHandles,
         response_rx: Receiver<LlmResponse>,
-        allow_tools: bool,
     ) -> Result<StreamPassOutcome, String> {
-        let outcome = self.consume_stream_events(&handles, response_rx, allow_tools)?;
+        let outcome = self.consume_stream_events(&handles, response_rx)?;
 
         if let Some(current) = self.superseded_turn(&handles) {
             return Ok(StreamPassOutcome::Superseded {
@@ -128,7 +133,6 @@ impl StreamRoutingStage {
         &self,
         handles: &StreamRoutingHandles,
         response_rx: Receiver<LlmResponse>,
-        allow_tools: bool,
     ) -> Result<StreamPassOutcome, String> {
         let mut saw_finished = false;
         let mut thinking_buffer = String::new();
@@ -147,6 +151,20 @@ impl StreamRoutingStage {
                 return Ok(StreamPassOutcome::Superseded {
                     stale: handles.turn_id,
                     current,
+                });
+            }
+
+            // RULE-HARN-12: an acoustic pause cancels only the stream pass. Park the
+            // cognitive loop at the speech hold instead of aborting the active turn.
+            if handles.app_state.pipeline.stream_cancel_token().is_cancelled()
+                && !handles.cancel.load(Ordering::Relaxed)
+            {
+                log::info!(
+                    "[Harness::Stream] Stream paused by acoustic onset (turn {})",
+                    handles.turn_id
+                );
+                return Ok(StreamPassOutcome::PausedForSpeech {
+                    partial_text: handles.accumulator.lock().assistant_response.clone(),
                 });
             }
 
@@ -170,7 +188,7 @@ impl StreamRoutingStage {
                         handles.turn_id
                     );
                     if !tool_calls_batch.is_empty() {
-                        self.flush_remainder(handles, AudioIntent::InterimFiller);
+                        self.flush_remainder(handles);
                         let preamble_text = handles.accumulator.lock().assistant_response.clone();
                         return Ok(StreamPassOutcome::ToolCallsReceived {
                             preamble_text,
@@ -219,7 +237,7 @@ impl StreamRoutingStage {
                 }
                 LlmResponse::Token(token) => {
                     handles.turn_metrics.record_llm_first_token();
-                    self.handle_token(token, allow_tools, handles);
+                    self.handle_token(token, handles);
                 }
                 LlmResponse::ToolCall(call) => {
                     handles.turn_metrics.record_llm_first_token();
@@ -242,7 +260,7 @@ impl StreamRoutingStage {
                         handles.turn_id
                     );
                     if !tool_calls_batch.is_empty() {
-                        self.flush_remainder(handles, AudioIntent::InterimFiller);
+                        self.flush_remainder(handles);
                         let preamble_text = handles.accumulator.lock().assistant_response.clone();
                         return Ok(StreamPassOutcome::ToolCallsReceived {
                             preamble_text,
@@ -281,7 +299,7 @@ impl StreamRoutingStage {
         }
 
         if !tool_calls_batch.is_empty() {
-            self.flush_remainder(handles, AudioIntent::InterimFiller);
+            self.flush_remainder(handles);
             let preamble_text = handles.accumulator.lock().assistant_response.clone();
             log::info!(
                 "[Harness::Stream] Tool calls batch finalized (turn {}, preamble_chars {}, calls {})",
@@ -295,7 +313,7 @@ impl StreamRoutingStage {
                 calls: tool_calls_batch,
             })
         } else {
-            self.flush_remainder(handles, AudioIntent::TurnResponse);
+            self.flush_remainder(handles);
             let full_text = handles.accumulator.lock().assistant_response.clone();
             Ok(StreamPassOutcome::Completed {
                 assistant_text: full_text,
@@ -305,16 +323,11 @@ impl StreamRoutingStage {
     }
 
     /// Emits IPC token event, pushes token to clause chunker, and dispatches clauses to TTS.
-    fn handle_token(&self, token: String, allow_tools: bool, handles: &StreamRoutingHandles) {
+    fn handle_token(&self, token: String, handles: &StreamRoutingHandles) {
         self.emit_token_ipc(&token, handles);
         let clauses = handles.accumulator.lock().push_token(&token);
         if !clauses.is_empty() {
-            let intent = if allow_tools {
-                AudioIntent::InterimFiller
-            } else {
-                AudioIntent::TurnResponse
-            };
-            self.dispatch_clauses(clauses, intent, handles);
+            self.dispatch_clauses(clauses, handles);
         }
     }
 
@@ -330,13 +343,8 @@ impl StreamRoutingStage {
         }
     }
 
-    /// Dispatches extracted text clauses to the TTS synthesis worker with the requested intent.
-    fn dispatch_clauses(
-        &self,
-        clauses: Vec<String>,
-        intent: AudioIntent,
-        handles: &StreamRoutingHandles,
-    ) {
+    /// Dispatches extracted text clauses to the TTS synthesis worker.
+    fn dispatch_clauses(&self, clauses: Vec<String>, handles: &StreamRoutingHandles) {
         let Some(ref tx) = handles.tts_tx else {
             return;
         };
@@ -357,7 +365,6 @@ impl StreamRoutingStage {
             let cmd = TtsCommand::Generate {
                 turn_id: handles.turn_id,
                 text: normalized,
-                intent,
             };
             if let Err(e) = tx.send(cmd) {
                 handles
@@ -367,20 +374,19 @@ impl StreamRoutingStage {
             } else {
                 handles.turn_metrics.record_tts_chunk0_dispatch();
                 log::info!(
-                    "[Harness::Stream] Clause dispatched (turn {}, clause {}, chars {}, words {}, intent {:?}, pending_jobs {})",
+                    "[Harness::Stream] Clause dispatched (turn {}, clause {}, chars {}, words {}, pending_jobs {})",
                     handles.turn_id,
                     clause_id,
                     clause_chars,
                     clause_words,
-                    intent,
                     queued
                 );
             }
         }
     }
 
-    /// Flushes unpunctuated tail remainder to the TTS worker with the specified intent.
-    fn flush_remainder(&self, handles: &StreamRoutingHandles, intent: AudioIntent) {
+    /// Flushes unpunctuated tail remainder to the TTS worker.
+    fn flush_remainder(&self, handles: &StreamRoutingHandles) {
         let remainder = handles.accumulator.lock().flush_chunker();
         let Some(remainder_text) = remainder else {
             return;
@@ -403,7 +409,6 @@ impl StreamRoutingStage {
         let cmd = TtsCommand::Generate {
             turn_id: handles.turn_id,
             text: normalized,
-            intent,
         };
         if let Err(e) = tx.send(cmd) {
             handles
@@ -415,12 +420,11 @@ impl StreamRoutingStage {
             );
         } else {
             log::info!(
-                "[Harness::Stream] Remainder flushed (turn {}, clause {}, chars {}, words {}, intent {:?}, pending_jobs {})",
+                "[Harness::Stream] Remainder flushed (turn {}, clause {}, chars {}, words {}, pending_jobs {})",
                 handles.turn_id,
                 clause_id,
                 remainder_chars,
                 remainder_words,
-                intent,
                 queued
             );
         }

@@ -9,12 +9,13 @@ use tokio_util::sync::CancellationToken;
 use super::{
     forwarder::EventForwarderSender,
     manager::{
-        CommandGateway, PauseSessionCallback, PendingRpcMap, RemoteEventCallback,
-        RemoteSessionManager, SessionRole, StateChangeCallback,
+        interaction_state_from_str, CommandGateway, PauseSessionCallback, PendingRpcMap,
+        RemoteEventCallback, RemoteSessionManager, SessionRole, StateChangeCallback,
     },
-    state::{RemoteFailureKind, RemoteLinkState},
+    state::{PipelineView, RemoteFailureKind, RemoteLinkState},
 };
 use crate::{
+    core::state::InteractionState,
     persistence::{paired_devices, VoxDb},
     services::remote::{
         link::{LinkCloseReason, LinkError, RemoteLink},
@@ -53,7 +54,7 @@ pub(crate) struct LinkSupervisorParams {
     pub(crate) event_forwarder: Arc<parking_lot::Mutex<Option<EventForwarderSender>>>,
     pub(crate) pause_session_fn: parking_lot::Mutex<Option<PauseSessionCallback>>,
     pub(crate) on_remote_event: Arc<parking_lot::Mutex<Option<RemoteEventCallback>>>,
-    pub(crate) current_pipeline_state: Arc<parking_lot::RwLock<String>>,
+    pub(crate) current_pipeline_view: Arc<parking_lot::RwLock<PipelineView>>,
 }
 
 fn handle_supervisor_rpc_res(params: &LinkSupervisorParams, res: Res) {
@@ -163,8 +164,8 @@ fn handle_controller_involuntary_cutoff(params: &LinkSupervisorParams) {
     if params.role != SessionRole::Controller {
         return;
     }
-    let st = params.current_pipeline_state.read().clone();
-    let is_active = st != "Idle" && st != "None" && !st.is_empty();
+    let view = *params.current_pipeline_view.read();
+    let is_active = !matches!(view.state, InteractionState::Idle | InteractionState::Paused);
     if is_active {
         if let Some(cb) = params.on_remote_event.lock().clone() {
             cb(
@@ -172,7 +173,7 @@ fn handle_controller_involuntary_cutoff(params: &LinkSupervisorParams) {
                 serde_json::json!({
                     "owner": "Assistant",
                     "state": "Paused",
-                    "turn_id": 0,
+                    "turn_id": view.turn_id,
                 }),
             );
         }
@@ -263,7 +264,15 @@ async fn handle_supervisor_message(
         ControlMessage::Event(ev) => {
             if ev.event_name == "state_changed" {
                 if let Some(st) = ev.payload.get("state").and_then(|v| v.as_str()) {
-                    *params.current_pipeline_state.write() = st.to_string();
+                    let turn_id = ev
+                        .payload
+                        .get("turn_id")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as u32;
+                    *params.current_pipeline_view.write() = PipelineView {
+                        state: interaction_state_from_str(st),
+                        turn_id,
+                    };
                 }
                 if let Some(snap) = params.last_snapshot.write().as_mut() {
                     snap.state = ev.payload.clone();
@@ -280,7 +289,15 @@ async fn handle_supervisor_message(
                 snapshot.session_id
             );
             if let Some(st) = snapshot.state.get("state").and_then(|v| v.as_str()) {
-                *params.current_pipeline_state.write() = st.to_string();
+                let turn_id = snapshot
+                    .state
+                    .get("turn_id")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32;
+                *params.current_pipeline_view.write() = PipelineView {
+                    state: interaction_state_from_str(st),
+                    turn_id,
+                };
             }
             params.last_snapshot.write().replace(snapshot.clone());
             if let Some(cb) = params.on_remote_event.lock().clone() {

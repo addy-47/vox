@@ -196,30 +196,22 @@ pub fn spawn_controller_audio_runtime(
                             silence_frames = 0;
                             sample_count = 0;
 
-                            let sender_clone = Arc::clone(&sender);
                             let mut pre_roll_samples = Vec::new();
                             pre_roll.copy_into(&mut pre_roll_samples);
                             pre_roll.clear();
-                            let current_chunk = chunk.clone();
 
-                            tauri::async_runtime::spawn(async move {
-                                sender_clone.send_speech_start().await;
-                                if !pre_roll_samples.is_empty() {
-                                    sender_clone.send_samples(&pre_roll_samples).await;
-                                }
-                                sender_clone.send_samples(&current_chunk).await;
-                            });
+                            sender.send_speech_start_blocking();
+                            if !pre_roll_samples.is_empty() {
+                                sender.send_samples_blocking(&pre_roll_samples);
+                            }
+                            sender.send_samples_blocking(&chunk);
                         }
                     } else {
                         onset_frames = 0;
                     }
                 } else {
                     sample_count += chunk.len() as u64;
-                    let sender_clone = Arc::clone(&sender);
-                    let current_chunk = chunk.clone();
-                    tauri::async_runtime::spawn(async move {
-                        sender_clone.send_samples(&current_chunk).await;
-                    });
+                    sender.send_samples_blocking(&chunk);
 
                     if is_speech {
                         silence_frames = 0;
@@ -228,11 +220,7 @@ pub fn spawn_controller_audio_runtime(
                         if silence_frames >= CONTROLLER_HANGOVER_FRAMES {
                             in_speech = false;
                             silence_frames = 0;
-                            let sender_clone = Arc::clone(&sender);
-                            let count = sample_count;
-                            tauri::async_runtime::spawn(async move {
-                                sender_clone.send_speech_end(count).await;
-                            });
+                            sender.send_speech_end_blocking(sample_count);
                         }
                     }
                 }

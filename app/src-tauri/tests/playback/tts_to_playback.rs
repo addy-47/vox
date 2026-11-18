@@ -11,7 +11,7 @@
 
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc, Arc,
     },
     time::Duration,
@@ -19,7 +19,7 @@ use std::{
 
 use vox_lib::{
     core::{
-        events::{AudioIntent, VoxEvent},
+        events::VoxEvent,
         state::InteractionState,
     },
     services::tts::{
@@ -102,6 +102,7 @@ async fn real_synthesis_is_ingested_and_arms_the_pre_roll() {
             playback: Arc::clone(&playback_engine),
             event_tx: event_tx.clone(),
             cancel_flag: Arc::clone(&cancel_flag),
+            engine_shutdown: Arc::new(AtomicBool::new(false)),
             pending_synthesis_jobs: Some(Arc::clone(&pending_jobs)),
             telemetry_rtf: None,
             turn_metrics: None,
@@ -122,7 +123,6 @@ async fn real_synthesis_is_ingested_and_arms_the_pre_roll() {
             .send(TtsCommand::Generate {
                 turn_id,
                 text: "Hello! Welcome to Vox voice assistant.".to_string(),
-                intent: AudioIntent::TurnResponse,
             })
             .expect("Failed to send Generate to TTS worker");
 
@@ -254,7 +254,6 @@ async fn short_utterance_needs_a_flush_to_arm_the_pre_roll() {
             current_turn_id: Arc::clone(&current_turn_id),
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
             sink_occupied: Arc::new(AtomicBool::new(false)),
-            playback_intent: Arc::new(AtomicU8::new(0)),
             event_tx: event_tx.clone(),
             is_playback_muted: Arc::new(AtomicBool::new(false)),
             turn_metrics: None,
@@ -291,8 +290,7 @@ async fn short_utterance_needs_a_flush_to_arm_the_pre_roll() {
                 _text: &str,
                 ctx: &SynthesisContext<'_>,
             ) -> anyhow::Result<()> {
-                ctx.playback
-                    .ingest_chunk_with_intent(&self.samples, ctx.intent);
+                ctx.playback.ingest_synthesis_chunk(&self.samples);
 
                 // Pre-roll Cushion Invariant:
                 // 2,000 samples @ 24kHz upsamples to 4,000 samples @ 48kHz.
@@ -322,6 +320,7 @@ async fn short_utterance_needs_a_flush_to_arm_the_pre_roll() {
             playback: Arc::clone(&playback_engine),
             event_tx: event_tx.clone(),
             cancel_flag: Arc::clone(&cancel_flag),
+            engine_shutdown: Arc::new(AtomicBool::new(false)),
             pending_synthesis_jobs: Some(Arc::clone(&pending_jobs)),
             telemetry_rtf: None,
             turn_metrics: None,
@@ -340,7 +339,6 @@ async fn short_utterance_needs_a_flush_to_arm_the_pre_roll() {
             .send(TtsCommand::Generate {
                 turn_id,
                 text: "OK.".to_string(),
-                intent: AudioIntent::TurnResponse,
             })
             .expect("Failed to send Generate to TTS worker");
 

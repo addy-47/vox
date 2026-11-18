@@ -28,7 +28,7 @@ pub use kokoro::KokoroEngine;
 pub use zipvoice::{ZipvoiceEngine, ZipvoiceReference};
 
 use crate::{
-    core::events::{AudioIntent, VoxEvent},
+    core::events::VoxEvent,
     services::{
         audio::PlaybackEngine,
         tts::{ParamRange, ProviderCaps},
@@ -47,7 +47,6 @@ const fn speed_range(min: f32, max: f32) -> ParamRange {
 /// Execution handles and context passed to a `TtsProvider` for synthesizing a text chunk.
 pub struct SynthesisContext<'a> {
     pub turn_id: u32,
-    pub intent: AudioIntent,
     pub cancel: Arc<AtomicBool>,
     pub playback: &'a Arc<PlaybackEngine>,
     pub event_tx: Sender<VoxEvent>,

@@ -288,6 +288,7 @@ pub fn build_turn_request(
         turn_id,
         owner: vox_lib::core::state::InteractionOwner::Assistant,
         cancel: tokio_util::sync::CancellationToken::new(),
+        stream_cancel: tokio_util::sync::CancellationToken::new(),
         routing_ctx: RoutingContext::from_app_state(&ctx.state),
         emitter: Arc::new(ctx.tauri_app.clone()),
         app_state: Arc::clone(&ctx.state),

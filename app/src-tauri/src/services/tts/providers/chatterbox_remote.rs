@@ -11,7 +11,6 @@ use anyhow::{anyhow, Result};
 
 use super::{speed_range, SynthesisContext, TtsProvider};
 use crate::{
-    core::events::AudioIntent,
     services::{
         audio::PlaybackEngine,
         tts::{
@@ -150,7 +149,6 @@ fn stream_pcm_response(
     mut response: reqwest::blocking::Response,
     speed: f32,
     turn_id: u32,
-    intent: AudioIntent,
     cancel: &Arc<AtomicBool>,
     playback: &Arc<PlaybackEngine>,
 ) -> Result<usize> {
@@ -199,7 +197,7 @@ fn stream_pcm_response(
                         chunk_samples
                     };
 
-                    playback.ingest_chunk_with_intent(&stretched_chunk, intent);
+                    playback.ingest_synthesis_chunk(&stretched_chunk);
                 }
             }
             Err(ref e) if e.kind() == ErrorKind::Interrupted => continue,
@@ -215,7 +213,7 @@ fn stream_pcm_response(
             raw_pcm_samples
         };
 
-        playback.ingest_chunk_with_intent(&stretched_chunk, intent);
+        playback.ingest_synthesis_chunk(&stretched_chunk);
     }
 
     Ok(total_samples_received)
@@ -292,7 +290,6 @@ impl TtsProvider for ChatterboxRemoteProvider {
             response,
             speed,
             ctx.turn_id,
-            ctx.intent,
             &ctx.cancel,
             ctx.playback,
         )?;

@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     core::{
-        events::{AudioIntent, VoxEvent},
+        events::VoxEvent,
         state::InteractionState,
     },
     utils::audio_filters::{BiquadLowPass, FilterBank},
@@ -76,6 +76,7 @@ pub struct PlaybackStreamContext {
     pub current_volume: f32,
     pub filter_bank: FilterBank,
     pub played_samples: u64,
+    pub dropped_events: Arc<AtomicU64>,
     pub reference_tap: Option<PlaybackReferenceTap>,
 }
 
@@ -105,6 +106,7 @@ impl PlaybackStreamContext {
             current_volume: PLAYBACK_DEFAULT_VOLUME,
             filter_bank: FilterBank::new(PLAYBACK_SAMPLE_RATE as f32),
             played_samples: 0,
+            dropped_events: Arc::new(AtomicU64::new(0)),
             reference_tap,
         }
     }
@@ -225,21 +227,14 @@ impl PlaybackStreamContext {
                 // Gate 2 (End): Genuinely done with all clauses in turn
                 self.turn_armed.store(false, Ordering::Relaxed);
                 let tid = self.handles.current_turn_id.load(Ordering::Relaxed);
-                let intent =
-                    AudioIntent::from(self.handles.playback_intent.load(Ordering::Relaxed));
-                if let Err(e) = self.handles.event_tx.send(VoxEvent::PlaybackFinished {
-                    turn_id: tid,
-                    intent,
-                }) {
-                    log::warn!("[Audio::Playback] Failed to emit PlaybackFinished: {}", e);
+                if self
+                    .handles
+                    .event_tx
+                    .send(VoxEvent::PlaybackFinished { turn_id: tid })
+                    .is_err()
+                {
+                    self.dropped_events.fetch_add(1, Ordering::Relaxed);
                 } else {
-                    log::info!(
-                        "[Audio::Playback] Playback completed — PlaybackFinished emitted (turn {}, intent {:?}, played_samples {}, {:.2}s)",
-                        tid,
-                        intent,
-                        self.played_samples,
-                        self.played_samples as f32 / PLAYBACK_SAMPLE_RATE as f32
-                    );
                     self.played_samples = 0;
                 }
             }

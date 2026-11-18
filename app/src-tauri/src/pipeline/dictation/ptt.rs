@@ -109,6 +109,7 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
         .read()
         .map(|s| s.dictation.silence_auto_stop_ms)
         .unwrap_or(DICTATION_SILENCE_AUTOSTOP_MS);
+    state.pipeline.next_utterance_id();
     let auto_stop_silence_ms = if auto_stop_ms > 0 {
         Some(auto_stop_ms)
     } else {
@@ -245,6 +246,7 @@ pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
     if let Some(tx) = stt_tx {
         if let Err(e) = tx.send(SttCommand::Final {
             turn_id,
+            utterance_id: state.pipeline.peek_utterance_id(),
             audio,
             owner: InteractionOwner::Dictation,
         }) {
@@ -261,6 +263,7 @@ pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
     } else if let Some(stt_tx) = engine_stt_tx_opt {
         if let Err(e) = stt_tx.send(SttCommand::Final {
             turn_id,
+            utterance_id: state.pipeline.peek_utterance_id(),
             audio,
             owner: InteractionOwner::Dictation,
         }) {

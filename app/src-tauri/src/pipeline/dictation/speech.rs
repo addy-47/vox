@@ -20,6 +20,19 @@ pub fn on_speech_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) 
 
     let (turn_id, _token) = state.pipeline.next_turn();
     let utterance_id = state.pipeline.next_utterance_id();
+    if let Ok(guard) = state.engine.try_lock() {
+        if let Some(ref engine) = *guard {
+            if let Err(e) = engine
+                .vad_tx
+                .send(crate::services::vad::VadCommand::BindUtterance {
+                    turn_id,
+                    utterance_id,
+                })
+            {
+                log::warn!("[Dictation::Speech] Failed to bind utterance: {}", e);
+            }
+        }
+    }
     transition_dictation(InteractionState::Listening, app, state);
     log::info!(
         "[Dictation::Speech] Passive speech started (turn: {}, utterance: {})",

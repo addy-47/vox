@@ -29,14 +29,6 @@ pub enum InteractionMode {
     PTT,
 }
 
-/// Audio synthesis intent category governing playback engine state transitions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AudioIntent {
-    InterimFiller,
-    TurnResponse,
-}
-
 #[derive(Debug, Clone)]
 pub enum VoxEvent {
     SessionStart {
@@ -75,11 +67,9 @@ pub enum VoxEvent {
     },
     PlaybackStarted {
         turn_id: u32,
-        intent: AudioIntent,
     },
     PlaybackFinished {
         turn_id: u32,
-        intent: AudioIntent,
     },
     Cancelled {
         turn_id: u32,
@@ -240,24 +230,6 @@ pub enum IpcEvent {
     MemoryIngestionUpdated,
     RemoteStateChanged(RemoteStateDto),
     RemotePairingStateChanged(PairingStateDto),
-}
-
-impl From<u8> for AudioIntent {
-    fn from(val: u8) -> Self {
-        match val {
-            1 => Self::InterimFiller,
-            _ => Self::TurnResponse,
-        }
-    }
-}
-
-impl From<AudioIntent> for u8 {
-    fn from(intent: AudioIntent) -> Self {
-        match intent {
-            AudioIntent::TurnResponse => 0,
-            AudioIntent::InterimFiller => 1,
-        }
-    }
 }
 
 impl IpcEvent {

@@ -158,6 +158,7 @@ impl NetworkAudioCapture {
                             .unwrap_or(0);
                         let _ = stt.send(SttCommand::StreamChunk {
                             turn_id,
+                            utterance_id: 0,
                             audio: float_chunk.clone(),
                         });
                     }
@@ -203,6 +204,7 @@ impl NetworkAudioCapture {
                         .unwrap_or(0);
                     let _ = stt.send(SttCommand::StreamChunk {
                         turn_id,
+                        utterance_id: 0,
                         audio: float_chunk.clone(),
                     });
                 }
@@ -275,6 +277,7 @@ impl NetworkAudioCapture {
                 .unwrap_or(0);
             let _ = stt.send(SttCommand::Final {
                 turn_id,
+                utterance_id: 0,
                 audio: utterance,
                 owner: InteractionOwner::Assistant,
             });

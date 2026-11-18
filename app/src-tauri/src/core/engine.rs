@@ -1,7 +1,7 @@
 use std::{
     fs::read_to_string,
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc, Arc,
     },
     thread::{Builder, JoinHandle},
@@ -181,13 +181,12 @@ fn create_playback_engine(
     };
 
     let engine_handles = PlaybackEngineHandles {
-        cancel_flag: Arc::new(AtomicBool::new(false)),
+        cancel_flag: Arc::clone(&state.pipeline.hardware_cancel_flag),
         state_atomic: Arc::clone(&state.pipeline.assistant_state_atomic),
         current_turn_id: Arc::clone(&state.pipeline.turn_id),
         pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_tts_jobs),
         sink_occupied: Arc::clone(&state.pipeline.sink_occupied),
         event_tx,
-        playback_intent: Arc::new(AtomicU8::new(0)),
         is_playback_muted: Arc::clone(&state.pipeline.is_playback_muted),
         turn_metrics: Some(Arc::clone(&state.turn_metrics)),
     };
@@ -414,7 +413,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     };
 
     let stt_handles = SttActorHandles {
-        cancel_flag: Arc::new(AtomicBool::new(false)),
+        cancel_flag: Arc::clone(&state.pipeline.hardware_cancel_flag),
         engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
     };
 
@@ -477,7 +476,7 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
     let _ = engine.vad_tx.send(VadCommand::Shutdown);
 
     cool_down_llm(&mut engine.llm_tx, Some(&state.llm_provider));
-    cool_down_tts(&mut engine.tts_tx);
+    cool_down_tts(&mut engine.tts_tx, &mut engine.tts_handle);
 
     let llm_handle = engine.llm_handle.take();
     let tts_handle = engine.tts_handle.take();
@@ -583,7 +582,8 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
             TtsWarmUpHandles {
                 tts_tx: &mut new_tts_tx,
                 tts_handle: &mut new_tts_handle,
-                cancel_flag: Arc::new(AtomicBool::new(false)),
+                cancel_flag: Arc::clone(&state.pipeline.hardware_cancel_flag),
+                engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
                 playback_engine,
                 pending_synthesis_jobs: Some(Arc::clone(&state.pipeline.pending_tts_jobs)),
                 telemetry_rtf: Some(Arc::clone(&state.telemetry.latest_tts_rtf)),

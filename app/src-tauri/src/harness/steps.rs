@@ -30,7 +30,8 @@ use crate::{
         tools::{ToolExecutionContext, ToolExecutor, ToolFilter, ToolRegistry},
         ChatMessage, TurnExecutionRequest, TurnOutcome,
     },
-    pipeline::router::{transition, RoutingContext},
+    persistence::compactions::{record_compaction_finish, record_compaction_start},
+    pipeline::router::{transition_harness_phase, RoutingContext},
     services::llm::{actor::LlmResponse, CanonicalToolCall, GenerationRequest},
 };
 
@@ -144,7 +145,8 @@ pub fn step1_intake(
         can_compact
     );
 
-    transition(
+    transition_harness_phase(
+        req.turn_id,
         InteractionState::Thinking,
         None,
         &req.routing_ctx,
@@ -236,7 +238,8 @@ pub fn enter_non_terminal_phase(phase: &NonTerminalPhase, ctx: &NonTerminalConte
         phase.trigger
     );
 
-    transition(
+    transition_harness_phase(
+        ctx.turn_id,
         InteractionState::Working,
         Some(&activity),
         ctx.routing_ctx,
@@ -371,9 +374,46 @@ pub async fn step3_execute_compaction(
             "[Harness::Compaction] Critical context threshold on turn {} without LLM provider; FIFO fallback.",
             req.turn_id
         );
-        let mut guard = harness_arc.lock();
-        if let Some(ref mut harness) = *guard {
-            harness.fallback_fifo_shift();
+        let from_turn = {
+            let guard = harness_arc.lock();
+            guard.as_ref().map(|h| h.from_turn_id()).unwrap_or(0)
+        };
+        {
+            let mut guard = harness_arc.lock();
+            if let Some(ref mut harness) = *guard {
+                harness.fallback_fifo_shift();
+            }
+        }
+        // Record the FIFO compaction in the relational ledger (RULE-HARN-17).
+        let session_id = req.app_state.conversation_id.load(Relaxed) as i64;
+        if session_id > 0 {
+            if let Ok(conn) = req.db.connect() {
+                if let Ok(id) = record_compaction_start(
+                    &conn,
+                    session_id,
+                    "critical_fifo_fallback",
+                    from_turn,
+                    req.turn_id,
+                )
+                .await
+                {
+                    if let Err(e) = record_compaction_finish(
+                        &conn,
+                        id,
+                        "FIFO fallback compaction",
+                        "completed",
+                        None,
+                    )
+                    .await
+                    {
+                        log::warn!(
+                            "[Harness::Compaction] Failed to finalize FIFO ledger row {}: {}",
+                            id,
+                            e
+                        );
+                    }
+                }
+            }
         }
         return;
     };
@@ -531,13 +571,10 @@ pub async fn step6_run_stream_pass(
     stream_stage: &StreamRoutingStage,
     stream_handles: &StreamRoutingHandles,
     response_rx: mpsc::Receiver<LlmResponse>,
-    allow_tools: bool,
 ) -> Result<StreamPassOutcome, String> {
     let handles_clone = stream_handles.clone();
     let stage_clone = stream_stage.clone();
-    tokio::task::spawn_blocking(move || {
-        stage_clone.route_stream(handles_clone, response_rx, allow_tools)
-    })
+    tokio::task::spawn_blocking(move || stage_clone.route_stream(handles_clone, response_rx))
     .await
     .unwrap_or_else(|join_err| Err(format!("Stream task panic: {:?}", join_err)))
 }
@@ -769,7 +806,8 @@ pub async fn step6_await_and_drain_inbox(
             }
         }
 
-        transition(
+        transition_harness_phase(
+            ctx.req.turn_id,
             InteractionState::Thinking,
             None,
             &ctx.req.routing_ctx,
@@ -862,9 +900,7 @@ pub fn step7_handle_cancelled(ctx: CancelledTurnContext<'_>) -> TurnOutcome {
     let mut guard = ctx.harness_arc.lock();
     if !ctx.partial_text.trim().is_empty() {
         if let Some(ref mut harness) = *guard {
-            harness
-                .history
-                .push_assistant_turn(ctx.partial_text.clone());
+            harness.commit_completed_turn(ctx.partial_text.clone());
         }
         drop(guard);
         let persist_lock = ctx.app_state.persist_tx.lock();

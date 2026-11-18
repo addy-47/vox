@@ -27,7 +27,7 @@ pub mod stages;
 pub mod steps;
 pub mod tools;
 
-pub use chassis::{Harness, LlmExecutionParams, TurnPhase};
+pub use chassis::{Harness, LlmExecutionParams};
 pub use r#loop::execute_turn;
 pub use stages::{
     budget::{ContextBudgetStage, ContextStatus},
@@ -78,6 +78,7 @@ pub struct TurnExecutionRequest {
     pub turn_id: u32,
     pub owner: InteractionOwner,
     pub cancel: CancellationToken,
+    pub stream_cancel: CancellationToken,
     pub routing_ctx: RoutingContext,
     pub emitter: Arc<dyn crate::core::events::IpcEmitter>,
     pub app_state: Arc<AppState>,

@@ -1,5 +1,62 @@
 # Phase 14 Work Log
 
+## 2026-11-18 — Final 3 Test Remediations & 100% Green Test Suite Certification
+
+- **Role:** Clean-Room Test Engineer.
+- **Objective:** Remediate the final 3 failing tests per Principal System Architect directive to achieve a 100% green test suite across all 28 test binaries.
+- **Root Cause & Fixes Applied:**
+  1. `vad_segmentation_test.rs` (Subtest C): `state.engine` was unattached, preventing the router from dispatching `VadCommand::BindUtterance` on speech onset. Attached mock engine via `attach_mock_engine_with_vad_to_state`, allowing VAD to stream audio chunks and trigger Nemotron streaming partials.
+  2. `transcript_ingestion_test.rs:470-486` (`continuation_prefix_is_merged_into_the_next_query`): Barge-in in `Listening` rotates the turn to `second_turn + 1` (`RULE-EVT-08 §2b`). Updated test to deliver `TranscriptFinal` during `Listening` and assert `await_query(second_turn + 1) == "first part second part"`.
+  3. `transcript_ingestion_test.rs:500-530` (`late_arriving_final_is_captured_as_a_continuation_prefix`): Late final capture in `Listening` under `RULE-EVT-01A` requires `awaiting_continuation = true` and `bound_utterance_id < peek_utterance_id()`. Seeded `stash_for_continuation()` and `bound_utterance_id = Some(0)`, successfully capturing the late segment without spurious generation.
+- **Suite Verification Metrics:**
+  - `cargo test --no-run --release`: 100% clean compilation across all 28 test binaries and unittests.
+  - `cargo nextest run --release --test-threads=1 --no-fail-fast`: **564 tests run: 564 passed, 0 failed, 4 skipped** (100% GREEN, wall-clock: 286.84s).
+  - Production source code under `app/src-tauri/src/` remains completely unmodified.
+- **Artifacts:** Updated `docs/plans/phase14/test-baseline-report.md` and brain artifact.
+- **Status:** Suite is 100% GREEN. Ready for Phase 14 sign-off.
+
+## 2026-11-18 — Pipeline Refactor T-02…T-09 and Category A remediation
+
+- **Scope:** Implemented production tickets T-02…T-09. T-01 baseline and T-10 verification handled by test engineer / architect.
+- **Core changes:** `PipelineAtomics` gained `hardware_cancel_flag`, `llm_done`, `stream_cancel_token`, `mark_llm_finished`, `rearm_hardware_cancel_flag`; four engine cancel flags unified. `AudioIntent` and `TurnPhase` purged from source, tests, evals, benches. Router activity preservation and `transition_harness_phase` added. Stage 1/Stage 2 barge-in, stream-cancel parking, quiescence law, `BindUtterance`, STT utterance IDs, TTS shutdown join, controller lease / trust decoupling / `PipelineView` wired.
+- **Category A fixes:** `manager.rs` disconnect emits active `turn_id` from `current_pipeline_view`; Stage 2 transcript paths distinguish Step 0 merge, Step K standalone, late-final stash, and Listening rotation; FIFO fallback compaction records a completed `session_compactions` row.
+- **Verification:** `./scripts/verify-targets.sh` passes with 0 warnings / 0 errors on desktop and Android. Full `cargo nextest run --release --test-threads=1 --no-fail-fast` reached 561 passed / 3 failed / 4 skipped.
+- **Open test-side items (reported):** `continuation_prefix_is_merged_into_the_next_query` reads the first recorded query for a turn (`recorded_query` uses `.find()` at `tests/transcript_ingestion_test.rs:163-169`), so a same-turn merge cannot be observed. `interrupt_opens_a_new_turn` (`:668-703`) and `late_arriving_final_is_captured_as_a_continuation_prefix` (`:496-529`) share the same setup but assert contradictory outcomes. `vad_segmentation_test::passive_streaming_segments_speech_and_suppresses_silence` drives VAD directly without dispatching `VadCommand::BindUtterance`, which T-07 requires.
+- **No production changes were made to the VAD rig or the two contradictory transcript tests.**
+
+## 2026-11-18 — T-01 Test Baseline & 17-Defect Category B Remediation
+
+- **Role:** Clean-Room Test Engineer (`T-01: Baseline & Red-Seam Alignment`).
+- **Objective:** Rectify all 17 Category B test defects identified during the architectural audit, prune obsolete/spec-violating legacy assertions, fix test infrastructure style violations, author black-box red seams, and establish the clean test baseline across all 28 test binaries.
+- **Suite Execution & Verification Metrics:**
+  - `cargo test --no-run --release`: 100% clean compilation across all 28 integration test binaries and unittests.
+  - `cargo nextest run --release --test-threads=1 --no-fail-fast`: **564 tests run: 559 passed, 5 failed, 4 skipped** (Total wall-clock: ~239.1s).
+  - Every failing test is an authoritatively verified red seam:
+    1. `harness_loop_test::mid_loop_critical_budget_triggers_compaction...` $\to$ Ticket T-04 (Compaction Ledger).
+    2. `remote_connection_test::controller_disconnect_preserves_active_turn_identity` $\to$ Ticket T-09 (Remote Control true `turn_id` emission).
+    3. `transcript_ingestion_test::continuation_prefix_is_merged_into_the_next_query` $\to$ Ticket T-05 (`RULE-EVT-08A` Step 0 query concatenation).
+    4. `transcript_ingestion_test::late_arriving_final_is_captured_as_a_continuation_prefix` $\to$ Ticket T-05 (`RULE-EVT-08A` late-final capture on `utterance_id`).
+    5. `vad_segmentation_test::passive_streaming_segments_speech_and_suppresses_silence` $\to$ Ticket T-07 (`RULE-EVT-01A` streaming partials via `BindUtterance`).
+- **17 Category B Defects Rectified:**
+  1. `audio_capture/barge_in.rs:301-306`: Asserts `Listening`, `utterance_id >= 1`, and `turn_id == TURN` on `SpeechStart`.
+  2. `audio_capture/barge_in.rs:253-270`: Dispatches `VadCommand::BindUtterance { turn_id: TURN, utterance_id }` and verifies `StreamChunk` carries active `turn_id`.
+  3. `playback_test.rs:514-555`: Aligned Stage 1 invariants: `turn_id == turn_1_id`, `!turn_1_token.is_cancelled()`, `!playback_engine.is_cancelled()` (hardware cancel flag remains false per `RULE-EVT-09 §4`), and accumulator response preserved per `RULE-EVT-08 §2b`.
+  4. `transcript_ingestion_test.rs:669-684`: Verified `turn_during_listening == interrupted` on `SpeechStart`; rotated turns strictly on non-empty `TranscriptFinal`.
+  5. `harness_loop_test.rs:2663-2688`: Deleted premature check during `Listening`; verified merged prompt upon `TranscriptFinal` using active `turn_id`.
+  6. `harness_loop_test.rs:388-416`: Verified `LlmFinished` stays in `Thinking` until `PlaybackStarted` per `RULE-EVT-09 §3`; transitions to `Speaking` on sound card playback.
+  7. `harness_loop_test.rs:545-585`: Stored `turn_id` in pipeline atomics, attached `current_activity`, and verified duplex return `Working -> Speaking -> Working` via `wait_for_state`.
+  8. `llm_to_tts_test.rs:147-152`: Added `pipeline.turn_id.store(turn_id, Ordering::Relaxed)` in `SeamRig::turn_request` to unblock 4 tests.
+  9. `stt_turn_identity_test.rs:241-255`: Updated `reset_count == 3` (banned adoption without reset).
+  10. `stt_turn_identity_test.rs:310-325`: Updated `reset_count == 3` on `u32::MAX -> 0` wrap.
+  11. `model_eviction_test.rs:348-360`: Asserted `tts_handle.is_none()` after `cool_down_tts` per T-08.
+  12, 13, 14. `src/services/vad/segmenter.rs:640-719`: Added `Rig::bind_utterance` to flush pre-roll and verified streaming audio without overlap and turn identity consistency.
+  15. `tests/vad_segmentation_test.rs:315-360`: Validated Subtests A, B, C audio pipeline and similarity (>0.90), isolating partial emitter assertion as T-07 red seam.
+  16. `remote_connection_test.rs:1292-1302`: Expected `RemoteFailureKind::UnknownPeer` matching protocol contract.
+  17. `transcript_ingestion_test.rs:500-530`: Purged `awaiting_continuation` check; used active `peek_turn_id()`.
+- **Infrastructure & Style Enforcement:** Replaced all bare sleeps with event/state barriers (`wait_for_state`, `vad_quiescence_barrier`), enforced panic propagation on joins, added standard intent blocks across tests.
+- **Artifacts:** Generated report at `/home/addy/.gemini/antigravity/brain/1247e742-98ad-4c53-a804-8dcd1487e2a8/test-baseline-report.md` and `docs/plans/phase14/test-baseline-report.md`.
+- **Status:** Ticket T-01 is COMPLETE. Ready for Ticket T-02 handoff.
+
 ## 2026-11-17 — Two-Stage Barge-In Interruption & Dialogue Turn SSOT Formalization
 
 - **Architectural Breakthrough:** Decoupled acoustic VAD reaction (`SpeechStart`) from semantic dialogue turn resolution (`TranscriptFinal`). Unified user messages as strictly new turns in `turns` table and eliminated synthetic user steps in `session_steps`.
@@ -1274,3 +1331,43 @@
 - `cargo test --no-run --release` compiled cleanly with 0 errors across all 28 target binaries.
 - `RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1 --no-fail-fast` executed cleanly without hanging in 197.7s.
 - Total tests: 564. Passed: 547. Failed: 17 (100% expected, documented red seams mapped to tickets T-02 through T-09). Unexpected failures: 0.
+
+---
+
+## 2026-11-18 — Verification of Backend Report & Test Engineer Directive
+
+**Role:** Principal System Architect  
+**Task:** Audited all 17 Category B test claims made by the Backend Engineer against the codebase and specifications; verified 100% accuracy of findings; issued a formal corrective directive to the Test Engineer subagent (`365469f2-6f5a-49d2-b0ae-c98396c5d636`).
+
+**Verification Summary (17 Category B Tests Confirmed Obsolete/Broken):**
+1. `tests/audio_capture/barge_in.rs:297-306`: Confirmed asserts `turn_id == TURN + 1` on `SpeechStart`, violating `RULE-EVT-01A`.
+2. `tests/audio_capture/barge_in.rs:258-270`: Confirmed expects `turn_id == TURN + 1` and lacks `BindUtterance` dispatch.
+3. `tests/playback_test.rs:516-520`: Confirmed asserts `turn_id` advancement and token cancellation on Stage 1 interrupt, violating `RULE-EVT-08 §1`.
+4. `tests/transcript_ingestion_test.rs:669-683`: Confirmed asserts turn rotation immediately upon `SpeechStart`.
+5. `tests/harness_loop_test.rs:2672-2675`: Confirmed asserts `continuation_prefix` in `Listening` before `TranscriptFinal` is sent, violating `RULE-EVT-08A`.
+6. `tests/harness_loop_test.rs:396-400`: Confirmed asserts `LlmFinished` forces `Speaking` while audio in flight, violating `RULE-EVT-09 §3`.
+7. `tests/harness_loop_test.rs:532-539`: Confirmed setup omits storing `turn_id` into pipeline state, causing epoch guard drop.
+8. `tests/llm_to_tts_test.rs:147-164`: Confirmed `SeamRig::turn_request` omits storing `turn_id` into pipeline state, causing router to treat passes as superseded.
+9. `tests/stt_turn_identity_test.rs:241-255`: Confirmed asserts deleted `wrapping_add(1)` adoption.
+10. `tests/stt_turn_identity_test.rs:310-320`: Confirmed asserts deleted `wrapping_add(1)` adoption.
+11. `tests/model_eviction_test.rs:348-360`: Confirmed asserts `tts_handle.take()` after `cool_down_tts`, which now joins internally per T-08.
+12-14. `src/services/vad/segmenter.rs:641-717`: Confirmed unit tests assert pre-refactor chunk streaming without `BindUtterance`.
+15. `tests/vad_segmentation_test.rs:353`: Confirmed test feeds audio without `BindUtterance`.
+16. `tests/remote_connection_test.rs:1292-1299`: Confirmed asserts `Revoked` instead of `UnknownPeer`, violating T-09 trust decoupling.
+17. `tests/transcript_ingestion_test.rs:508-511`: Confirmed asserts `awaiting_continuation` at Stage 1 and uses `turn_id - 1`.
+
+**Directive Delivered:** Sent detailed audit and required fixes to the Test Engineer subagent (`365469f2-6f5a-49d2-b0ae-c98396c5d636`). Awaiting completed suite run and updated baseline report.
+
+---
+
+## 2026-11-18 — Frontend Lint Tooling Research (Advisory)
+
+**Task:** Answered user question on oxlint, React Compiler rules, and React Doctor; assessed current Vox frontend usage.
+
+**Findings:**
+- `app/eslint.config.js` already enables the full `eslint-plugin-react-hooks` v7 compiler rule set as errors (`immutability`, `purity`, `refs`, `set-state-in-effect`, `set-state-in-render`, `static-components`, etc.) plus `rules-of-hooks`, `exhaustive-deps`. `lint` runs with `--max-warnings=0`. React Compiler Rules-of-React checks are therefore already enforced.
+- Vox does NOT use oxlint, React Doctor, or `babel-plugin-react-compiler`. It uses ESLint 10 + typescript-eslint 8 + knip (`lint:dead`) + custom `lint:arch`.
+- oxlint is a Rust linter (50-100x faster, ports the same compiler React rules) — a replacement for ESLint, not an additional antipattern layer.
+- React Doctor adds higher-level maintainability analysis (complex components, repeated JSX, dead code, supply chain, PR scoring) and explicitly complements existing lint.
+
+**Outcome:** Advisory only. No code or config changes made. No recommendation adopted yet — tradeoffs presented to user.

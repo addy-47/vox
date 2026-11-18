@@ -101,51 +101,46 @@ pub fn on_llm_finished<R: tauri::Runtime>(
         );
     }
 
-    evaluate_synthesis_latch(turn_id, current_state, app, state, ctx);
+    evaluate_synthesis_latch(turn_id, app, state, ctx);
 }
 
-/// Evaluates whether synthesis has drained and pipeline can transition to Ready.
+/// Marks the turn complete and resolves quiescence once its audio has drained.
 fn evaluate_synthesis_latch<R: tauri::Runtime>(
     turn_id: u32,
-    current_state: InteractionState,
     app: Option<&AppHandle<R>>,
     state: &AppState,
     ctx: &RoutingContext,
 ) {
+    state.pipeline.mark_llm_finished(turn_id);
+
     let pending_jobs = state.pipeline.pending_tts_jobs.load(Ordering::Relaxed);
     let sink_active = state.pipeline.sink_occupied.load(Ordering::Relaxed);
-
-    let audio_active = pending_jobs > 0 || sink_active;
-
-    if audio_active {
-        if current_state != InteractionState::Speaking {
-            if let Some(app_handle) = app {
-                transition(InteractionState::Speaking, None, ctx, app_handle, state);
-            } else {
-                state.pipeline.set_state(InteractionState::Speaking);
-            }
-            log::info!(
-                "[Pipeline::Llm] LlmFinished evaluated latch (pending_jobs={}, sink_active={}) -> Speaking (turn {})",
-                pending_jobs,
-                sink_active,
-                turn_id
-            );
-        }
-    } else {
-        if state.turn_metrics.playback_start_ms.load(Ordering::Relaxed) == 0 {
-            let payload = state.turn_metrics.build_payload(turn_id);
-            if let Some(app_handle) = app {
-                let _ = emit_ipc(app_handle, IpcEvent::TurnMetrics(payload));
-            }
-        }
-        if let Some(app_handle) = app {
-            transition(InteractionState::Ready, None, ctx, app_handle, state);
-        } else {
-            state.pipeline.set_state(InteractionState::Ready);
-        }
+    if pending_jobs > 0 || sink_active {
+        // RULE-EVT-09 §3: keep the current state until the sound card drains.
         log::info!(
-            "[Pipeline::Llm] LlmFinished evaluated latch (audio already drained) -> Ready (turn {})",
+            "[Pipeline::Llm] LlmFinished latch marked; audio active (pending_jobs={}, sink_active={}, turn {})",
+            pending_jobs,
+            sink_active,
             turn_id
         );
+        return;
     }
+
+    if state.turn_metrics.playback_start_ms.load(Ordering::Relaxed) == 0 {
+        let payload = state.turn_metrics.build_payload(turn_id);
+        if let Some(app_handle) = app {
+            let _ = emit_ipc(app_handle, IpcEvent::TurnMetrics(payload));
+        }
+    }
+
+    let noop = crate::core::events::MockIpcEmitter;
+    let emitter: &dyn crate::core::events::IpcEmitter = match app {
+        Some(app_handle) => app_handle,
+        None => &noop,
+    };
+    transition(InteractionState::Ready, None, ctx, emitter, state);
+    log::info!(
+        "[Pipeline::Llm] LlmFinished latch resolved (audio drained) -> Ready (turn {})",
+        turn_id
+    );
 }

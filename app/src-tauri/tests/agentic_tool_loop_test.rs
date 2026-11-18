@@ -23,7 +23,7 @@ use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use vox_lib::{
     core::{
-        events::{AudioIntent, InteractionMode, PipelineMode},
+        events::{InteractionMode, PipelineMode},
         metrics::TurnMetricsCollector,
         state::{InteractionOwner, InteractionState},
     },
@@ -171,6 +171,7 @@ async fn terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity() {
             turn_id: 1,
             query: "Let's discuss Rust async concurrency".to_string(),
             cancel: state.pipeline.turn_cancel_token(),
+            stream_cancel: state.pipeline.stream_cancel_token(),
             emitter: Arc::new(app.clone()),
             app_state: Arc::clone(&state),
             routing_ctx: vox_lib::pipeline::RoutingContext::from_app_state(&state),
@@ -215,8 +216,7 @@ async fn terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity() {
         // 3. Assert TTS received spoken response (under Harness v2, mid-stream clauses when allow_tools=true are InterimFiller)
         let tts_cmd = tts_rx.try_recv().expect("tts_rx must receive spoken response");
         match tts_cmd {
-            TtsCommand::Generate { text, intent, .. } => {
-                assert_eq!(intent, AudioIntent::InterimFiller);
+            TtsCommand::Generate { text, .. } => {
                 assert!(text.contains("Rust async and tokio"));
             }
             _ => panic!("Expected TtsCommand::Generate"),
@@ -399,6 +399,7 @@ async fn search_memory_retrieval_is_non_terminal_and_drops_the_scratchpad() {
             turn_id: 1,
             query: "What graphics card do I have?".to_string(),
             cancel: state.pipeline.turn_cancel_token(),
+            stream_cancel: state.pipeline.stream_cancel_token(),
             emitter: Arc::new(app.clone()),
             app_state: Arc::clone(&state),
             routing_ctx: vox_lib::pipeline::RoutingContext::from_app_state(&state),
@@ -432,8 +433,7 @@ async fn search_memory_retrieval_is_non_terminal_and_drops_the_scratchpad() {
         // 1. Assert InterimFiller received on TTS
         let tts_cmd = tts_rx.try_recv().expect("tts_rx must receive interim filler");
         match tts_cmd {
-            TtsCommand::Generate { intent, text, .. } => {
-                assert_eq!(intent, AudioIntent::InterimFiller);
+            TtsCommand::Generate { text, .. } => {
                 assert!(text.contains("check your memory"));
             }
             _ => panic!("Expected TtsCommand::Generate for filler"),
@@ -499,6 +499,7 @@ async fn tool_call_preserves_the_buffered_preamble_clause() {
             tts_tx: Some(tts_tx),
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
             cancel: cancel_atomic,
+            app_state: Arc::clone(&state),
             event_tx: pipeline_tx,
             emitter: Arc::new(app.clone()),
             turn_metrics: Arc::new(TurnMetricsCollector::new()),
@@ -531,7 +532,7 @@ async fn tool_call_preserves_the_buffered_preamble_clause() {
         drop(response_tx);
 
         let outcome = tokio::task::spawn_blocking(move || {
-            stream_stage.route_stream(stream_handles, response_rx, true)
+            stream_stage.route_stream(stream_handles, response_rx)
         })
         .await
         .unwrap()
@@ -1012,6 +1013,7 @@ async fn web_search_flows_through_the_harness_turn_without_network() {
             turn_id: 501,
             query: "What shipped in Rust 2026?".to_string(),
             cancel: state.pipeline.turn_cancel_token(),
+            stream_cancel: state.pipeline.stream_cancel_token(),
             emitter: Arc::new(app.clone()),
             app_state: Arc::clone(&state),
             routing_ctx: vox_lib::pipeline::RoutingContext::from_app_state(&state),
@@ -1046,8 +1048,8 @@ async fn web_search_flows_through_the_harness_turn_without_network() {
         // InterimFiller must reach the TTS from the non-terminal tool phase.
         let mut saw_filler = false;
         while let Ok(cmd) = tts_rx.try_recv() {
-            if let TtsCommand::Generate { intent, text, .. } = cmd {
-                if intent == AudioIntent::InterimFiller && text.contains("search") {
+            if let TtsCommand::Generate { text, .. } = cmd {
+                if text.contains("search") {
                     saw_filler = true;
                 }
             }

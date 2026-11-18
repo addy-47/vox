@@ -212,12 +212,11 @@ impl TtsProvider for TtsEngine {
         let sid = self.voice.load(Ordering::Relaxed);
 
         log::info!(
-            "[Supertonic] Synthesizing turn {} ({}): '{}' sid={} (intent: {:?})",
+            "[Supertonic] Synthesizing turn {} ({}): '{}' sid={}",
             ctx.turn_id,
             lang,
             text,
-            sid,
-            ctx.intent
+            sid
         );
 
         let start = Instant::now();
@@ -237,7 +236,6 @@ impl TtsProvider for TtsEngine {
 
         let cancel_cb = ctx.cancel.clone();
         let playback_cb = Arc::clone(ctx.playback);
-        let intent = ctx.intent;
         let mut lpf = BiquadFilter::new_lpf_11k();
         let streamed_samples_count = Arc::new(AtomicUsize::new(0));
         let streamed_count_cb = Arc::clone(&streamed_samples_count);
@@ -255,7 +253,7 @@ impl TtsProvider for TtsEngine {
                 }
                 let samples_24k = resample_44100_to_24000(raw_samples, &mut lpf);
                 streamed_count_cb.fetch_add(samples_24k.len(), Ordering::Relaxed);
-                playback_cb.ingest_chunk_with_intent(&samples_24k, intent);
+                playback_cb.ingest_synthesis_chunk(&samples_24k);
                 true
             }),
         );
@@ -272,7 +270,7 @@ impl TtsProvider for TtsEngine {
                 let mut fallback_lpf = BiquadFilter::new_lpf_11k();
                 let samples_24k = resample_44100_to_24000(audio_data.samples(), &mut fallback_lpf);
                 if !samples_24k.is_empty() && !ctx.cancel.load(Ordering::Relaxed) {
-                    ctx.playback.ingest_chunk_with_intent(&samples_24k, intent);
+                    ctx.playback.ingest_synthesis_chunk(&samples_24k);
                 }
                 total_samples_count = samples_24k.len();
             } else if !ctx.cancel.load(Ordering::Relaxed) {

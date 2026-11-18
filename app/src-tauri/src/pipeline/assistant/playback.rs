@@ -4,16 +4,15 @@ use tauri::AppHandle;
 
 use crate::{
     core::{
-        events::{emit_ipc, AudioIntent, IpcEvent},
+        events::{emit_ipc, IpcEvent},
         state::{AppState, InteractionState},
     },
     pipeline::{transition, RoutingContext},
 };
 
-/// Handles onset of audio playback, transitioning pipeline state from Thinking/Working to Speaking for TurnResponse.
+/// Handles onset of audio playback and transitions to Speaking (RULE-EVT-09 §1).
 pub fn on_playback_started<R: tauri::Runtime>(
     turn_id: u32,
-    intent: AudioIntent,
     app: &AppHandle<R>,
     state: &AppState,
     ctx: &RoutingContext,
@@ -29,18 +28,12 @@ pub fn on_playback_started<R: tauri::Runtime>(
     }
 
     let current_state = state.pipeline.state();
-
-    if current_state == InteractionState::Working && intent == AudioIntent::InterimFiller {
+    if !matches!(
+        current_state,
+        InteractionState::Thinking | InteractionState::Working | InteractionState::Ready
+    ) {
         log::debug!(
-            "[Pipeline::Playback] Interim filler playback started while in Working state (turn {}) - remaining in Working",
-            turn_id
-        );
-        return;
-    }
-
-    if current_state != InteractionState::Thinking && current_state != InteractionState::Working {
-        log::debug!(
-            "[Pipeline::Playback] PlaybackStarted dropped (turn {}): state is {:?}, expected Thinking or Working",
+            "[Pipeline::Playback] PlaybackStarted dropped (turn {}): state is {:?}",
             turn_id,
             current_state
         );
@@ -58,15 +51,15 @@ pub fn on_playback_started<R: tauri::Runtime>(
         );
     }
     log::info!(
-        "[Pipeline::Playback] Playback started -> Speaking (turn: {})",
+        "[Pipeline::Playback] Playback started ({:?} -> Speaking, turn {})",
+        current_state,
         turn_id
     );
 }
 
-/// Handles completion of audio playback, guarding against premature completion if synthesis jobs remain.
+/// Handles audio drain and resolves the duplex quiescence law (RULE-EVT-09 §2).
 pub fn on_playback_finished<R: tauri::Runtime>(
     turn_id: u32,
-    _intent: AudioIntent,
     app: &AppHandle<R>,
     state: &AppState,
     ctx: &RoutingContext,
@@ -82,19 +75,24 @@ pub fn on_playback_finished<R: tauri::Runtime>(
     }
 
     let current_state = state.pipeline.state();
-    if current_state != InteractionState::Speaking
-        && current_state != InteractionState::Thinking
-        && current_state != InteractionState::Working
-    {
+    let pending_jobs = state.pipeline.pending_tts_jobs.load(Ordering::Relaxed);
+    let sink_occupied = state.pipeline.sink_occupied.load(Ordering::Relaxed);
+    let zero_audio_fallback = matches!(
+        current_state,
+        InteractionState::Thinking | InteractionState::Working
+    ) && state.pipeline.is_llm_done()
+        && pending_jobs == 0
+        && !sink_occupied;
+
+    if current_state != InteractionState::Speaking && !zero_audio_fallback {
         log::debug!(
-            "[Pipeline::Playback] PlaybackFinished dropped (turn {}): state is {:?}, expected Speaking, Thinking, or Working",
+            "[Pipeline::Playback] PlaybackFinished dropped (turn {}): state is {:?}",
             turn_id,
             current_state
         );
         return;
     }
 
-    let pending_jobs = state.pipeline.pending_tts_jobs.load(Ordering::Relaxed);
     if pending_jobs > 0 {
         log::debug!(
             "[Pipeline::Playback] PlaybackFinished deferred (turn {}): {} synthesis jobs still pending",
@@ -113,10 +111,19 @@ pub fn on_playback_finished<R: tauri::Runtime>(
     }
 
     state.pipeline_accumulator.lock().clear();
-    transition(InteractionState::Ready, None, ctx, app, state);
+    let target = if state.pipeline.is_llm_done() {
+        InteractionState::Ready
+    } else if state.pipeline.current_activity().is_some() {
+        InteractionState::Working
+    } else {
+        InteractionState::Thinking
+    };
+    transition(target, None, ctx, app, state);
     state.turn_metrics.record_playback_finished(turn_id);
     log::info!(
-        "[Pipeline::Playback] Playback finished -> Ready (turn: {})",
+        "[Pipeline::Playback] Playback finished ({:?} -> {:?}, turn {})",
+        current_state,
+        target,
         turn_id
     );
 }

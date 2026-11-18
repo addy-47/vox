@@ -31,7 +31,7 @@ use super::{speed_range, SynthesisContext, TtsProvider};
 use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
-        events::{AudioIntent, VoxEvent},
+        events::VoxEvent,
     },
     services::{
         audio::playback::PlaybackEngine,
@@ -303,7 +303,6 @@ async fn stream_mp3_payload(
     ws_stream: &mut EdgeWsStream,
     cancel: &Arc<AtomicBool>,
     playback: &Arc<PlaybackEngine>,
-    intent: AudioIntent,
 ) -> Result<usize> {
     let mut mp3_bytes = Vec::new();
 
@@ -379,7 +378,7 @@ async fn stream_mp3_payload(
         if cancel.load(Ordering::Relaxed) {
             break;
         }
-        playback.ingest_chunk_with_intent(chunk, intent);
+        playback.ingest_synthesis_chunk(chunk);
     }
 
     Ok(total_samples)
@@ -497,7 +496,6 @@ impl TtsProvider for EdgeTtsProvider {
         let event_tx = ctx.event_tx.clone();
         let cancel = ctx.cancel.clone();
         let playback = Arc::clone(ctx.playback);
-        let intent = ctx.intent;
         let telemetry_rtf = ctx.telemetry_rtf.cloned();
 
         EDGE_TTS_RUNTIME.block_on(async move {
@@ -517,7 +515,7 @@ impl TtsProvider for EdgeTtsProvider {
             .await?;
 
             let total_samples =
-                stream_mp3_payload(&mut ws_stream, &cancel, &playback, intent).await?;
+                stream_mp3_payload(&mut ws_stream, &cancel, &playback).await?;
 
             if total_samples > 0 && !cancel.load(Ordering::Relaxed) {
                 let total_dur = total_samples as f32 / TTS_SAMPLE_RATE as f32;
@@ -580,7 +578,6 @@ mod tests {
             current_turn_id: Arc::new(AtomicU32::new(1)),
             pending_synthesis_jobs: Arc::new(AtomicU32::new(1)),
             sink_occupied: Arc::new(AtomicBool::new(false)),
-            playback_intent: Arc::new(std::sync::atomic::AtomicU8::new(0)),
             event_tx: event_tx.clone(),
             is_playback_muted: Arc::new(AtomicBool::new(false)),
             turn_metrics: None,
@@ -594,7 +591,6 @@ mod tests {
         ));
         let ctx = SynthesisContext {
             turn_id: 1,
-            intent: AudioIntent::TurnResponse,
             cancel,
             playback: &playback,
             event_tx,

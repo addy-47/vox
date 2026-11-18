@@ -55,6 +55,55 @@ impl NetworkAudioSender {
         }
     }
 
+    /// Blocking SpeechStart send for the dedicated VAD OS thread.
+    pub fn send_speech_start_blocking(&self) {
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let sample_offset = self.sample_offset.load(Ordering::Acquire);
+        let start = AudioControlMessage::SpeechStart(SpeechStart {
+            epoch,
+            sample_offset,
+        });
+        let _ = self.tx.blocking_send(AudioPayload::Control(start));
+    }
+
+    /// Blocking sample send for the dedicated VAD OS thread (FIFO ordered).
+    pub fn send_samples_blocking(&self, samples: &[f32]) {
+        if samples.is_empty() {
+            return;
+        }
+        let epoch = self.epoch.load(Ordering::Acquire);
+        for chunk in samples.chunks(FRAME_SIZE_16KHZ_20MS) {
+            let seq = self.seq.fetch_add(1, Ordering::Relaxed);
+            let offset = self
+                .sample_offset
+                .fetch_add(chunk.len() as u64, Ordering::Relaxed);
+            let pcm16_samples: Vec<i16> = chunk
+                .iter()
+                .map(|&s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
+                .collect();
+            let frame = AudioFrame {
+                codec: AUDIO_CODEC_PCM16,
+                seq,
+                epoch,
+                sample_offset: offset,
+                samples: pcm16_samples,
+            };
+            if self.tx.blocking_send(AudioPayload::Frame(frame)).is_err() {
+                break;
+            }
+        }
+    }
+
+    /// Blocking SpeechEnd send for the dedicated VAD OS thread.
+    pub fn send_speech_end_blocking(&self, sample_count: u64) {
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let end = AudioControlMessage::SpeechEnd(SpeechEnd {
+            epoch,
+            sample_count,
+        });
+        let _ = self.tx.blocking_send(AudioPayload::Control(end));
+    }
+
     /// Transmits a SpeechStart control message over the audio socket.
     pub async fn send_speech_start(&self) {
         let epoch = self.epoch.load(Ordering::Acquire);

@@ -27,7 +27,7 @@ use ringbuf::traits::Observer;
 use vox_lib::{
     config::AudioOutputMode,
     core::{
-        events::{AudioIntent, InteractionMode, VoxEvent},
+        events::{InteractionMode, VoxEvent},
         state::{InteractionOwner, InteractionState},
     },
     pipeline::router::spawn_router,
@@ -255,7 +255,6 @@ async fn playback_finished_is_deferred_while_a_job_is_pending() {
         event_tx
             .send(VoxEvent::PlaybackFinished {
                 turn_id,
-                intent: AudioIntent::TurnResponse,
             })
             .expect("Failed to send PlaybackFinished");
 
@@ -274,7 +273,6 @@ async fn playback_finished_is_deferred_while_a_job_is_pending() {
         event_tx
             .send(VoxEvent::PlaybackFinished {
                 turn_id,
-                intent: AudioIntent::TurnResponse,
             })
             .expect("Failed to send PlaybackFinished");
 
@@ -513,48 +511,41 @@ async fn barge_in_cancels_the_turn_and_advances_it() {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
 
-        // 4. Verify Barge-In Invariants:
-        let new_turn_id = state.pipeline.peek_turn_id();
-        assert!(
-            new_turn_id > turn_1_id,
-            "Interrupt must generate new turn_id > old_turn_id (got {} vs {})",
-            new_turn_id,
+        // 4. Verify Barge-In Invariants (Stage 1 acoustic interrupt per RULE-EVT-08 §1):
+        let current_turn_id = state.pipeline.peek_turn_id();
+        assert_eq!(
+            current_turn_id, turn_1_id,
+            "Stage 1 interrupt must NOT advance turn_id prior to semantic resolution (got {} vs {})",
+            current_turn_id,
             turn_1_id
         );
 
-        // - Old Turn 1 token must be cancelled
+        // - Active turn cancellation token must NOT be cancelled on Stage 1 (RULE-EVT-08 §1d)
         assert!(
-            turn_1_token.is_cancelled(),
-            "Old turn cancellation token must be cancelled"
+            !turn_1_token.is_cancelled(),
+            "Turn cancellation token must remain active on Stage 1 acoustic interrupt"
         );
 
-        // - New turn token must NOT be cancelled
+        // - Physical speech segment gets monotonic utterance_id (RULE-EVT-01A)
         assert!(
-            !state.pipeline.turn_cancel_token().is_cancelled(),
-            "New turn token must be active"
+            state.pipeline.utterance_id.load(Ordering::Relaxed) >= 1,
+            "Utterance ID must increment on speech start"
         );
 
-        // - Pending synthesis jobs must be reset to 0
-        assert_eq!(
-            state.pipeline.pending_tts_jobs.load(Ordering::Relaxed),
-            0,
-            "pending_synthesis_jobs must be reset to 0 upon barge-in"
-        );
-
-        // - Accumulator must be cleared
+        // - Accumulator assistant response is preserved for Stage 2 history recording (RULE-EVT-08 §2b)
         {
             let mut acc = state.pipeline_accumulator.lock();
             let remaining = acc.take_assistant_response();
             assert!(
-                remaining.is_empty(),
-                "Accumulator assistant response must be cleared on interrupt"
+                !remaining.is_empty(),
+                "Accumulator assistant response must be preserved on Stage 1 interrupt"
             );
         }
 
-        // - Playback engine must be cancelled by on_interrupt
+        // - Playback engine hardware cancel flag must NOT be set on Stage 1 (RULE-EVT-09 §4)
         assert!(
-            playback_engine.is_cancelled(),
-            "Playback engine must be cancelled on interrupt"
+            !playback_engine.is_cancelled(),
+            "Playback engine hardware cancel flag must remain false on Stage 1 acoustic interrupt per RULE-EVT-09 §4"
         );
 
         // - Pipeline state transitions to Listening
@@ -607,7 +598,6 @@ async fn duplex_quiescence_playback_finished_before_llm_finished_returns_thinkin
         event_tx
             .send(VoxEvent::PlaybackFinished {
                 turn_id,
-                intent: AudioIntent::TurnResponse,
             })
             .expect("send PlaybackFinished");
 
@@ -710,7 +700,6 @@ async fn zero_audio_fallback_emits_playback_finished_and_closes_quiescence_latch
         // Zero-audio clause: zero samples generated, fallback PlaybackFinished emitted
         let _ = event_tx.send(VoxEvent::PlaybackFinished {
             turn_id,
-            intent: AudioIntent::TurnResponse,
         });
 
         let deadline = Instant::now() + Duration::from_secs(5);

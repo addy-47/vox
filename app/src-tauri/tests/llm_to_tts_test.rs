@@ -25,7 +25,7 @@ use std::{
 
 use vox_lib::{
     core::{
-        events::{AudioIntent, InteractionMode, PipelineMode, VoxEvent},
+        events::{InteractionMode, PipelineMode, VoxEvent},
         state::{InteractionOwner, InteractionState},
     },
     harness::{Harness, TurnExecutionRequest, TurnOutcome},
@@ -145,10 +145,15 @@ impl SeamRig {
     }
 
     fn turn_request(&self, query: &str, turn_id: u32) -> TurnExecutionRequest {
+        self.state
+            .pipeline
+            .turn_id
+            .store(turn_id, std::sync::atomic::Ordering::Relaxed);
         TurnExecutionRequest {
             query: query.to_string(),
             turn_id,
             cancel: self.state.pipeline.turn_cancel_token(),
+            stream_cancel: self.state.pipeline.stream_cancel_token(),
             owner: InteractionOwner::Assistant,
             llm_tx: Some(self.llm_tx.clone()),
             tts_tx: Some(self.tts_tx.clone()),
@@ -172,16 +177,12 @@ impl SeamRig {
 fn drain_tts_generate(
     tts_rx: &mpsc::Receiver<TtsCommand>,
     timeout: Duration,
-) -> Vec<(u32, String, AudioIntent)> {
+) -> Vec<(u32, String)> {
     let deadline = std::time::Instant::now() + timeout;
     let mut clauses = Vec::new();
     loop {
         match tts_rx.try_recv() {
-            Ok(TtsCommand::Generate {
-                turn_id,
-                text,
-                intent,
-            }) => clauses.push((turn_id, text, intent)),
+            Ok(TtsCommand::Generate { turn_id, text }) => clauses.push((turn_id, text)),
             Ok(_) => {}
             Err(mpsc::TryRecvError::Empty) => {
                 if std::time::Instant::now() >= deadline {
@@ -198,7 +199,7 @@ fn drain_tts_generate(
 /// PURPOSE:  Deterministic streaming through a scripted provider must produce TTS clauses.
 /// SCENARIO: "Hello there. How are you today?" streams through Harness::execute_turn.
 /// ASSERTS:  The turn completes with the scripted text, clause dispatches reach the TTS
-///           channel with the right turn_id and TurnResponse intent, and LlmFinished is
+///           channel with the right turn_id, and LlmFinished is
 ///           delivered to the real router before Shutdown.
 /// CLASS:    happy-path
 /// REQUIRES: none
@@ -232,17 +233,12 @@ async fn scripted_stream_dispatches_clauses_to_tts() {
     assert!(
         clauses.len() >= 2,
         "a two-sentence scripted stream must produce at least two TTS clauses, got {:?}",
-        clauses.iter().map(|(_, t, _)| t).collect::<Vec<_>>()
+        clauses.iter().map(|(_, t)| t).collect::<Vec<_>>()
     );
-    for (tid, _, intent) in &clauses {
+    for (tid, _) in &clauses {
         assert_eq!(*tid, turn_id, "clauses must carry the request turn_id");
-        assert_eq!(
-            *intent,
-            AudioIntent::TurnResponse,
-            "clauses must carry TurnResponse intent"
-        );
     }
-    let texts: Vec<&str> = clauses.iter().map(|(_, t, _)| t.as_str()).collect();
+    let texts: Vec<&str> = clauses.iter().map(|(_, t)| t.as_str()).collect();
     assert!(
         texts.iter().any(|t| t.contains("Hello")),
         "first clause must land in TTS, got {:?}",

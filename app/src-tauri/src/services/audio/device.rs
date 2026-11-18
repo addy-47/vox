@@ -38,6 +38,11 @@ impl SharedRingProducer {
     pub fn try_push(&self, sample: f32) -> Result<(), f32> {
         self.inner.lock().try_push(sample)
     }
+
+    /// Non-blocking push for the CPAL callback; drops the frame on lock contention.
+    pub fn try_push_slice(&self, slice: &[f32]) -> Option<usize> {
+        self.inner.try_lock().map(|mut guard| guard.push_slice(slice))
+    }
 }
 
 /// Hardware audio capture implementation wrapping a live CPAL input stream.
@@ -227,8 +232,11 @@ fn build_input_stream(
             source_index = (source_index - n_mono as f32).max(0.0);
 
             if !resampled_buffer.is_empty() {
-                let pushed = producer.push_slice(&resampled_buffer);
-                if pushed < resampled_buffer.len() {
+                let dropped = match producer.try_push_slice(&resampled_buffer) {
+                    Some(pushed) => pushed < resampled_buffer.len(),
+                    None => true,
+                };
+                if dropped {
                     static DROP_COUNT: AtomicU32 = AtomicU32::new(0);
                     let prev = DROP_COUNT.fetch_add(1, Ordering::Relaxed);
                     if prev.is_multiple_of(INGESTION_OVERFLOW_LOG_INTERVAL) {

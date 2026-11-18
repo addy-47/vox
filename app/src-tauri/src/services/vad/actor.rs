@@ -48,6 +48,11 @@ pub enum VadCommand {
     UpdateMode(InteractionMode),
     UpdateAudioMode(AudioOutputMode),
     SetOperationalMode(VadOperationalMode),
+    /// Binds the buffered pre-roll to the router-allocated utterance identity.
+    BindUtterance {
+        turn_id: u32,
+        utterance_id: u32,
+    },
     StartWindowValidation {
         auto_stop_silence_ms: Option<u64>,
         stream_partials: bool,
@@ -82,6 +87,8 @@ pub struct VadActorState {
     pub audio_mode: AudioOutputMode,
     pub in_speech: bool,
     pub current_turn_id: u32,
+    pub awaiting_utterance_binding: bool,
+    pub bound_utterance_id: Option<u32>,
     pub active_frames: usize,
     pub inactive_frames: usize,
     pub samples_since_partial: usize,
@@ -168,6 +175,8 @@ impl VadActorState {
             audio_mode,
             in_speech: false,
             current_turn_id: 0,
+            awaiting_utterance_binding: false,
+            bound_utterance_id: None,
             active_frames: 0,
             inactive_frames: 0,
             samples_since_partial: 0,
@@ -208,6 +217,7 @@ fn process_vad_commands(
     vad: &mut VadBackend,
     state: &mut VadActorState,
     handles: &VadActorHandles,
+    stt_tx: &mpsc::Sender<crate::services::stt::SttCommand>,
 ) -> bool {
     while let Ok(cmd) = vad_rx.try_recv() {
         match cmd {
@@ -262,6 +272,24 @@ fn process_vad_commands(
                     state.onset_score = 0.0;
                 }
                 state.operational_mode = op;
+            }
+            VadCommand::BindUtterance {
+                turn_id,
+                utterance_id,
+            } => {
+                state.current_turn_id = turn_id;
+                state.bound_utterance_id = Some(utterance_id);
+                state.awaiting_utterance_binding = false;
+                if state.realtime_tx.is_none() && !state.utterance_buffer.is_empty() {
+                    let audio = std::mem::take(&mut state.utterance_buffer);
+                    if let Err(e) = stt_tx.send(crate::services::stt::SttCommand::StreamChunk {
+                        turn_id,
+                        utterance_id,
+                        audio,
+                    }) {
+                        log::warn!("[VAD Actor] Failed to flush bound pre-roll to STT: {}", e);
+                    }
+                }
             }
             VadCommand::StartWindowValidation {
                 auto_stop_silence_ms,
@@ -397,7 +425,7 @@ where
                 return Ok(());
             }
 
-            if process_vad_commands(&channels.vad_rx, &mut vad, &mut state, &handles) {
+            if process_vad_commands(&channels.vad_rx, &mut vad, &mut state, &handles, &channels.stt_tx) {
                 return Ok(());
             }
 

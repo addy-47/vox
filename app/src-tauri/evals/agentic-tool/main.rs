@@ -613,10 +613,8 @@ async fn run_one(
         .and_then(|c| c.get("duration_ms"))
         .and_then(|d| d.as_u64())
         .unwrap_or(0);
-    let filler = render_log
-        .iter()
-        .find(|r| r.intent == "interim_filler")
-        .cloned();
+    // The first synthesized clip is the interim filler dispatched before tools run.
+    let filler = render_log.first().cloned();
     let turn_text = match &outcome {
         Ok(o) => harness_ctx::outcome_text(o),
         Err(_) => "[TIMEOUT]".to_string(),

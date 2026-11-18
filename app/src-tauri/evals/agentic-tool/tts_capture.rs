@@ -34,7 +34,7 @@
 use std::{
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc, Arc,
     },
     time::{Duration, Instant},
@@ -49,7 +49,7 @@ use ringbuf::{
 };
 use serde::Serialize;
 use vox_lib::{
-    core::events::{AudioIntent, VoxEvent},
+    core::events::VoxEvent,
     services::{
         audio::{
             playback::{PlaybackEngine, PlaybackEngineHandles},
@@ -107,7 +107,6 @@ pub fn start(settings: &TtsSettings, event_tx: mpsc::Sender<VoxEvent>) -> Result
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let pending_synthesis_jobs = Arc::new(AtomicU32::new(0));
     let current_turn_id = Arc::new(AtomicU32::new(0));
-    let playback_intent = Arc::new(AtomicU8::new(0));
     let is_playback_muted = Arc::new(AtomicBool::new(false));
     let state_atomic = Arc::new(AtomicU32::new(0));
     let telemetry_rtf = Arc::new(AtomicU32::new(0f32.to_bits()));
@@ -125,7 +124,6 @@ pub fn start(settings: &TtsSettings, event_tx: mpsc::Sender<VoxEvent>) -> Result
             pending_synthesis_jobs: Arc::clone(&pending_synthesis_jobs),
             sink_occupied: Arc::new(AtomicBool::new(false)),
             event_tx: event_tx.clone(),
-            playback_intent: Arc::clone(&playback_intent),
             is_playback_muted,
             turn_metrics: None,
         },
@@ -150,6 +148,7 @@ pub fn start(settings: &TtsSettings, event_tx: mpsc::Sender<VoxEvent>) -> Result
                     playback: worker_playback,
                     event_tx,
                     cancel_flag: worker_cancel,
+                    engine_shutdown: Arc::new(AtomicBool::new(false)),
                     pending_synthesis_jobs: Some(worker_pending),
                     telemetry_rtf: Some(telemetry_rtf),
                     turn_metrics: None,
@@ -334,8 +333,6 @@ fn write_wav_mono16(path: &Path, samples: &[f32], sample_rate: u32) -> Result<()
 #[allow(dead_code)]
 pub struct RenderRecord {
     pub turn_id: u32,
-    /// `interim_filler` or `turn_response`.
-    pub intent: String,
     /// Exact text handed to synthesis.
     pub text: String,
     pub chars: usize,
@@ -399,7 +396,6 @@ impl TtsProvider for RecordingProvider {
         let res = self.inner.synthesize_chunk(text, ctx);
         self.log.lock().push(RenderRecord {
             turn_id: ctx.turn_id,
-            intent: intent_label(&ctx.intent).to_string(),
             text: text.to_string(),
             chars: text.chars().count(),
             words: text.split_whitespace().count(),
@@ -420,13 +416,5 @@ impl TtsProvider for RecordingProvider {
 
     fn health_check(&self) -> bool {
         self.inner.health_check()
-    }
-}
-
-/// Intent label used in artifacts.
-pub fn intent_label(intent: &AudioIntent) -> &'static str {
-    match intent {
-        AudioIntent::InterimFiller => "interim_filler",
-        AudioIntent::TurnResponse => "turn_response",
     }
 }

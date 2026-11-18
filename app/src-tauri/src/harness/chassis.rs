@@ -33,14 +33,6 @@ use crate::{
     },
 };
 
-/// Lifecycle of the currently staged conversational turn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TurnPhase {
-    Idle,
-    Thinking,
-    Committed,
-}
-
 /// The session-scoped conversational orchestrator and stage chassis.
 pub struct Harness {
     pub(crate) session_id: Option<i64>,
@@ -64,7 +56,6 @@ pub struct Harness {
     pub(crate) guardrails: GuardrailsStage,
     pub(crate) guardrails_state: TurnGuardrailsState,
     pub(crate) inbox: Arc<StepInbox>,
-    pub(crate) turn_phase: TurnPhase,
     pub(crate) pending_user_query: Option<(u32, String)>,
 }
 
@@ -138,7 +129,6 @@ impl Harness {
             guardrails: GuardrailsStage,
             guardrails_state: TurnGuardrailsState::default(),
             inbox: Arc::new(StepInbox::new()),
-            turn_phase: TurnPhase::Idle,
             pending_user_query: None,
         }
     }
@@ -181,7 +171,6 @@ impl Harness {
             guardrails: GuardrailsStage,
             guardrails_state: TurnGuardrailsState::default(),
             inbox: Arc::new(StepInbox::new()),
-            turn_phase: TurnPhase::Idle,
             pending_user_query: None,
         }
     }
@@ -253,7 +242,6 @@ impl Harness {
     /// Stages a user query without mutating canonical history until the first assistant artifact.
     pub fn stage_user_query(&mut self, turn_id: u32, query: String) -> bool {
         self.pending_user_query = Some((turn_id, query.clone()));
-        self.turn_phase = TurnPhase::Thinking;
         self.has_played_filler = false;
         self.guardrails_state = TurnGuardrailsState::default();
         let assembled_system = self.prompt.assemble();
@@ -354,7 +342,6 @@ impl Harness {
         results: Vec<(String, String)>,
     ) {
         self.flush_staged_user_query();
-        self.turn_phase = TurnPhase::Committed;
         self.history.commit_tool_step(preamble, calls, results);
     }
 
@@ -365,17 +352,13 @@ impl Harness {
             return;
         }
         self.flush_staged_user_query();
-        self.turn_phase = TurnPhase::Committed;
         self.history.push_assistant_turn(assistant_response);
     }
 
     /// Drops a staged query when its turn terminates without an assistant artifact.
     pub fn discard_pending_turn(&mut self, turn_id: u32) {
-        if matches!(self.pending_user_query, Some((id, _)) if id == turn_id)
-            && self.turn_phase == TurnPhase::Thinking
-        {
+        if matches!(self.pending_user_query, Some((id, _)) if id == turn_id) {
             self.pending_user_query = None;
-            self.turn_phase = TurnPhase::Idle;
         }
     }
 
@@ -383,7 +366,6 @@ impl Harness {
     pub fn take_staged_query(&mut self, turn_id: u32) -> Option<String> {
         if matches!(self.pending_user_query, Some((id, _)) if id == turn_id) {
             let (_, text) = self.pending_user_query.take()?;
-            self.turn_phase = TurnPhase::Idle;
             Some(text)
         } else {
             None
@@ -530,10 +512,6 @@ impl Harness {
 
     pub fn inbox(&self) -> &Arc<StepInbox> {
         &self.inbox
-    }
-
-    pub fn turn_phase(&self) -> TurnPhase {
-        self.turn_phase
     }
 
     pub async fn execute_turn(

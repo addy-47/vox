@@ -573,13 +573,21 @@ pub fn on_stop_turn<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rout
     state.pipeline.cancel_active_turn();
     state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
 
+    let has_assistant_response = !state
+        .pipeline_accumulator
+        .lock()
+        .assistant_response
+        .trim()
+        .is_empty();
     state.pipeline_accumulator.lock().clear();
     let active_turn_id = state.pipeline.peek_turn_id();
     {
         let mut guard = state.harness.lock();
         if let Some(ref mut harness) = *guard {
             harness.inbox().clear();
-            harness.discard_pending_turn(active_turn_id);
+            if !has_assistant_response {
+                harness.discard_pending_turn(active_turn_id);
+            }
         }
     }
 
@@ -659,7 +667,7 @@ pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingCon
         if let Ok(mut guard) = state.engine.try_lock() {
             if let Some(ref mut engine) = *guard {
                 cool_down_llm(&mut engine.llm_tx, Some(&state.llm_provider));
-                cool_down_tts(&mut engine.tts_tx);
+                cool_down_tts(&mut engine.tts_tx, &mut engine.tts_handle);
                 let dictation_mode = state
                     .settings
                     .read()

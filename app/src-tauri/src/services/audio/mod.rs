@@ -1,5 +1,5 @@
 use std::sync::{
-    atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8},
+    atomic::{AtomicBool, AtomicU32, AtomicU64},
     mpsc::Sender,
     Arc,
 };
@@ -115,7 +115,6 @@ pub struct PlaybackEngineHandles {
     pub pending_synthesis_jobs: Arc<AtomicU32>,
     pub sink_occupied: Arc<AtomicBool>,
     pub event_tx: Sender<VoxEvent>,
-    pub playback_intent: Arc<AtomicU8>,
     pub is_playback_muted: Arc<AtomicBool>,
     pub turn_metrics: Option<Arc<TurnMetricsCollector>>,
 }

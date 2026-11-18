@@ -1,5 +1,23 @@
 use serde::{Deserialize, Serialize};
 
+use crate::core::state::InteractionState;
+
+/// Controller-side projection of the active pipeline state and turn identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PipelineView {
+    pub state: InteractionState,
+    pub turn_id: u32,
+}
+
+impl Default for PipelineView {
+    fn default() -> Self {
+        Self {
+            state: InteractionState::Idle,
+            turn_id: 0,
+        }
+    }
+}
+
 /// Typed classification of remote connection failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -18,6 +36,8 @@ pub enum RemoteFailureKind {
     Revoked,
     /// Host is busy or another controller is already attached.
     HostBusy,
+    /// Host rejected the transport because the peer is not paired.
+    UnknownPeer,
     /// General or unknown OS/network transport error.
     Unknown,
 }

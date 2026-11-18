@@ -8,7 +8,7 @@ use crate::{
         events::{emit_ipc_to, IpcEvent, PipelineMode, Severity, TranscriptPayload},
         state::{AppState, InteractionState},
     },
-    harness::{Harness, TurnExecutionRequest, TurnOutcome},
+    harness::{Harness, Role, TurnExecutionRequest, TurnOutcome},
     pipeline::{target_window, transition, RoutingContext},
     services::{
         self,
@@ -26,6 +26,7 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
     ctx: &RoutingContext,
 ) {
     let cancel = state.pipeline.turn_cancel_token();
+    let stream_cancel = state.pipeline.stream_cancel_token();
     let pending_jobs = Arc::clone(&state.pipeline.pending_tts_jobs);
     let accumulator = Arc::clone(&state.pipeline_accumulator);
     let app_clone = app.clone();
@@ -63,6 +64,7 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
             query,
             turn_id,
             cancel,
+            stream_cancel,
             owner: ctx_owner,
             llm_tx,
             tts_tx,
@@ -150,7 +152,7 @@ pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
     });
 }
 
-/// Handles finalized speech transcripts from the STT engine, validating text and routing to the Harness.
+/// Handles finalized speech transcripts from the STT engine (Stage 2 of RULE-EVT-08).
 pub fn on_transcript_final<R: tauri::Runtime>(
     turn_id: u32,
     text: String,
@@ -167,7 +169,7 @@ pub fn on_transcript_final<R: tauri::Runtime>(
     );
 
     let current_state = state.pipeline.state();
-
+    let trimmed = text.trim().to_string();
     let is_held = {
         let guard = state.harness.lock();
         guard
@@ -177,26 +179,104 @@ pub fn on_transcript_final<R: tauri::Runtime>(
     };
 
     if is_held {
-        let trimmed = text.trim();
-        state.pipeline_accumulator.lock().clear();
-        transition(InteractionState::Working, None, ctx, app, state);
-        if trimmed.is_empty() {
-            log::info!("[Pipeline::Transcript] Empty transcript during speech-held turn; releasing hold and returning to Working");
-            {
-                let guard = state.harness.lock();
-                if let Some(ref harness) = *guard {
-                    harness.inbox().release_speech_hold();
-                }
+        {
+            let guard = state.harness.lock();
+            if let Some(ref harness) = *guard {
+                harness.inbox().release_speech_hold();
             }
-            return;
-        } else {
+        }
+        state.pipeline.rearm_hardware_cancel_flag();
+
+        if trimmed.is_empty() {
+            // False barge-in: resume the active turn without cancelling it.
+            if state.pipeline.is_llm_done() {
+                transition(InteractionState::Ready, None, ctx, app, state);
+            } else if state.pipeline.current_activity().is_some() {
+                transition(InteractionState::Working, None, ctx, app, state);
+            } else {
+                state.pipeline.rearm_stream_cancel_token();
+                transition(InteractionState::Thinking, None, ctx, app, state);
+            }
             log::info!(
-                "[Pipeline::Transcript] Steering transcript during speech-held turn: '{}'",
-                trimmed
+                "[Pipeline::Transcript] False barge-in on turn {} released speech hold",
+                turn_id
             );
+            let app_handle = app.clone();
+            let db = state.db.clone();
+            tauri::async_runtime::spawn(async move {
+                let params = NotificationParams {
+                    category: NotificationCategory::Pipeline,
+                    severity: Severity::Info,
+                    impact: Some(PipelineImpact::None),
+                    action: Action::Transient,
+                    title: "Voice Assistant",
+                    message: "Speech detected, but no words recognized.",
+                    group_key: Some("assistant:empty_speech"),
+                    session_id: None,
+                    metadata: None,
+                    duration_ms: None,
+                };
+                let _ = services::notifications::notify(&app_handle, &db, params).await;
+            });
+            return;
+        }
+
+        // Real barge-in during an active turn. Voice never enters StepInbox.
+        let committed_work = {
+            let guard = state.harness.lock();
+            guard
+                .as_ref()
+                .map(|h| {
+                    h.messages()
+                        .iter()
+                        .any(|m| m.role == Role::Tool || m.tool_calls.is_some())
+                })
+                .unwrap_or(false)
+        };
+        let staged = {
+            let mut guard = state.harness.lock();
+            guard
+                .as_mut()
+                .and_then(|h| h.take_staged_query(turn_id))
+        };
+
+        // A final for a segment whose query is still in flight is stashed, not dispatched.
+        let has_stashed_text = {
+            let acc = state.pipeline_accumulator.lock();
+            !acc.user_transcript.trim().is_empty() || !acc.continuation_prefix.is_empty()
+        };
+        if !committed_work && staged.is_none() && !has_stashed_text {
+            state
+                .pipeline_accumulator
+                .lock()
+                .append_continuation_prefix(&trimmed);
+            return;
+        }
+
+        // RULE-EVT-08A merges only an uncommitted Step 0 query; Step K >= 1 stays standalone.
+        let query = if committed_work {
+            trimmed.clone()
+        } else if let Some(prefix) = staged.filter(|p| !p.trim().is_empty()) {
+            format!("{} {}", prefix.trim(), trimmed)
+        } else {
+            let mut acc = state.pipeline_accumulator.lock();
+            let merged = acc.resolve_merged_transcript(&trimmed);
+            acc.continuation_prefix.clear();
+            acc.awaiting_continuation = false;
+            acc.bound_utterance_id = None;
+            merged
+        };
+
+        // SpeechEnd already resolved: append the merged words to the active turn.
+        if !committed_work && current_state == InteractionState::Thinking {
+            state
+                .pipeline_accumulator
+                .lock()
+                .set_user_transcript(query.clone());
+            state.turn_metrics.record_transcript_final();
             let payload = TranscriptPayload {
                 turn_id,
-                text: trimmed.to_string(),
+                text: query.clone(),
                 owner: Some(ctx.owner),
             };
             let _ = emit_ipc_to(
@@ -204,37 +284,53 @@ pub fn on_transcript_final<R: tauri::Runtime>(
                 target_window(ctx.owner),
                 IpcEvent::TranscriptFinal(payload),
             );
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            {
-                let guard = state.harness.lock();
-                if let Some(ref harness) = *guard {
-                    harness
-                        .inbox()
-                        .push(crate::harness::stages::inbox::InboxMessage::new(
-                            trimmed.to_string(),
-                            crate::harness::stages::inbox::QueuedMessageDelivery::Immediate,
-                            now,
-                        ));
-                }
-            }
+            transition(InteractionState::Thinking, None, ctx, app, state);
+            spawn_harness_turn_task(turn_id, query, app, state, ctx);
             return;
         }
+
+        // Transcript arrived while still Listening: rotate a fresh dialogue turn.
+        state.pipeline.cancel_active_turn();
+        let (new_turn_id, _) = state.pipeline.next_turn();
+        state.pipeline_accumulator.lock().clear();
+        state
+            .pipeline_accumulator
+            .lock()
+            .set_user_transcript(query.clone());
+        state.turn_metrics.start_turn(new_turn_id);
+        state.turn_metrics.record_transcript_final();
+        let payload = TranscriptPayload {
+            turn_id: new_turn_id,
+            text: query.clone(),
+            owner: Some(ctx.owner),
+        };
+        let _ = emit_ipc_to(
+            app,
+            target_window(ctx.owner),
+            IpcEvent::TranscriptFinal(payload),
+        );
+        transition(InteractionState::Thinking, None, ctx, app, state);
+        spawn_harness_turn_task(new_turn_id, query, app, state, ctx);
+        return;
     }
 
-    // If awaiting_continuation is set, capture late-arriving final into continuation_prefix
+    // Late final from an older physical speech segment (RULE-EVT-01A).
     if current_state == InteractionState::Listening {
-        let mut acc = state.pipeline_accumulator.lock();
-        // A final for the active turn is new speech; a final for any other
-        // epoch is the late tail of the interrupted turn.
-        if acc.awaiting_continuation && turn_id != state.pipeline.peek_turn_id() {
-            acc.append_continuation_prefix(&text);
+        let is_late = {
+            let acc = state.pipeline_accumulator.lock();
+            acc.awaiting_continuation
+                && acc
+                    .bound_utterance_id
+                    .map(|bound| bound < state.pipeline.peek_utterance_id())
+                    .unwrap_or(false)
+        };
+        if is_late {
+            state
+                .pipeline_accumulator
+                .lock()
+                .append_continuation_prefix(&text);
             log::info!(
-                "[Pipeline::Transcript] Captured late-arriving final for turn {} while in Listening; prefix len={}",
-                turn_id,
-                acc.continuation_prefix.len()
+                "[Pipeline::Transcript] Captured late final for bound utterance while in Listening"
             );
             return;
         }
@@ -248,11 +344,7 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         return;
     }
 
-    let trimmed = text.trim().to_string();
     let mut acc = state.pipeline_accumulator.lock();
-
-    // If transcript is empty but we have a stashed continuation prefix (e.g. user uttered a sigh/cough or short pause),
-    // resolve using the prefix instead of aborting to Ready.
     let raw_query = if trimmed.is_empty() {
         if !acc.continuation_prefix.is_empty() {
             log::info!(
@@ -269,7 +361,6 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             acc.clear();
             drop(acc);
             transition(InteractionState::Ready, None, ctx, app, state);
-
             let app_handle = app.clone();
             let db = state.db.clone();
             tauri::async_runtime::spawn(async move {
@@ -292,7 +383,6 @@ pub fn on_transcript_final<R: tauri::Runtime>(
     } else {
         acc.resolve_merged_transcript(&trimmed)
     };
-
     drop(acc);
 
     let transliterate_enabled = state
@@ -302,9 +392,6 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         .unwrap_or(false);
     let query = transliterate_if_hi(&raw_query, true, transliterate_enabled);
 
-    // RULE-HARN-03: reject duplicate user turns before any side effects. Emitting the
-    // TranscriptFinal IPC first would render an orphan user bubble in the UI when the
-    // Harness later drops the duplicate without generating a response.
     if ctx.pipeline_mode == PipelineMode::Modular && is_duplicate_user_turn(state, &query) {
         log::info!(
             "[Pipeline::Transcript] Duplicate turn {} suppressed pre-dispatch ('{}')",
@@ -323,14 +410,11 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         turn_id,
         query
     );
-
     state
         .pipeline_accumulator
         .lock()
         .set_user_transcript(query.clone());
-
     state.turn_metrics.record_transcript_final();
-
     let payload = TranscriptPayload {
         turn_id,
         text: query.clone(),
@@ -341,7 +425,6 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         target_window(ctx.owner),
         IpcEvent::TranscriptFinal(payload),
     );
-
     transition(InteractionState::Thinking, None, ctx, app, state);
 
     match ctx.pipeline_mode {

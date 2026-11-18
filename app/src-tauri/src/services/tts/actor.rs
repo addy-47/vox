@@ -11,7 +11,7 @@ use std::{
 use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
-        events::{AudioIntent, VoxEvent},
+        events::VoxEvent,
         metrics::TurnMetricsCollector,
     },
     services::{
@@ -28,7 +28,6 @@ pub enum TtsCommand {
     Generate {
         turn_id: u32,
         text: String,
-        intent: AudioIntent,
     },
     SetVoice(i32),
     SetSpeed(f32),
@@ -40,6 +39,7 @@ pub struct TtsWorkerHandles {
     pub playback: Arc<PlaybackEngine>,
     pub event_tx: mpsc::Sender<VoxEvent>,
     pub cancel_flag: Arc<AtomicBool>,
+    pub engine_shutdown: Arc<AtomicBool>,
     pub pending_synthesis_jobs: Option<Arc<AtomicU32>>,
     pub telemetry_rtf: Option<Arc<AtomicU32>>,
     pub turn_metrics: Option<Arc<TurnMetricsCollector>>,
@@ -54,12 +54,12 @@ pub fn spawn_tts_worker(
 
     let mut job_seq = 0u64;
     while let Ok(cmd) = rx.recv() {
+        if handles.engine_shutdown.load(Ordering::Relaxed) {
+            log::info!("[TTS Worker] Engine shutdown detected; exiting loop");
+            break;
+        }
         match cmd {
-            TtsCommand::Generate {
-                turn_id,
-                text,
-                intent,
-            } => {
+            TtsCommand::Generate { turn_id, text } => {
                 job_seq += 1;
                 // Bind this job's audio to its originating turn so chunks synthesized after a
                 // barge-in supersedes the turn are dropped at the playback ingest boundary
@@ -87,10 +87,9 @@ pub fn spawn_tts_worker(
                     .map(|j| j.load(Ordering::Relaxed))
                     .unwrap_or(0);
                 log::info!(
-                    "[TTS Worker] Job started (job {}, turn {}, intent {:?}, chars {}, words {}, pending_jobs {})",
+                    "[TTS Worker] Job started (job {}, turn {}, chars {}, words {}, pending_jobs {})",
                     job_seq,
                     turn_id,
-                    intent,
                     text.chars().count(),
                     text.split_whitespace().count(),
                     pending
@@ -106,7 +105,6 @@ pub fn spawn_tts_worker(
                 let provider_ref = AssertUnwindSafe(&*provider);
                 let ctx = super::providers::SynthesisContext {
                     turn_id,
-                    intent,
                     cancel: handles.cancel_flag.clone(),
                     playback: &handles.playback,
                     event_tx: handles.event_tx.clone(),
@@ -126,7 +124,7 @@ pub fn spawn_tts_worker(
                         })
                         .unwrap_or(0);
                     remaining_jobs = prev.saturating_sub(1);
-                    if prev <= 1 && handles.playback.current_turn_id() == turn_id {
+                    if remaining_jobs == 0 && handles.playback.current_turn_id() == turn_id {
                         handles.playback.flush_pre_roll();
                         flushed_pre_roll = true;
                         if !handles.playback.is_armed() && handles.playback.occupied_len() == 0 {
@@ -136,7 +134,7 @@ pub fn spawn_tts_worker(
                             );
                             let _ = handles
                                 .event_tx
-                                .send(VoxEvent::PlaybackFinished { turn_id, intent });
+                                .send(VoxEvent::PlaybackFinished { turn_id });
                         }
                     }
                 }
@@ -216,6 +214,7 @@ pub struct TtsWarmUpHandles<'a> {
     pub tts_tx: &'a mut Option<mpsc::Sender<TtsCommand>>,
     pub tts_handle: &'a mut Option<JoinHandle<()>>,
     pub cancel_flag: Arc<AtomicBool>,
+    pub engine_shutdown: Arc<AtomicBool>,
     pub playback_engine: Arc<PlaybackEngine>,
     pub pending_synthesis_jobs: Option<Arc<AtomicU32>>,
     pub telemetry_rtf: Option<Arc<AtomicU32>>,
@@ -257,6 +256,7 @@ pub fn warm_up_tts(
         playback: handles.playback_engine,
         event_tx,
         cancel_flag: handles.cancel_flag,
+        engine_shutdown: handles.engine_shutdown,
         pending_synthesis_jobs: handles.pending_synthesis_jobs,
         telemetry_rtf: handles.telemetry_rtf,
         turn_metrics: handles.turn_metrics,
@@ -276,9 +276,17 @@ pub fn warm_up_tts(
 }
 
 /// Signals the running TTS worker thread to shutdown and drop its model instance.
-pub fn cool_down_tts(tts_tx: &mut Option<mpsc::Sender<TtsCommand>>) {
+pub fn cool_down_tts(
+    tts_tx: &mut Option<mpsc::Sender<TtsCommand>>,
+    tts_handle: &mut Option<JoinHandle<()>>,
+) {
     if let Some(tx) = tts_tx.take() {
         let _ = tx.send(TtsCommand::Shutdown);
-        log::info!("[TTS Actor] Shutdown command sent (offloaded)");
+        log::info!("[TTS Actor] Shutdown command sent; joining worker");
+    }
+    if let Some(handle) = tts_handle.take() {
+        if let Err(e) = handle.join() {
+            log::warn!("[TTS Actor] Worker thread panicked on shutdown: {:?}", e);
+        }
     }
 }

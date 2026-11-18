@@ -20,10 +20,10 @@ use parking_lot::RwLock;
 use tokio::sync::{oneshot, RwLock as AsyncRwLock};
 use tokio_util::sync::CancellationToken;
 
-use super::state::{RemoteLinkState, RemoteStateDto};
+use super::state::{PipelineView, RemoteLinkState, RemoteStateDto};
 pub(crate) use super::supervisor::sanitize_peer_display_name;
 use crate::{
-    core::error::PersistenceError,
+    core::{error::PersistenceError, state::InteractionState},
     persistence::{paired_devices, VoxDb},
     services::remote::{
         control,
@@ -106,7 +106,15 @@ pub struct RemoteSessionManager {
     pub(crate) event_forwarder: Arc<parking_lot::Mutex<Option<EventForwarderSender>>>,
     pub(crate) pause_session_fn: parking_lot::Mutex<Option<PauseSessionCallback>>,
     pub(crate) on_remote_event: Arc<parking_lot::Mutex<Option<RemoteEventCallback>>>,
-    pub(crate) current_pipeline_state: Arc<parking_lot::RwLock<String>>,
+    pub(crate) current_pipeline_view: Arc<parking_lot::RwLock<PipelineView>>,
+    pub(crate) controller_lease: Arc<parking_lot::Mutex<Option<ControllerLease>>>,
+}
+
+/// Atomic single-controller reservation held for the lifetime of a Tier 2 link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControllerLease {
+    pub device_id: String,
+    pub lease_id: u64,
 }
 
 #[async_trait::async_trait]
@@ -150,6 +158,21 @@ where
     }
 }
 
+/// Maps a canonical state payload string to its enum variant.
+pub(crate) fn interaction_state_from_str(state: &str) -> InteractionState {
+    match state {
+        "Ready" => InteractionState::Ready,
+        "Listening" => InteractionState::Listening,
+        "Thinking" => InteractionState::Thinking,
+        "Working" => InteractionState::Working,
+        "Speaking" => InteractionState::Speaking,
+        "Paused" => InteractionState::Paused,
+        "Sleeping" => InteractionState::Sleeping,
+        "Error" => InteractionState::Error,
+        _ => InteractionState::Idle,
+    }
+}
+
 impl RemoteSessionManager {
     /// Creates a new `RemoteSessionManager` for the specified role.
     pub fn new(role: SessionRole) -> Self {
@@ -174,7 +197,8 @@ impl RemoteSessionManager {
             event_forwarder: Arc::new(parking_lot::Mutex::new(None)),
             pause_session_fn: parking_lot::Mutex::new(None),
             on_remote_event: Arc::new(parking_lot::Mutex::new(None)),
-            current_pipeline_state: Arc::new(parking_lot::RwLock::new("Idle".into())),
+            current_pipeline_view: Arc::new(parking_lot::RwLock::new(PipelineView::default())),
+            controller_lease: Arc::new(parking_lot::Mutex::new(None)),
         }
     }
 
@@ -199,19 +223,49 @@ impl RemoteSessionManager {
             event_forwarder: Arc::new(parking_lot::Mutex::new(None)),
             pause_session_fn: parking_lot::Mutex::new(None),
             on_remote_event: Arc::new(parking_lot::Mutex::new(None)),
-            current_pipeline_state: Arc::new(parking_lot::RwLock::new("Idle".into())),
+            current_pipeline_view: Arc::new(parking_lot::RwLock::new(PipelineView::default())),
+            controller_lease: Arc::new(parking_lot::Mutex::new(None)),
         }
     }
 
     /// Returns true if a voice pipeline session is currently active (not Idle).
     pub fn is_session_active(&self) -> bool {
-        let st = self.current_pipeline_state.read().clone();
-        st != "Idle" && st != "None" && !st.is_empty()
+        let view = *self.current_pipeline_view.read();
+        !matches!(view.state, InteractionState::Idle | InteractionState::Paused)
+    }
+
+    /// Sets the pipeline state with a router-allocated turn identity.
+    pub fn set_pipeline_view(&self, state: InteractionState, turn_id: u32) {
+        *self.current_pipeline_view.write() = PipelineView { state, turn_id };
     }
 
     /// Sets the current pipeline state string (used during attach snapshot hydration or testing).
     pub fn set_pipeline_state(&self, state: impl Into<String>) {
-        *self.current_pipeline_state.write() = state.into();
+        let state = interaction_state_from_str(&state.into());
+        let turn_id = self.next_request_id.fetch_add(1, Ordering::AcqRel) as u32;
+        self.set_pipeline_view(state, turn_id);
+    }
+
+    /// Atomically reserves the single controller slot for a device.
+    pub fn try_reserve_controller(&self, device_id: &str) -> Option<ControllerLease> {
+        let mut guard = self.controller_lease.lock();
+        if guard.is_some() {
+            return None;
+        }
+        let lease = ControllerLease {
+            device_id: device_id.to_string(),
+            lease_id: self.next_request_id.fetch_add(1, Ordering::AcqRel),
+        };
+        *guard = Some(lease.clone());
+        Some(lease)
+    }
+
+    /// Releases a previously reserved controller slot.
+    pub fn release_controller(&self, lease_id: u64) {
+        let mut guard = self.controller_lease.lock();
+        if guard.as_ref().map(|l| l.lease_id) == Some(lease_id) {
+            *guard = None;
+        }
     }
 
     /// Attaches an event listener for receiving remote pipeline events and attach snapshots.
@@ -317,6 +371,7 @@ impl RemoteSessionManager {
             new_state,
             RemoteLinkState::Unpaired | RemoteLinkState::Disabled
         ) {
+            *self.controller_lease.lock() = None;
             let mut guard = self.peer_identity.write();
             *guard = None;
             *self.active_host_addr.write() = None;
@@ -555,7 +610,7 @@ impl RemoteSessionManager {
         let event_forwarder = Arc::clone(&self.event_forwarder);
         let pause_session_fn = parking_lot::Mutex::new(self.pause_session_fn.lock().clone());
         let on_remote_event = Arc::clone(&self.on_remote_event);
-        let current_pipeline_state = Arc::clone(&self.current_pipeline_state);
+        let current_pipeline_view = Arc::clone(&self.current_pipeline_view);
 
         tokio::spawn(async move {
             run_link_supervisor(LinkSupervisorParams {
@@ -576,7 +631,7 @@ impl RemoteSessionManager {
                 event_forwarder,
                 pause_session_fn,
                 on_remote_event,
-                current_pipeline_state,
+                current_pipeline_view,
             })
             .await;
         });
@@ -797,13 +852,14 @@ impl RemoteSessionManager {
         // peer_identity is retained because the device remains in paired_devices DB.
         *self.event_forwarder.lock() = None;
         if self.is_session_active() {
+            let turn_id = self.current_pipeline_view.read().turn_id;
             if let Some(cb) = self.on_remote_event.lock().clone() {
                 cb(
                     "state_changed",
                     serde_json::json!({
                         "owner": "Assistant",
                         "state": "Paused",
-                        "turn_id": 0,
+                        "turn_id": turn_id,
                     }),
                 );
             }

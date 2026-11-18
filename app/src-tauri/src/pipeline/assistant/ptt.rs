@@ -104,6 +104,7 @@ fn dispatch_ptt_speech_audio<R: tauri::Runtime>(
     if ctx.pipeline_mode == PipelineMode::Modular {
         if let Err(e) = stt_tx.send(SttCommand::Final {
             turn_id,
+            utterance_id: state.pipeline.peek_utterance_id(),
             audio,
             owner: InteractionOwner::Assistant,
         }) {

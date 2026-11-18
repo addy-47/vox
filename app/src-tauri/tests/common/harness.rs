@@ -4,7 +4,7 @@
 
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8},
+        atomic::{AtomicBool, AtomicU32, AtomicU64},
         mpsc::{self, Receiver, Sender},
         Arc,
     },
@@ -82,7 +82,6 @@ pub fn create_mock_playback_engine_with_handles(
         current_turn_id,
         pending_synthesis_jobs,
         sink_occupied: Arc::new(AtomicBool::new(false)),
-        playback_intent: Arc::new(AtomicU8::new(0)),
         event_tx,
         is_playback_muted: Arc::new(AtomicBool::new(false)),
         turn_metrics: None,
@@ -121,7 +120,6 @@ pub fn create_headless_playback_with_aec_tap(
         current_turn_id: Arc::clone(&state.pipeline.turn_id),
         pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_tts_jobs),
         sink_occupied: Arc::new(AtomicBool::new(false)),
-        playback_intent: Arc::new(AtomicU8::new(0)),
         event_tx,
         is_playback_muted: Arc::clone(&state.pipeline.is_playback_muted),
         turn_metrics: Some(Arc::clone(&state.turn_metrics)),
@@ -1205,6 +1203,7 @@ impl E2eVoiceRig {
                 playback: Arc::clone(&engine),
                 event_tx: vox_event_tx.clone(),
                 cancel_flag: Arc::clone(&hardware_cancel_flag),
+                engine_shutdown: Arc::new(AtomicBool::new(false)),
                 pending_synthesis_jobs: Some(Arc::clone(&state.pipeline.pending_tts_jobs)),
                 telemetry_rtf: None,
                 turn_metrics: Some(Arc::clone(&state.turn_metrics)),
@@ -1740,6 +1739,7 @@ impl HarnessRig {
             query: query.to_string(),
             turn_id,
             cancel: self.state.pipeline.turn_cancel_token(),
+            stream_cancel: self.state.pipeline.stream_cancel_token(),
             owner: vox_lib::core::state::InteractionOwner::Assistant,
             llm_tx: Some(self.llm_tx.clone()),
             tts_tx: Some(self.tts_tx.clone()),

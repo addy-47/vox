@@ -193,6 +193,12 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
             Arc::clone(&ingestion_gate),
             Arc::clone(&vad_shutdown),
         );
+        common::harness::attach_mock_engine_with_vad_to_state(
+            &app,
+            &state,
+            stt_tx.clone(),
+            vad_cmd_tx.clone(),
+        );
 
         let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
         let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
@@ -254,6 +260,18 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
             Arc::clone(&audio_suppressed),
             Arc::clone(&ingestion_gate),
             Arc::clone(&vad_shutdown),
+        );
+        common::harness::attach_mock_engine_with_vad_to_state(
+            &app,
+            &state,
+            stt_tx.clone(),
+            vad_cmd_tx.clone(),
+        );
+        common::harness::attach_mock_engine_with_vad_to_state(
+            &app,
+            &state,
+            stt_tx.clone(),
+            vad_cmd_tx.clone(),
         );
 
         let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_07_HI_FILENAME);
@@ -321,6 +339,18 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
             Arc::clone(&ingestion_gate),
             Arc::clone(&vad_shutdown),
         );
+        common::harness::attach_mock_engine_with_vad_to_state(
+            &app,
+            &state,
+            stt_tx.clone(),
+            vad_cmd_tx.clone(),
+        );
+        common::harness::attach_mock_engine_with_vad_to_state(
+            &app,
+            &state,
+            stt_tx.clone(),
+            vad_cmd_tx.clone(),
+        );
 
         let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
         let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
@@ -384,6 +414,18 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
             Arc::clone(&ingestion_gate),
             Arc::clone(&vad_shutdown),
         );
+        common::harness::attach_mock_engine_with_vad_to_state(
+            &app,
+            &state,
+            stt_tx.clone(),
+            vad_cmd_tx.clone(),
+        );
+        common::harness::attach_mock_engine_with_vad_to_state(
+            &app,
+            &state,
+            stt_tx.clone(),
+            vad_cmd_tx.clone(),
+        );
 
         let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
         let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
@@ -438,6 +480,18 @@ fn passive_streaming_segments_speech_and_suppresses_silence() {
             Arc::clone(&audio_suppressed),
             Arc::clone(&ingestion_gate),
             Arc::clone(&vad_shutdown),
+        );
+        common::harness::attach_mock_engine_with_vad_to_state(
+            &app,
+            &state,
+            stt_tx.clone(),
+            vad_cmd_tx.clone(),
+        );
+        common::harness::attach_mock_engine_with_vad_to_state(
+            &app,
+            &state,
+            stt_tx.clone(),
+            vad_cmd_tx.clone(),
         );
 
         common::audio::stream_silence_frames(&mut producer, 100);

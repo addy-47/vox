@@ -19,15 +19,18 @@ use crate::{
 pub enum SttCommand {
     StreamChunk {
         turn_id: u32,
+        utterance_id: u32,
         audio: Vec<f32>,
     },
     Partial {
         turn_id: u32,
+        utterance_id: u32,
         audio: Vec<f32>,
         recycle_tx: mpsc::SyncSender<Vec<f32>>,
     },
     Final {
         turn_id: u32,
+        utterance_id: u32,
         audio: Vec<f32>,
         owner: InteractionOwner,
     },
@@ -51,6 +54,7 @@ struct WorkerState {
     last_emit_time: Instant,
     last_transcript: String,
     current_active_turn: u32,
+    last_utterance_id: Option<u32>,
     stream_open: bool,
     last_inference_duration: Duration,
 }
@@ -70,8 +74,10 @@ fn coalesce_partials(
 ) -> SttCommand {
     if let SttCommand::Partial {
         mut turn_id,
+        utterance_id,
         mut audio,
         recycle_tx,
+        ..
     } = cmd
     {
         let mut skipped = 0;
@@ -82,6 +88,7 @@ fn coalesce_partials(
                     turn_id: next_tid,
                     audio: next_audio,
                     recycle_tx: next_recycle_tx,
+                    ..
                 } => {
                     if let Err(e) = current_recycle_tx.try_send(audio) {
                         log::warn!(
@@ -105,6 +112,7 @@ fn coalesce_partials(
         }
         SttCommand::Partial {
             turn_id,
+            utterance_id,
             audio,
             recycle_tx: current_recycle_tx,
         }
@@ -127,29 +135,27 @@ fn emit_partial_event(ctx: &WorkerContext<'_>, tid: u32, text: String, state: &m
 fn handle_partial_command(
     ctx: &WorkerContext<'_>,
     tid: u32,
+    utterance_id: u32,
     utterance: &[f32],
     state: &mut WorkerState,
 ) {
-    if tid != state.current_active_turn {
-        if state.stream_open && tid == state.current_active_turn.wrapping_add(1) {
-            log::debug!(
-                "[STT] Adopting incremented turn ID {} (prev {}) on active partial stream without reset.",
-                tid,
-                state.current_active_turn
-            );
-            state.current_active_turn = tid;
-        } else {
-            log::info!(
-                "[STT] New turn ID {} detected (prev {}). Resetting buffers.",
-                tid,
-                state.current_active_turn
-            );
-            state.current_active_turn = tid;
-            state.last_transcript.clear();
-            state.stream_open = false;
-            if let Err(e) = ctx.provider.reset_state() {
-                log::warn!("[STT] Error resetting state for new turn: {:?}", e);
-            }
+    if tid != state.current_active_turn
+        || state
+            .last_utterance_id
+            .map(|bound| bound != utterance_id)
+            .unwrap_or(false)
+    {
+        log::info!(
+            "[STT] New speech segment (turn {}, utterance {}); resetting decoder",
+            tid,
+            utterance_id
+        );
+        state.current_active_turn = tid;
+        state.last_utterance_id = Some(utterance_id);
+        state.last_transcript.clear();
+        state.stream_open = false;
+        if let Err(e) = ctx.provider.reset_state() {
+            log::warn!("[STT] Error resetting state for new speech segment: {:?}", e);
         }
     }
 
@@ -199,31 +205,27 @@ fn handle_partial_command(
 fn handle_stream_chunk_command(
     ctx: &WorkerContext<'_>,
     tid: u32,
+    utterance_id: u32,
     chunk: &[f32],
     state: &mut WorkerState,
 ) {
-    if tid != state.current_active_turn {
-        if state.stream_open && tid == state.current_active_turn.wrapping_add(1) {
-            // Router incremented turn_id 1ms after VAD sent the pre-roll chunk:
-            // adopt the new turn_id seamlessly WITHOUT wiping the pre-roll audio in the transducer!
-            log::debug!(
-                "[STT] Adopting Router-incremented turn ID {} (prev {}) on active stream without resetting pre-roll.",
-                tid,
-                state.current_active_turn
-            );
-            state.current_active_turn = tid;
-        } else {
-            log::info!(
-                "[STT] New turn ID {} detected on stream chunk (prev {}). Resetting buffers.",
-                tid,
-                state.current_active_turn
-            );
-            state.current_active_turn = tid;
-            state.last_transcript.clear();
-            state.stream_open = false;
-            if let Err(e) = ctx.provider.reset_state() {
-                log::warn!("[STT] Error resetting state for new turn {}: {:?}", tid, e);
-            }
+    if tid != state.current_active_turn
+        || state
+            .last_utterance_id
+            .map(|bound| bound != utterance_id)
+            .unwrap_or(false)
+    {
+        log::info!(
+            "[STT] New speech segment (turn {}, utterance {}); resetting decoder",
+            tid,
+            utterance_id
+        );
+        state.current_active_turn = tid;
+        state.last_utterance_id = Some(utterance_id);
+        state.last_transcript.clear();
+        state.stream_open = false;
+        if let Err(e) = ctx.provider.reset_state() {
+            log::warn!("[STT] Error resetting state for new speech segment: {:?}", e);
         }
     }
 
@@ -273,14 +275,16 @@ fn emit_final_events(
 fn handle_final_command(
     ctx: &WorkerContext<'_>,
     tid: u32,
+    utterance_id: u32,
     utterance: &[f32],
     owner: InteractionOwner,
     state: &mut WorkerState,
 ) {
     let cancelled = ctx.cancel_flag.load(Ordering::Relaxed);
     log::info!(
-        "[STT] Final received (turn {}, samples {}, {:.2}s, cancelled {}, active_turn {}, owner {:?})",
+        "[STT] Final received (turn {}, utterance {}, samples {}, {:.2}s, cancelled {}, active_turn {}, owner {:?})",
         tid,
+        utterance_id,
         utterance.len(),
         utterance.len() as f32 / SAMPLE_RATE as f32,
         cancelled,
@@ -394,6 +398,7 @@ fn run_worker_loop(
         last_emit_time: Instant::now(),
         last_transcript: String::new(),
         current_active_turn: 0u32,
+        last_utterance_id: None,
         stream_open: false,
         last_inference_duration: Duration::from_millis(STT_DEFAULT_INFERENCE_DURATION_MS),
     };
@@ -425,15 +430,20 @@ fn run_worker_loop(
                 log::info!("[STT] Shutdown signal received. Exiting worker thread.");
                 break;
             }
-            SttCommand::StreamChunk { turn_id, audio } => {
-                handle_stream_chunk_command(&ctx, turn_id, &audio, &mut state);
+            SttCommand::StreamChunk {
+                turn_id,
+                utterance_id,
+                audio,
+            } => {
+                handle_stream_chunk_command(&ctx, turn_id, utterance_id, &audio, &mut state);
             }
             SttCommand::Partial {
                 turn_id,
+                utterance_id,
                 audio,
                 recycle_tx,
             } => {
-                handle_partial_command(&ctx, turn_id, &audio, &mut state);
+                handle_partial_command(&ctx, turn_id, utterance_id, &audio, &mut state);
                 if let Err(e) = recycle_tx.try_send(audio) {
                     log::warn!(
                         "[STT] Error recycling partial audio buffer on command completion: {}",
@@ -443,10 +453,11 @@ fn run_worker_loop(
             }
             SttCommand::Final {
                 turn_id,
+                utterance_id,
                 audio,
                 owner,
             } => {
-                handle_final_command(&ctx, turn_id, &audio, owner, &mut state);
+                handle_final_command(&ctx, turn_id, utterance_id, &audio, owner, &mut state);
             }
             SttCommand::ResetStream => {
                 if drain_reset_stream(&channels.rx, ctx.provider, &mut state, &mut pending_cmd) {
@@ -539,6 +550,7 @@ mod tests {
             last_emit_time: Instant::now(),
             last_transcript: String::new(),
             current_active_turn: 0,
+            last_utterance_id: None,
             stream_open: false,
             last_inference_duration: Duration::from_millis(STT_DEFAULT_INFERENCE_DURATION_MS),
         }
@@ -549,6 +561,7 @@ mod tests {
         (
             SttCommand::Partial {
                 turn_id,
+                utterance_id: 0,
                 audio,
                 recycle_tx,
             },
@@ -561,7 +574,7 @@ mod tests {
         let (_tx, rx) = mpsc::channel();
         let mut pending = None;
         let cmd = SttCommand::Final {
-            turn_id: 3,
+            turn_id: 3, utterance_id: 0,
             audio: vec![0.0; 4],
             owner: InteractionOwner::Assistant,
         };
@@ -570,7 +583,7 @@ mod tests {
         assert!(matches!(
             out,
             SttCommand::Final {
-                turn_id: 3,
+                turn_id: 3, utterance_id: 0,
                 owner: InteractionOwner::Assistant,
                 ..
             }
@@ -587,7 +600,7 @@ mod tests {
         tx.send(second).expect("queue second partial");
         tx.send(third).expect("queue third partial");
         tx.send(SttCommand::StreamChunk {
-            turn_id: 2,
+            turn_id: 2, utterance_id: 0,
             audio: vec![],
         })
         .expect("queue stream chunk");
@@ -640,7 +653,7 @@ mod tests {
     fn drain_reset_stream_recycles_partials_and_drops_chunks() {
         let (tx, rx) = mpsc::channel();
         tx.send(SttCommand::StreamChunk {
-            turn_id: 1,
+            turn_id: 1, utterance_id: 0,
             audio: vec![0.0; 8],
         })
         .expect("queue chunk");
@@ -667,7 +680,7 @@ mod tests {
     fn drain_reset_stream_preserves_a_queued_final() {
         let (tx, rx) = mpsc::channel();
         tx.send(SttCommand::Final {
-            turn_id: 2,
+            turn_id: 2, utterance_id: 0,
             audio: vec![0.0; 8],
             owner: InteractionOwner::Assistant,
         })
@@ -680,7 +693,7 @@ mod tests {
 
         assert!(!stop);
         assert!(
-            matches!(pending, Some(SttCommand::Final { turn_id: 2, .. })),
+            matches!(pending, Some(SttCommand::Final { turn_id: 2, utterance_id: 0, .. })),
             "the final must be deferred, not dropped"
         );
     }

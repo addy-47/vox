@@ -1293,11 +1293,11 @@ async fn controller_reconnect_preserves_reconnecting_on_transient_error_and_fail
         matches!(
             controller_manager.state(),
             RemoteLinkState::Failed {
-                kind: RemoteFailureKind::Revoked,
+                kind: RemoteFailureKind::UnknownPeer,
                 ..
             }
         ),
-        "Terminal rejection must enter Failed with Revoked kind, got {:?}",
+        "Terminal rejection must enter Failed with UnknownPeer kind, got {:?}",
         controller_manager.state()
     );
 }

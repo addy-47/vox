@@ -32,6 +32,8 @@ pub struct TurnAccumulator {
     /// `TranscriptFinal` arrived from the STT worker, allowing `on_transcript_final` to
     /// capture the late-arriving segment into `continuation_prefix` while in `Listening`.
     pub awaiting_continuation: bool,
+    /// Physical speech segment bound at Stage 1, used for utterance-based late-final detection.
+    pub bound_utterance_id: Option<u32>,
     next_clause_seq: u32,
 }
 
@@ -50,6 +52,7 @@ impl TurnAccumulator {
             user_transcript: String::new(),
             continuation_prefix: String::new(),
             awaiting_continuation: false,
+            bound_utterance_id: None,
             next_clause_seq: 0,
         }
     }
@@ -61,6 +64,7 @@ impl TurnAccumulator {
         self.user_transcript.clear();
         self.continuation_prefix.clear();
         self.awaiting_continuation = false;
+        self.bound_utterance_id = None;
         self.next_clause_seq = 0;
     }
 
@@ -226,11 +230,11 @@ pub fn handle_event<R: tauri::Runtime + 'static>(
         VoxEvent::LlmFinished { turn_id } => {
             llm::on_llm_finished(turn_id, Some(app), state, ctx);
         }
-        VoxEvent::PlaybackStarted { turn_id, intent } => {
-            playback::on_playback_started(turn_id, intent, app, state, ctx);
+        VoxEvent::PlaybackStarted { turn_id } => {
+            playback::on_playback_started(turn_id, app, state, ctx);
         }
-        VoxEvent::PlaybackFinished { turn_id, intent } => {
-            playback::on_playback_finished(turn_id, intent, app, state, ctx);
+        VoxEvent::PlaybackFinished { turn_id } => {
+            playback::on_playback_finished(turn_id, app, state, ctx);
         }
         _ => {}
     }

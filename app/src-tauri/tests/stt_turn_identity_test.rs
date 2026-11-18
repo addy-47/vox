@@ -168,6 +168,7 @@ impl Drop for Harness {
 fn chunk(turn_id: u32, samples: usize) -> SttCommand {
     SttCommand::StreamChunk {
         turn_id,
+        utterance_id: 0,
         audio: vec![0.05; samples],
     }
 }
@@ -175,6 +176,7 @@ fn chunk(turn_id: u32, samples: usize) -> SttCommand {
 fn final_cmd(turn_id: u32, samples: usize, owner: InteractionOwner) -> SttCommand {
     SttCommand::Final {
         turn_id,
+        utterance_id: 0,
         audio: vec![0.05; samples],
         owner,
     }
@@ -248,8 +250,8 @@ fn open_stream_adopts_incremented_turn_without_reset() {
     ));
     assert_eq!(
         h.recording.reset_count(),
-        2,
-        "reset once for turn 2 and once after the final; the +1 adoption must not reset"
+        3,
+        "reset once for turn 2, once for turn 3 (T-07 bans adoption without reset), and once after final"
     );
     h.close();
 }
@@ -317,8 +319,8 @@ fn wrapped_turn_id_is_adopted_without_reset() {
     ));
     assert_eq!(
         h.recording.reset_count(),
-        2,
-        "one reset for MAX and one post-final; the wrap must not add one"
+        3,
+        "one reset for MAX, one on wrap to 0 (T-07 bans adoption without reset), and one post-final"
     );
     h.close();
 }
@@ -442,7 +444,7 @@ fn partial_command_recycles_its_buffer() {
     let h = Harness::new();
     let (recycle_tx, recycle_rx) = mpsc::sync_channel(1);
     h.send(SttCommand::Partial {
-        turn_id: 1,
+        turn_id: 1, utterance_id: 0,
         audio: vec![0.1; 4],
         recycle_tx,
     });

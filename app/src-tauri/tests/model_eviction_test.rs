@@ -251,6 +251,7 @@ async fn tts_warmup_populates_worker_handles() {
             tts_tx: &mut tts_tx,
             tts_handle: &mut tts_handle,
             cancel_flag,
+            engine_shutdown: Arc::new(AtomicBool::new(false)),
             playback_engine,
             pending_synthesis_jobs: Some(pending_jobs),
             telemetry_rtf: None,
@@ -277,7 +278,7 @@ async fn tts_warmup_populates_worker_handles() {
         );
 
         // Tear the worker down so the test leaves no thread behind.
-        cool_down_tts(&mut tts_tx);
+        cool_down_tts(&mut tts_tx, &mut tts_handle);
         if let Some(handle) = tts_handle.take() {
             handle.join().expect("TTS worker thread must join cleanly");
         }
@@ -323,6 +324,7 @@ async fn tts_cooldown_clears_sender_and_joins_worker() {
             tts_tx: &mut tts_tx,
             tts_handle: &mut tts_handle,
             cancel_flag,
+            engine_shutdown: Arc::new(AtomicBool::new(false)),
             playback_engine,
             pending_synthesis_jobs: Some(pending_jobs),
             telemetry_rtf: None,
@@ -343,18 +345,16 @@ async fn tts_cooldown_clears_sender_and_joins_worker() {
         assert!(warm_res.is_ok(), "warm_up_tts must return Ok(())");
         assert!(tts_handle.is_some(), "warm-up must produce a worker handle");
 
-        cool_down_tts(&mut tts_tx);
+        cool_down_tts(&mut tts_tx, &mut tts_handle);
 
         assert!(
             tts_tx.is_none(),
             "cool_down_tts must take and reset tts_tx to None"
         );
 
-        let handle = tts_handle.take().expect("tts_handle must be present");
-        let join_res = handle.join();
         assert!(
-            join_res.is_ok(),
-            "TTS worker thread must join cleanly on Shutdown command"
+            tts_handle.is_none(),
+            "cool_down_tts must join and take handle"
         );
     })
     .await

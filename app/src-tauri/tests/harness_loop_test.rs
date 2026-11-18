@@ -22,7 +22,7 @@ use futures_util::future::BoxFuture;
 use vox_lib::{
     core::{
         error::{PipelineError, PipelineImpact},
-        events::{AudioIntent, InteractionOwner, PipelineMode, VoxEvent},
+        events::{InteractionOwner, PipelineMode, VoxEvent},
         state::InteractionState,
     },
     harness::{
@@ -256,17 +256,8 @@ async fn critical_threshold_plays_the_compaction_filler() {
             .expect("Expected filler TtsCommand::Generate on critical threshold");
 
     match filler_cmd {
-        vox_lib::services::tts::TtsCommand::Generate {
-            turn_id,
-            text,
-            intent,
-        } => {
+        vox_lib::services::tts::TtsCommand::Generate { turn_id, text } => {
             assert_eq!(turn_id, 46);
-            assert_eq!(
-                intent,
-                AudioIntent::InterimFiller,
-                "filler must have InterimFiller intent"
-            );
             assert!(
                 vox_lib::harness::TRANSITION_MESSAGES_EN.contains(&text.as_str()),
                 "filler text '{}' must be from TRANSITION_MESSAGES_EN",
@@ -344,7 +335,7 @@ async fn zero_tool_turn_demuxes_thinking_tokens_into_quarantine_without_tts_or_i
             "Spoken text must be dispatched to TTS"
         );
         for cmd in tts_cmds {
-            if let TtsCommand::Generate { text, intent, .. } = cmd {
+            if let TtsCommand::Generate { text, .. } = cmd {
                 assert!(
                     !text.contains("Analyzing user query"),
                     "Thinking text leaked into TTS: {}",
@@ -354,11 +345,6 @@ async fn zero_tool_turn_demuxes_thinking_tokens_into_quarantine_without_tts_or_i
                     !text.contains("Step 1"),
                     "Reasoning leaked into TTS: {}",
                     text
-                );
-                assert_eq!(
-                    intent,
-                    AudioIntent::InterimFiller,
-                    "Preamble/initial clauses in allow_tools have InterimFiller intent"
                 );
             }
         }
@@ -407,16 +393,24 @@ async fn zero_tool_turn_with_interim_filler_latches_to_ready_only_after_playback
         .await
         .expect("LlmFinished routed");
 
+        // RULE-EVT-09 §3: LlmFinished marks llm_done = true; state remains in Thinking until PlaybackStarted
+        assert_eq!(
+            rig.state.pipeline.state(),
+            InteractionState::Thinking,
+            "State must remain in Thinking on LlmFinished while pending audio synthesis has not started"
+        );
+
+        // Sound card begins playback -> transitions to Speaking (RULE-EVT-09 §1)
+        rig.send_event(VoxEvent::PlaybackStarted { turn_id });
         assert!(
             rig.wait_for_state(InteractionState::Speaking, Duration::from_secs(5))
                 .await,
-            "State must transition to Speaking while audio synthesis is in flight"
+            "PlaybackStarted must transition state to Speaking"
         );
 
         // Calling playback_finished via authentic VoxEvent while 1 job is pending must defer Ready
         rig.send_event(VoxEvent::PlaybackFinished {
             turn_id,
-            intent: AudioIntent::InterimFiller,
         });
         rig.wait_for_event(
             |ev| matches!(ev, VoxEvent::PlaybackFinished { turn_id: tid, .. } if *tid == turn_id),
@@ -437,7 +431,6 @@ async fn zero_tool_turn_with_interim_filler_latches_to_ready_only_after_playback
             .store(0, Ordering::Relaxed);
         rig.send_event(VoxEvent::PlaybackFinished {
             turn_id,
-            intent: AudioIntent::InterimFiller,
         });
 
         assert!(
@@ -506,8 +499,8 @@ async fn preamble_tokens_before_tool_call_are_preserved_in_history_without_chunk
         // Verify preamble was dispatched to TTS as InterimFiller
         let tts_cmds = rig.drain_tts_commands();
         let preamble_cmd = tts_cmds.iter().find(|cmd| {
-            if let TtsCommand::Generate { text, intent, .. } = cmd {
-                text.contains("look that up") && *intent == AudioIntent::InterimFiller
+            if let TtsCommand::Generate { text, .. } = cmd {
+                text.contains("look that up")
             } else {
                 false
             }
@@ -547,39 +540,31 @@ async fn preamble_audio_playback_retains_working_state_during_tool_execution() {
         let rig = Rig::new().await;
         let turn_id = 202;
 
+        rig.state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
         rig.state.pipeline.set_state(InteractionState::Working);
+        rig.state.pipeline.set_current_activity(Some(&vox_lib::core::events::ActivityEnvelope {
+            kind: vox_lib::core::events::ActivityKind::Tool,
+            name: "test_tool".to_string(),
+            call_id: Some("call-1".to_string()),
+        }));
 
         // Onset of interim filler audio must transition state to Speaking (RULE-EVT-09 §1)
         rig.send_event(VoxEvent::PlaybackStarted {
             turn_id,
-            intent: AudioIntent::InterimFiller,
         });
-        rig.wait_for_event(
-            |ev| matches!(ev, VoxEvent::PlaybackStarted { turn_id: tid, .. } if *tid == turn_id),
-            Duration::from_secs(5),
-        )
-        .await
-        .expect("PlaybackStarted routed");
-        assert_eq!(
-            rig.state.pipeline.state(),
-            InteractionState::Speaking,
+        assert!(
+            rig.wait_for_state(InteractionState::Speaking, Duration::from_secs(5))
+                .await,
             "PlaybackStarted must transition state to Speaking"
         );
 
         // Completion of interim filler audio while llm_done == false must return to Working (RULE-EVT-09 §2)
         rig.send_event(VoxEvent::PlaybackFinished {
             turn_id,
-            intent: AudioIntent::InterimFiller,
         });
-        rig.wait_for_event(
-            |ev| matches!(ev, VoxEvent::PlaybackFinished { turn_id: tid, .. } if *tid == turn_id),
-            Duration::from_secs(5),
-        )
-        .await
-        .expect("PlaybackFinished routed");
-        assert_eq!(
-            rig.state.pipeline.state(),
-            InteractionState::Working,
+        assert!(
+            rig.wait_for_state(InteractionState::Working, Duration::from_secs(5))
+                .await,
             "PlaybackFinished while llm_done == false and tools active must return to Working"
         );
     })
@@ -2684,23 +2669,13 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
             "pipeline must transition to Listening on SpeechStart"
         );
 
-        // Assert continuation_prefix stashed the partial query
-        {
-            let acc = rig.state.pipeline_accumulator.lock();
-            assert_eq!(
-                acc.continuation_prefix, "search for",
-                "continuation_prefix must hold the stashed partial query"
-            );
-        }
-
         // Release first LLM stream
         let _ = stream_pause_tx.send(());
 
-        // Send TranscriptFinal with continuation
-        let new_turn_id = rig.state.pipeline.peek_turn_id();
+        // Send TranscriptFinal with continuation; turn_id is not advanced until Stage 2 TranscriptFinal
         rig.send_event(VoxEvent::TranscriptFinal {
             owner: InteractionOwner::Assistant,
-            turn_id: new_turn_id,
+            turn_id,
             text: " the budget report".to_string(),
         });
 
@@ -3452,7 +3427,6 @@ async fn guard_transition_harness_phase_blocks_stale_turn_and_preserves_speaking
         // Send a stale event from previous turn (stale_turn_id < active_turn_id)
         rig.send_event(VoxEvent::PlaybackFinished {
             turn_id: stale_turn_id,
-            intent: AudioIntent::InterimFiller,
         });
 
         tokio::time::sleep(Duration::from_millis(50)).await;

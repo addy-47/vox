@@ -52,7 +52,7 @@ pub fn spawn_idle_monitor<R: tauri::Runtime>(app: AppHandle<R>, state: Arc<AppSt
                             let mut lock = state.engine.lock().await;
                             if let Some(ref mut engine) = *lock {
                                 cool_down_llm(&mut engine.llm_tx, Some(&state.llm_provider));
-                                cool_down_tts(&mut engine.tts_tx);
+                                cool_down_tts(&mut engine.tts_tx, &mut engine.tts_handle);
                             }
                             drop(lock);
                             trim_heap("secondary_paused_offload");

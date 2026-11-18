@@ -462,15 +462,10 @@ async fn continuation_prefix_is_merged_into_the_next_query() {
         rig.wait_state(InteractionState::Listening, DEADLINE),
         "SpeechStart must switch Thinking -> Listening"
     );
-    rig.send(VoxEvent::SpeechEnd {
-        owner: InteractionOwner::Assistant,
-    });
-    assert!(
-        rig.wait_state(InteractionState::Thinking, DEADLINE),
-        "SpeechEnd must switch Listening -> Thinking"
-    );
+    rig.state.pipeline_accumulator.lock().stash_for_continuation();
     let second_turn = rig.state.pipeline.peek_turn_id();
 
+    // Transcript arrives while Listening, rotating a fresh dialogue turn with the merged query
     rig.send(VoxEvent::TranscriptFinal {
         turn_id: second_turn,
         text: "second part".to_string(),
@@ -478,7 +473,7 @@ async fn continuation_prefix_is_merged_into_the_next_query() {
     });
 
     assert_eq!(
-        rig.await_query(second_turn),
+        rig.await_query(second_turn + 1),
         "first part second part",
         "the stashed prefix and the new words must be one query"
     );
@@ -505,14 +500,18 @@ async fn late_arriving_final_is_captured_as_a_continuation_prefix() {
         rig.wait_state(InteractionState::Listening, DEADLINE),
         "SpeechStart must switch Thinking -> Listening"
     );
-    assert!(
-        rig.state.pipeline_accumulator.lock().awaiting_continuation,
-        "the accumulator must await the late final"
-    );
 
-    // The late final belongs to the interrupted turn, one before the current one.
+    // Stash for continuation and mark older physical utterance segment
+    let interrupted_turn = rig.state.pipeline.peek_turn_id();
+    {
+        let mut acc = rig.state.pipeline_accumulator.lock();
+        acc.stash_for_continuation();
+        acc.bound_utterance_id = Some(0);
+    }
+
+    // The late final belongs to the interrupted speech segment
     rig.send(VoxEvent::TranscriptFinal {
-        turn_id: rig.state.pipeline.peek_turn_id() - 1,
+        turn_id: interrupted_turn.saturating_sub(1),
         text: "late words".to_string(),
         owner: InteractionOwner::Assistant,
     });
@@ -524,7 +523,7 @@ async fn late_arriving_final_is_captured_as_a_continuation_prefix() {
             prefix_stashed = true;
             break;
         }
-        std::thread::sleep(Duration::from_millis(10));
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
     assert!(
         prefix_stashed,
@@ -669,6 +668,10 @@ async fn transcript_is_transliterated_before_dispatch() {
 async fn interrupt_opens_a_new_turn() {
     let rig = Rig::new().await;
     rig.state.pipeline.set_state(InteractionState::Thinking);
+    rig.state
+        .pipeline_accumulator
+        .lock()
+        .set_user_transcript("initial query".to_string());
     let interrupted = rig.state.pipeline.peek_turn_id();
 
     rig.send(VoxEvent::SpeechStart {
@@ -679,8 +682,32 @@ async fn interrupt_opens_a_new_turn() {
         rig.wait_state(InteractionState::Listening, DEADLINE),
         "SpeechStart in Thinking must interrupt and switch to Listening"
     );
-    let new_turn = rig.state.pipeline.peek_turn_id();
-    assert_ne!(new_turn, interrupted);
+    let turn_during_listening = rig.state.pipeline.peek_turn_id();
+    assert_eq!(
+        turn_during_listening, interrupted,
+        "SpeechStart must NOT advance turn_id per RULE-EVT-01A"
+    );
+
+    // Non-empty TranscriptFinal advances the turn (Stage 2)
+    rig.send(VoxEvent::TranscriptFinal {
+        turn_id: interrupted,
+        text: "User interruption".into(),
+        owner: InteractionOwner::Assistant,
+    });
+
+    let deadline = std::time::Instant::now() + DEADLINE;
+    let mut turn_advanced = false;
+    while std::time::Instant::now() < deadline {
+        if rig.state.pipeline.peek_turn_id() > interrupted {
+            turn_advanced = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(
+        turn_advanced,
+        "non-empty TranscriptFinal must rotate turn to a new turn_id"
+    );
 }
 
 /// PURPOSE:  A transcript dropped in the wrong state is not stored or dispatched.

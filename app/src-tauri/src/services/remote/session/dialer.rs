@@ -148,14 +148,14 @@ pub(crate) async fn handle_dial_peer_rejection(
 ) {
     match rejection {
         PeerRejection::UnknownPeer(_) => {
-            if let Ok(conn) = db.connect() {
-                let _ = paired_devices::delete_paired_device(&conn, device_id).await;
-            }
+            // Tier 2 rejection never mutates Tier 1 pairing trust.
+            let _ = db;
+            let _ = device_id;
             manager.set_peer_identity(None);
             *manager.event_forwarder.lock() = None;
             manager.set_state(RemoteLinkState::failed(
-                "Device pairing was revoked.".to_string(),
-                RemoteFailureKind::Revoked,
+                "Peer is not paired with this host.".to_string(),
+                RemoteFailureKind::UnknownPeer,
             ));
         }
         PeerRejection::LinkRefused(reason) => {

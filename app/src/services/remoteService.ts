@@ -18,6 +18,7 @@ export type RemoteFailureKind =
   | "version_mismatch"
   | "revoked"
   | "host_busy"
+  | "unknown_peer"
   | "unknown";
 
 export type CommandClass = "Remote" | "Local" | "Split" | "Denied";

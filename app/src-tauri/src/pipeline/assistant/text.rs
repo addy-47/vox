@@ -58,7 +58,6 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
     }
 
     let current_state = state.pipeline.state();
-
     let is_speech_held = state
         .harness
         .lock()
@@ -66,40 +65,22 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
         .map(|h| h.inbox().is_speech_held())
         .unwrap_or(false);
 
-    if current_state == InteractionState::Working || is_speech_held {
-        let active_turn_id = state.pipeline.peek_turn_id();
-        log::info!(
-            "[Pipeline::Text] Turn {}: User typed steering message during Working: '{}'",
-            active_turn_id,
-            query
-        );
-        let payload = TranscriptPayload {
-            turn_id: active_turn_id,
-            text: query.clone(),
-            owner: Some(ctx.owner),
-        };
-        let _ = emit_ipc_to(
-            app,
-            target_window(ctx.owner),
-            IpcEvent::TranscriptFinal(payload),
-        );
-        let now = crate::harness::current_timestamp_ms();
-        if let Some(ref harness) = *state.harness.lock() {
-            harness
-                .inbox()
-                .push(crate::harness::stages::inbox::InboxMessage::new(
-                    query,
-                    crate::harness::stages::inbox::QueuedMessageDelivery::Immediate,
-                    now,
-                ));
-        }
-        return;
-    }
-
-    let active_turn_id = if current_state == InteractionState::Thinking
-        || current_state == InteractionState::Speaking
+    let active_turn_id = if matches!(
+        current_state,
+        InteractionState::Thinking | InteractionState::Speaking | InteractionState::Working
+    ) || is_speech_held
     {
-        super::interrupt::on_interrupt(app, state, ctx)
+        // Typed input is semantically resolved on ingress, so rotate the turn explicitly.
+        {
+            let guard = state.harness.lock();
+            if let Some(ref harness) = *guard {
+                harness.inbox().release_speech_hold();
+            }
+        }
+        state.pipeline.cancel_active_turn();
+        let (new_turn_id, _) = state.pipeline.next_turn();
+        state.pipeline_accumulator.lock().clear();
+        new_turn_id
     } else if current_state == InteractionState::Ready {
         let (new_turn_id, _) = state.pipeline.next_turn();
         state.pipeline_accumulator.lock().clear();
@@ -116,11 +97,17 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
         query
     );
 
+    // Stage the query on the router thread before the background task is spawned.
+    {
+        let mut guard = state.harness.lock();
+        if let Some(ref mut harness) = *guard {
+            harness.stage_user_query(active_turn_id, query.clone());
+        }
+    }
     state
         .pipeline_accumulator
         .lock()
         .set_user_transcript(query.clone());
-
     state.turn_metrics.record_transcript_final();
 
     let payload = TranscriptPayload {
@@ -157,7 +144,7 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
                     );
                 }
             } else {
-                log::warn!("[Pipeline::Text] Realtime engine unavailable to process text input");
+                log::warn!("Realtime engine unavailable to process text input");
             }
         }
     }

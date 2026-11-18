@@ -210,7 +210,6 @@ impl TtsProvider for KokoroEngine {
             ..Default::default()
         };
 
-        let intent = ctx.intent;
         let cancel_cb = ctx.cancel.clone();
         let playback_cb = Arc::clone(ctx.playback);
         let streamed_samples_count = Arc::new(AtomicUsize::new(0));
@@ -230,7 +229,7 @@ impl TtsProvider for KokoroEngine {
                 }
                 streamed_count_cb.fetch_add(raw_samples.len(), Ordering::Relaxed);
                 if !cancel_cb.load(Ordering::Relaxed) {
-                    playback_cb.ingest_chunk_with_intent(raw_samples, intent);
+                    playback_cb.ingest_synthesis_chunk(raw_samples);
                 }
                 true
             }),
@@ -255,7 +254,7 @@ impl TtsProvider for KokoroEngine {
             };
 
             if !samples.is_empty() && !ctx.cancel.load(Ordering::Relaxed) {
-                ctx.playback.ingest_chunk_with_intent(samples, intent);
+                ctx.playback.ingest_synthesis_chunk(samples);
             }
             total_samples_count = samples.len();
         }

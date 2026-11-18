@@ -1,5 +1,5 @@
 use std::sync::{
-    atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering},
+    atomic::{AtomicBool, AtomicU32, Ordering},
     mpsc::Sender,
     Arc,
 };
@@ -17,7 +17,7 @@ use super::{
 pub use super::{PlaybackEngineHandles, PlaybackTelemetryHandles};
 use crate::{
     core::{
-        events::{AudioIntent, VoxEvent},
+        events::VoxEvent,
         metrics::TurnMetricsCollector,
     },
     services::realtime::{RealtimeAudioConfig, DEFAULT_OUTPUT_SAMPLE_RATE},
@@ -37,7 +37,7 @@ pub struct PlaybackEngine {
     turn_armed: Arc<AtomicBool>,
     is_remote_active: Arc<AtomicBool>,
     pending_synthesis_jobs: Arc<AtomicU32>,
-    playback_intent: Arc<AtomicU8>,
+    sink_occupied: Arc<AtomicBool>,
     pub turn_metrics: Option<Arc<TurnMetricsCollector>>,
     _sink: Option<Box<dyn AudioSink>>,
     remote_sink: parking_lot::RwLock<Option<Arc<crate::services::remote::audio::NetworkAudioSink>>>,
@@ -90,7 +90,7 @@ impl PlaybackEngine {
             turn_armed,
             is_remote_active,
             pending_synthesis_jobs: handles.pending_synthesis_jobs,
-            playback_intent: handles.playback_intent,
+            sink_occupied: handles.sink_occupied,
             turn_metrics: handles.turn_metrics,
             _sink: Some(sink),
             remote_sink: parking_lot::RwLock::new(None),
@@ -118,7 +118,7 @@ impl PlaybackEngine {
             turn_armed,
             is_remote_active: Arc::new(AtomicBool::new(false)),
             pending_synthesis_jobs: handles.pending_synthesis_jobs,
-            playback_intent: handles.playback_intent,
+            sink_occupied: handles.sink_occupied,
             turn_metrics: handles.turn_metrics,
             _sink: sink,
             remote_sink: parking_lot::RwLock::new(None),
@@ -138,13 +138,13 @@ impl PlaybackEngine {
     /// Marks the pipeline turn whose synthesis job is currently streaming audio into this engine.
     ///
     /// The TTS worker processes jobs strictly sequentially, so a single atomic captures the
-    /// originating turn of every in-flight `ingest_chunk_with_intent` call.
+    /// originating turn of every in-flight synthesis chunk.
     pub fn begin_synthesis_turn(&self, turn_id: u32) {
         self.synthesis_turn.store(turn_id, Ordering::Relaxed);
     }
 
-    /// Ingest a 24kHz audio chunk with an explicit audio intent tag.
-    pub fn ingest_chunk_with_intent(&self, chunk_24khz: &[f32], intent: AudioIntent) {
+    /// Ingest a 24kHz synthesis chunk, dropping audio from a superseded turn.
+    pub fn ingest_synthesis_chunk(&self, chunk_24khz: &[f32]) {
         let synthesis_turn = self.synthesis_turn.load(Ordering::Relaxed);
         let current_turn = self.current_turn_id.load(Ordering::Relaxed);
         if !is_synthesis_turn_current(synthesis_turn, current_turn) {
@@ -158,8 +158,6 @@ impl PlaybackEngine {
             );
             return;
         }
-        self.playback_intent
-            .store(u8::from(intent), Ordering::Relaxed);
         self.ingest_chunk_with_threshold(chunk_24khz, MODULAR_PREROLL_THRESHOLD_SAMPLES);
     }
 
@@ -173,6 +171,8 @@ impl PlaybackEngine {
         if self.cancel_flag.load(Ordering::Relaxed) {
             return;
         }
+        // Publish occupancy before the TTS worker decrements pending_tts_jobs.
+        self.sink_occupied.store(true, Ordering::Release);
 
         // Remote session: route TTS output to the phone speaker in addition to
         // driving the local pacing and event lifecycle.
@@ -209,30 +209,17 @@ impl PlaybackEngine {
             if occupied >= preroll_threshold {
                 self.turn_armed.store(true, Ordering::Relaxed);
                 let tid = self.current_turn_id.load(Ordering::Relaxed);
-                let intent = AudioIntent::from(self.playback_intent.load(Ordering::Relaxed));
-                if let Err(e) = self.event_tx.send(VoxEvent::PlaybackStarted {
-                    turn_id: tid,
-                    intent,
-                }) {
+                if let Err(e) = self.event_tx.send(VoxEvent::PlaybackStarted { turn_id: tid }) {
                     log::warn!("[Audio::Playback] Failed to emit PlaybackStarted: {}", e);
                 } else {
                     log::info!(
-                        "[Audio::Playback] Preroll cushion satisfied ({} samples) — PlaybackStarted emitted (turn {}, intent: {:?})",
+                        "[Audio::Playback] Preroll cushion satisfied ({} samples) — PlaybackStarted emitted (turn {})",
                         occupied,
-                        tid,
-                        intent
+                        tid
                     );
                 }
             }
         }
-
-        log::debug!(
-            "[Audio::Playback] Ingested chunk (turn {}, intent {:?}, chunk_samples {}, occupied {})",
-            self.current_turn_id.load(Ordering::Relaxed),
-            AudioIntent::from(self.playback_intent.load(Ordering::Relaxed)),
-            scratch.len(),
-            prod.occupied_len()
-        );
     }
 
     /// Ingest a raw PCM i16 chunk with arbitrary sample rate, normalize, resample to 24kHz if needed, and push with realtime pre-roll cushion.
@@ -277,21 +264,16 @@ impl PlaybackEngine {
             if occupied > 0 {
                 self.turn_armed.store(true, Ordering::Relaxed);
                 let tid = self.current_turn_id.load(Ordering::Relaxed);
-                let intent = AudioIntent::from(self.playback_intent.load(Ordering::Relaxed));
-                if let Err(e) = self.event_tx.send(VoxEvent::PlaybackStarted {
-                    turn_id: tid,
-                    intent,
-                }) {
+                if let Err(e) = self.event_tx.send(VoxEvent::PlaybackStarted { turn_id: tid }) {
                     log::warn!(
                         "[Audio::Playback] Failed to emit PlaybackStarted on flush_pre_roll: {}",
                         e
                     );
                 } else {
                     log::info!(
-                        "[Audio::Playback] Pre-roll flushed ({} samples) — PlaybackStarted emitted (turn {}, intent: {:?})",
+                        "[Audio::Playback] Pre-roll flushed ({} samples) — PlaybackStarted emitted (turn {})",
                         occupied,
-                        tid,
-                        intent
+                        tid
                     );
                 }
             }
@@ -359,11 +341,11 @@ impl PlaybackEngine {
         Arc::clone(&self.current_turn_id)
     }
 
-    /// Cancels active playback, signals consumer discard, and resets buffer count.
+    /// Cancels active playback and flushes buffers without mutating the hardware cancel flag.
     pub fn cancel(&self) {
-        self.cancel_flag.store(true, Ordering::Relaxed);
         self.discard_request.store(true, Ordering::Relaxed);
         self.turn_armed.store(false, Ordering::Relaxed);
+        self.sink_occupied.store(false, Ordering::Release);
         if let Some(sink) = self.remote_sink.read().clone() {
             async_runtime::spawn(async move {
                 let _ = sink.send_flush().await;

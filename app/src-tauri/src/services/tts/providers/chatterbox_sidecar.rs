@@ -57,7 +57,6 @@ impl TtsProvider for ChatterboxSidecarProvider {
         let model_dir_str = self.model_dir.to_string_lossy().to_string();
         let ref_audio = self.reference_audio.clone();
         let playback = Arc::clone(ctx.playback);
-        let intent = ctx.intent;
         let cancel = ctx.cancel.clone();
 
         tokio::task::block_in_place(|| {
@@ -101,12 +100,12 @@ impl TtsProvider for ChatterboxSidecarProvider {
 
                     if pending.len() >= TTS_CHUNK_SIZE {
                         let to_send: Vec<f32> = pending.drain(..TTS_CHUNK_SIZE).collect();
-                        playback.ingest_chunk_with_intent(&to_send, intent);
+                        playback.ingest_synthesis_chunk(&to_send);
                     }
                 }
 
                 if !pending.is_empty() && !cancel.load(Ordering::Relaxed) {
-                    playback.ingest_chunk_with_intent(&pending, intent);
+                    playback.ingest_synthesis_chunk(&pending);
                 }
 
                 Ok(())

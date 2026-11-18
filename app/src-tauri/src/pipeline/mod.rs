@@ -12,4 +12,6 @@ pub const INACTIVITY_PAUSED_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub use atomics::PipelineAtomics;
 pub use lifecycle::spawn_idle_monitor;
-pub use router::{spawn_router, target_window, transition, RoutingContext};
+pub use router::{
+    spawn_router, target_window, transition, transition_harness_phase, RoutingContext,
+};

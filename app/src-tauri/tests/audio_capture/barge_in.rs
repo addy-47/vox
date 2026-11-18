@@ -250,13 +250,19 @@ async fn double_talk_barge_in_cancels_the_playback_and_opens_listening() {
             "interrupt must flush the playback buffer via the discard path"
         );
 
-        // The user's speech must reach STT with the NEW turn_id.
+        // The user's speech must reach STT with the active turn_id (TURN per RULE-EVT-01A).
+        let uid = scene.state.pipeline.utterance_id.load(Ordering::Relaxed);
+        let _ = scene.rig.vad_tx.send(vox_lib::services::vad::VadCommand::BindUtterance {
+            turn_id: TURN,
+            utterance_id: uid,
+        });
+
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut saw_stream_chunk = false;
         while Instant::now() < deadline && !saw_stream_chunk {
             match scene.rig.stt_rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(SttCommand::StreamChunk { turn_id, .. }) => {
-                    if turn_id == TURN + 1 {
+                    if turn_id == TURN {
                         saw_stream_chunk = true;
                     }
                 }
@@ -266,7 +272,7 @@ async fn double_talk_barge_in_cancels_the_playback_and_opens_listening() {
         }
         assert!(
             saw_stream_chunk,
-            "barge-in must flush pre-roll + body StreamChunks to STT with the new turn_id"
+            "barge-in must flush pre-roll + body StreamChunks to STT with active turn_id"
         );
     })
     .await
@@ -289,20 +295,31 @@ async fn bypass_reproduces_the_echo_interruption() {
         scene.interrupt_aec_via_engine_channel(AecCommand::SetEnabled(false));
         tokio::time::sleep(Duration::from_millis(50)).await;
 
+        let (seen, _watcher) =
+            common::harness::spawn_state_watcher(&scene.state, Duration::from_secs(5));
+
         let mic = common::harness::scene_mic(&scene.tts_16k[..40_000], None);
         scene.feed_mixed(&mic);
 
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline {
-            if scene.state.pipeline.turn_id.load(Ordering::Relaxed) == TURN + 1 {
+            if seen.load(Ordering::Relaxed) & 1 != 0 {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
+        assert!(
+            seen.load(Ordering::Relaxed) & 1 != 0,
+            "unsuppressed echo must reach the VAD and interrupt the assistant into Listening"
+        );
+        assert!(
+            scene.state.pipeline.utterance_id.load(Ordering::Relaxed) >= 1,
+            "barge-in must allocate utterance_id on SpeechStart"
+        );
         assert_eq!(
             scene.state.pipeline.turn_id.load(Ordering::Relaxed),
-            TURN + 1,
-            "unsuppressed echo must reach the VAD and interrupt the assistant"
+            TURN,
+            "unsuppressed echo on SpeechStart must NOT increment turn_id before semantic resolution"
         );
     })
     .await
