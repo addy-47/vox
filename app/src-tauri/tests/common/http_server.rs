@@ -272,7 +272,8 @@ impl TestHttpServer {
             // `JoinHandle` aborts it. A wedged connection must never hang the suite.
             tokio::time::timeout(Duration::from_secs(5), handle)
                 .await
-                .ok();
+                .expect("test HTTP server join timed out")
+                .expect("test HTTP server task panicked");
         }
     }
 }

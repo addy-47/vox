@@ -758,6 +758,46 @@ fn device_key_path_is_isolated_from_database_directory() {
     assert!(key_path.is_absolute());
 }
 
+/// Enumerate the command names actually registered in `generate_handler![]`.
+/// Derived from production source so deleting a registration turns this test red.
+fn registered_commands_from_source() -> Vec<String> {
+    let lib_rs = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"),
+    )
+    .expect("read src/lib.rs");
+    let start = lib_rs
+        .find("generate_handler![")
+        .expect("src/lib.rs must register commands via generate_handler![]");
+    let body = &lib_rs[start..];
+    let mut depth = 1usize;
+    let mut first = true;
+    let mut names = Vec::new();
+    for line in body.lines() {
+        if first {
+            first = false;
+            continue;
+        }
+        let code = line.split("//").next().unwrap_or("").trim();
+        depth += code.matches('[').count();
+        depth = depth.saturating_sub(code.matches(']').count());
+        if depth == 0 {
+            break;
+        }
+        if let Some(name) = code.strip_suffix(',') {
+            let name = name.trim();
+            if !name.is_empty()
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
+                names.push(name.to_string());
+            }
+        }
+    }
+    assert!(!names.is_empty(), "generate_handler![] must register commands");
+    names
+}
+
 const REGISTERED_IPC_COMMANDS: &[&str] = &[
     "launch_engine",
     "stop_engine",
@@ -911,10 +951,26 @@ fn assert_settings_keys_classified(
 #[test]
 fn routing_table_contains_all_registered_ipc_commands() {
     let table = vox_lib::services::remote::control::get_routing_table();
+    let registered = registered_commands_from_source();
+    // Every remotely routable command must still be registered in generate_handler![].
+    // Deleting a production registration now turns this test red.
+    // `model_parameters` is a settings pseudo-domain routed through update_setting
+    // (remote-control-spec §8), not a registered IPC command.
+    let pseudo_domains = ["model_parameters"];
+    for cmd in table
+        .keys()
+        .filter(|c| !c.contains('.') && !pseudo_domains.contains(&c.as_str()))
+    {
+        assert!(
+            registered.iter().any(|r| r == cmd),
+            "routing table references unregistered command '{cmd}'"
+        );
+    }
+    // The explicit list is the required remote-control floor, not all registered commands.
     for cmd in REGISTERED_IPC_COMMANDS {
         assert!(
             table.contains_key(*cmd),
-            "routing table missing entry for command '{cmd}'"
+            "routing table missing required command '{cmd}'"
         );
     }
     assert_settings_keys_classified(table);

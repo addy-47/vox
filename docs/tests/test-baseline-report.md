@@ -1,9 +1,43 @@
-# Vox Pipeline Refactor — T-01 Test Baseline & Remediation Report (100% Green)
+# Vox Pipeline Refactor — Test Baseline & Remediation Report
 
-**Date:** 2026-11-18  
-**Role:** Clean-Room Test Engineer  
-**Suite Status:** `564 tests run: 564 passed, 0 failed, 4 skipped` (100% GREEN, nextest wall-clock: 286.84s)  
-**Compilation Status:** Clean (`cargo test --no-run --release` in release profile, zero errors across all 28 test binaries)  
+**Date:** 2026-11-18 (Checkpoint 3 update)  
+**Role:** Senior Test Engineer  
+**Suite Status (current):** `563 tests run: 561 passed, 2 failed, 4 skipped` (187.5s, release, sequential). The 2 failures are authoritative RED seams exposing a production schema defect; they must not be weakened.  
+**Previous status (historical, §1–§5 below):** `564 passed, 0 failed, 4 skipped` — the suite was green but the tests masked production defects.  
+
+---
+
+## Checkpoint 3 summary — audit-driven test remediation
+
+**Command executed this session:**
+```bash
+cd app/src-tauri
+export VOX_MODELS_DIR="$HOME/.vox/models"
+export RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc)
+cargo nextest run --release --test-threads=1 --no-fail-fast
+# 563 tests run: 561 passed, 2 failed, 4 skipped (Summary [187.532s])
+```
+
+**Why the suite is no longer 100% green:** the audit (`test-review-report.md`) found that the previous green baseline hid a spec violation. `db-spec.md §5.4/§8` requires at most one `in_progress` compaction across the whole database; `schema.rs:88` uses a per-session unique index. Two tests were strengthened to assert the spec contract and now fail:
+
+| Test | Failure |
+| :--- | :--- |
+| `database_persistence_boundary_test::second_in_progress_compaction_is_rejected_by_partial_index` | panics at `tests/database_persistence_boundary_test.rs:531` |
+| `memory_compaction_test::second_in_progress_compaction_on_a_session_is_rejected` | panics at `tests/memory_compaction_test.rs:291` |
+
+Both are recorded in `docs/tests/test-findings.md` as TF-01. Production fix is owned by backend-engineer / system-architect.
+
+**Test-side fixes applied (no production source changed):** 11 critical false-greens addressed (cancel-flag re-arm, injected TTS fallback event, unasserted history commits, anti-architecture leaf tests, guard with no positive control, hardcoded IPC list, banned `try_recv` negative, global-vs-session compaction); 18 intent blocks reconciled; join results propagated; three quiescence barriers added; all four ignored tests given owner/expiry; eight default-tier wall-clock assertions removed; one no-op-unload test folded. The full list is in `test-review-report.md §10`.
+
+**Skipped tests (4, unchanged set):** `remote_link_test::ws_link_passes_generic_conformance_suite` (TF-04), `realtime_transport_test::live_cloud_realtime_handshake` (TF-08), `memory_compaction_test::compaction_slice_100_turns_against_a_remote_ollama_server` (TF-09), `e2e_voice_pipeline_test::mid_thought_continuation_combines_both_bursts` (TF-03). All now carry owner and expiry.
+
+**Open before mutation testing:** C-10 (realtime decoder asserts the double), C-11 (remote pairing self-fulfilled assertion), ~20 intent/leaf items, 13 sleep-to-state sites. These remain documented in `test-review-report.md`; they were not hidden by weakening assertions. Mutation testing stays deferred until the suite is green and these items are closed.
+
+---
+
+## Historical baseline (T-01 — prior test engineer, for context only)
+
+The remainder of this report records the earlier T-01 baseline and is superseded by the section above.  
 
 ---
 

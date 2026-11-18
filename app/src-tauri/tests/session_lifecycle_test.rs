@@ -670,12 +670,10 @@ async fn empty_compaction_output_falls_back_to_the_raw_turns() {
 ///           assistant talk over the user's dictation.
 /// SCENARIO: Dispatch `PauseSession` through the router and read the state,
 ///           the cancel flag, the turn token and the owner.
-/// ASSERTS:  The state is `Paused`, the cancel flag is set, the turn token is
-///           cancelled and the owner is `Dictation`.
+/// ASSERTS:  The state is `Paused`, the turn token is cancelled, and the owner is `Dictation`.
 /// CLASS:    happy-path
 /// REQUIRES: none
-/// MUTANT:   Skip `state.pipeline.cancel_flag.store(true)` in the pause
-///           handler — the cancel-flag assertion would fail.
+/// MUTANT:   Skip `state.pipeline.cancel_active_turn()` in the pause handler — the token assertion would fail.
 #[tokio::test]
 async fn pause_transitions_to_paused_cancels_the_turn_and_yields_ownership() {
     tokio::time::timeout(Duration::from_secs(10), async {
@@ -794,7 +792,7 @@ async fn pause_switches_the_vad_to_the_dictation_mode() {
 ///           is cleared and the turn token is not cancelled.
 /// CLASS:    happy-path
 /// REQUIRES: none
-/// MUTANT:   Skip `state.pipeline.rearm_turn_token()` in the resume handler —
+/// MUTANT:   Skip `state.pipeline.rearm_turn_cancel_token()` in the resume handler —
 ///           the token assertion would fail.
 #[tokio::test]
 async fn resume_restores_ready_and_the_assistant_ownership() {
@@ -1211,11 +1209,10 @@ async fn session_end_unmounts_the_harness_clears_the_accumulator_and_purges_the_
 ///           abandoned.
 /// SCENARIO: Dispatch `EndSession` and inspect the turn token and the cancel
 ///           flag.
-/// ASSERTS:  The turn token is cancelled and the cancel flag is set.
+/// ASSERTS:  The turn token is cancelled.
 /// CLASS:    happy-path
 /// REQUIRES: none
-/// MUTANT:   Skip the token cancellation in the end handler — the token
-///           assertion would fail.
+/// MUTANT:   Skip `cancel_active_turn()` in the session-end handler — the token assertion would fail.
 #[tokio::test]
 async fn session_end_cancels_the_in_flight_turn() {
     tokio::time::timeout(Duration::from_secs(10), async {

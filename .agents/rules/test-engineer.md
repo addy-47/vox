@@ -66,7 +66,7 @@ Binding standard: [`testing-style-guide.md`](./testing-style-guide.md). Read it 
 - **Mutation validation:** Use `mutate` to prove tests catch real defects.
 - **Failure diagnostics:** Use `rca` when tests uncover unexpected production behavior.
 - **Boundary clarification:** Use `grill-me` when requirements or expectations are ambiguous.
-- **Pipeline scenarios:** `docs/plans/phase14/voice_pipeline_scenarios_trace.md` — 34 steps, 5 branch points; use it instead of guessing state trajectories.
-- **Timer horizons and thresholds:** `docs/plans/phase14/dynamic_logic_and_magic_numbers_audit.md` — VAD/AEC/STT horizons; do not infer from memory.
-- **Hardening baseline:** `docs/tests/test-audit-actual-issues-2026-11.md` — seam scores and gaps.
-- **Plan and recent work:** `docs/plans/phase14/test-suite-hardening-plan.md`, `docs/plans/phase14/work_log.md`.
+- **Pipeline scenarios:** `docs/specs/events-spec.md` §3/§5 and `docs/specs/harness-spec.md` §3/§4 — authoritative state machine and domain matrix; use them instead of guessing state trajectories.
+- **Timer horizons and thresholds:** read production constants in `services/vad/` and `services/audio/aec.rs`; no separate audit document exists, do not infer from memory.
+- **Hardening baseline:** `docs/tests/test-review-report.md` (rubric audit) and `docs/tests/test-baseline-report.md` (suite status).
+- **Plan and recent work:** `docs/plans/phase14/pipeline-refactor-plan.md`, `pipeline-refactor-checklist.md`, `docs/plans/phase14/work_log.md`.

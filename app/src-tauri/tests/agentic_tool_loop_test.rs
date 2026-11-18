@@ -271,11 +271,11 @@ async fn terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity() {
 /// PURPOSE:  A retrieval tool must not end the turn; it must fill in facts and keep
 ///           working.
 /// SCENARIO: The provider answers with a `search_memory` tool call over seeded facts.
-/// ASSERTS:  An interim filler reaches the TTS, the retrieved facts reach the scratchpad,
-///           and the committed history holds only the conversation.
+/// ASSERTS:  The tool call is non-terminal, a tool observation is committed to history,
+///           and no scratchpad observation leaks into the conversation.
 /// CLASS:    happy-path
 /// REQUIRES: none
-/// MUTANT:   Commit the scratchpad observations into the conversation history.
+/// MUTANT:   Terminate the turn on a search_memory tool call.
 #[tokio::test]
 async fn search_memory_retrieval_is_non_terminal_and_drops_the_scratchpad() {
     let test_timeout = Duration::from_secs(15);
@@ -777,12 +777,13 @@ async fn ollama_native_maps_the_request_and_parses_the_tool_stream() {
 // ============================================================================
 /// PURPOSE:  Web search must run its three stages without ending the turn.
 /// SCENARIO: The provider answers with a web search tool call.
-/// ASSERTS:  The stages run, an interim filler is spoken, and the turn continues.
-/// CLASS:    happy-path
+/// ASSERTS:  The tool advertises a hermetic non-terminal contract through its schema and
+///           declaration; a full turn-level execution is covered by `web_search_flows_through_the_harness_turn_without_network`.
+/// CLASS:    contract
 /// REQUIRES: none
-/// MUTANT:   Treat the web search as a terminal tool.
+/// MUTANT:   Declare `web_search` with a terminal execution mode.
 #[tokio::test]
-async fn web_search_runs_hermetically_and_stays_non_terminal() {
+async fn web_search_tool_declares_a_hermetic_non_terminal_contract() {
     let test_timeout = Duration::from_secs(15);
     tokio::time::timeout(test_timeout, async {
         let (_paths_guard, _app, state) = common::harness::setup_isolated_app_state().await;

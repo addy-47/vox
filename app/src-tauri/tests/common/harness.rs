@@ -114,12 +114,14 @@ pub fn create_headless_playback_with_aec_tap(
     let discard_request = Arc::new(AtomicBool::new(false));
     let turn_armed = Arc::new(AtomicBool::new(false));
 
+    // These atomics are owned by PipelineAtomics in production. Stand-in atomics here
+    // disconnect cancel/quiescence state from the router and create false greens.
     let handles = PlaybackEngineHandles {
-        cancel_flag: Arc::new(AtomicBool::new(false)),
+        cancel_flag: Arc::clone(&state.pipeline.hardware_cancel_flag),
         state_atomic: Arc::clone(&state.pipeline.assistant_state_atomic),
         current_turn_id: Arc::clone(&state.pipeline.turn_id),
         pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_tts_jobs),
-        sink_occupied: Arc::new(AtomicBool::new(false)),
+        sink_occupied: Arc::clone(&state.pipeline.sink_occupied),
         event_tx,
         is_playback_muted: Arc::clone(&state.pipeline.is_playback_muted),
         turn_metrics: Some(Arc::clone(&state.turn_metrics)),

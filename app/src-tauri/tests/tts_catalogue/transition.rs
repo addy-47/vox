@@ -255,7 +255,8 @@ async fn voice_switch_does_not_restart_the_tts_worker() {
             tokio::task::spawn_blocking(move || worker_handle.join()),
         )
         .await
-        .expect("TTS worker thread join timed out");
+        .expect("TTS worker thread join timed out")
+        .expect("TTS worker thread panicked");
     })
     .await
     .expect("test_tts_voice_switch_without_worker_restart timed out");
@@ -408,11 +409,8 @@ async fn compaction_filler_is_dispatched_and_counted() {
             normal_harness.check_critical_compaction_eligibility().is_none(),
             "Normal context must not trigger critical compaction"
         );
-
-        assert!(
-            tts_rx.try_recv().is_err(),
-            "tts_rx must not receive any command on non-critical turn"
-        );
+        // No negative channel assertion here: no non-critical turn was dispatched through
+        // the TTS producer, so a single try_recv would prove nothing (style guide §5.1).
     })
     .await
     .expect("test_compaction_filler_dispatch_and_pending_accounting timed out");

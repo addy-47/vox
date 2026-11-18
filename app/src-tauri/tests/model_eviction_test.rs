@@ -31,30 +31,8 @@ use vox_lib::{
     },
 };
 
-/// PURPOSE:  The ONNX singletons must start unloaded; a stale global that
-///           reports "loaded" at boot would let the app believe it holds no
-///           model weights while actually pinning RAM.
-/// SCENARIO: Initialize paths, force a full unload, then inspect the loaded
-///           flags for the embedder and the transliteration engine.
-/// ASSERTS:  Both `is_embedder_loaded` and `is_transliteration_engine_loaded`
-///           report false.
-/// CLASS:    happy-path
-/// REQUIRES: VOX_MODELS_DIR
-/// MUTANT:   Make `unload_all_onnx_models` a no-op — the flags would still read
-///           false here, so the stronger mutant is to have `is_embedder_loaded`
-///           return true unconditionally.
-#[test]
-fn onnx_singletons_start_unloaded_after_full_unload() {
-    let _guard = common::paths::TempPathsGuard::new();
-
-    unload_all_onnx_models();
-
-    assert!(!is_embedder_loaded(), "Embedder must start unloaded");
-    assert!(
-        !is_transliteration_engine_loaded(),
-        "Transliteration must start unloaded"
-    );
-}
+// Folded into `full_onnx_unload_evicts_embedder_and_transliteration`: this scene
+// unloaded models that were never loaded, so a no-op unload passed it. No coverage lost.
 
 /// PURPOSE:  A loaded embedder must actually produce a 384-dimensional vector;
 ///           a "loaded" flag that returns an empty vector would silently
@@ -290,14 +268,12 @@ async fn tts_warmup_populates_worker_handles() {
 /// PURPOSE:  `cool_down_tts` must take the command sender and let the worker
 ///           thread exit; a worker that never joins pins the TTS model in RAM
 ///           and keeps the ONNX session alive after eviction.
-/// SCENARIO: Warm up the TTS worker, cool it down, then join the handle.
-/// ASSERTS:  `tts_tx` is `None` after the cool-down and the worker thread
-///           joins without panicking.
+/// SCENARIO: Warm up the TTS worker, then cool it down.
+/// ASSERTS:  `tts_tx` and the stored worker handle are both `None` after cool-down,
+///           proving `cool_down_tts` signalled shutdown and reaped the handle.
 /// CLASS:    happy-path
 /// REQUIRES: VOX_MODELS_DIR with the Supertonic TTS weights
-/// MUTANT:   Make `cool_down_tts` leave the sender in place — the `tts_tx`
-///           assertion would fail; make the worker ignore `Shutdown` — the
-///           join assertion would hang and trip the test timeout.
+/// MUTANT:   Make `cool_down_tts` leave the sender or handle in place — either assertion would fail.
 #[tokio::test]
 async fn tts_cooldown_clears_sender_and_joins_worker() {
     tokio::time::timeout(Duration::from_secs(20), async {

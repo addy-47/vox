@@ -320,7 +320,7 @@ async fn transcript_is_stored_and_dispatched_to_the_llm() {
 /// MUTANT:   Remove the `text.trim().is_empty()` guard.
 #[tokio::test]
 async fn empty_transcript_returns_to_ready_without_dispatch() {
-    let rig = Rig::new().await;
+    let mut rig = Rig::new().await;
     rig.state.pipeline.set_state(InteractionState::Thinking);
 
     rig.send(VoxEvent::TranscriptFinal {
@@ -333,6 +333,7 @@ async fn empty_transcript_returns_to_ready_without_dispatch() {
         rig.wait_state(InteractionState::Ready, DEADLINE),
         "empty transcript must return the pipeline to Ready"
     );
+    rig.quiesce();
     rig.assert_no_generation("empty transcript");
 }
 
@@ -365,7 +366,7 @@ async fn transcript_outside_thinking_is_dropped() {
 /// MUTANT:   Dispatch the harness turn in every pipeline mode.
 #[tokio::test]
 async fn realtime_mode_keeps_the_query_but_does_not_dispatch() {
-    let rig = Rig::new().await;
+    let mut rig = Rig::new().await;
     {
         let mut settings = rig.state.settings.write().unwrap();
         settings.interaction.pipeline_mode = PipelineMode::Realtime;
@@ -385,6 +386,7 @@ async fn realtime_mode_keeps_the_query_but_does_not_dispatch() {
 
     assert_eq!(rig.state.pipeline.state(), InteractionState::Thinking);
     assert_eq!(rig.accumulator(), "realtime user query");
+    rig.quiesce();
     rig.assert_no_generation("realtime mode");
 }
 
@@ -402,7 +404,7 @@ async fn realtime_mode_keeps_the_query_but_does_not_dispatch() {
 /// time between the user turn and the answer.
 #[tokio::test]
 async fn duplicate_user_turn_is_suppressed_before_dispatch() {
-    let rig = Rig::new().await;
+    let mut rig = Rig::new().await;
     {
         let mut guard = rig.state.harness.lock();
         let harness = guard.as_mut().expect("Harness must be mounted");
@@ -421,6 +423,7 @@ async fn duplicate_user_turn_is_suppressed_before_dispatch() {
         rig.wait_state(InteractionState::Ready, DEADLINE),
         "a duplicate suppressed turn must return to Ready"
     );
+    rig.quiesce();
 
     assert_eq!(
         rig.request_count(),

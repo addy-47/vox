@@ -28,7 +28,7 @@ use vox_lib::{
         events::{InteractionMode, PipelineMode, VoxEvent},
         state::{InteractionOwner, InteractionState},
     },
-    harness::{Harness, TurnExecutionRequest, TurnOutcome},
+    harness::{Harness, Role, TurnExecutionRequest, TurnOutcome},
     pipeline::{router::spawn_router, RoutingContext},
     services::{
         llm::{
@@ -252,6 +252,17 @@ async fn scripted_stream_dispatches_clauses_to_tts() {
         texts
     );
 
+    // LlmFinished is delivered through the real router. The router marks llm_done
+    // for the active turn; observe that terminal latch before shutdown.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !rig.state.pipeline.is_llm_done() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        rig.state.pipeline.is_llm_done(),
+        "the real router must process LlmFinished and latch llm_done"
+    );
+
     rig.shutdown();
 }
 
@@ -321,10 +332,9 @@ async fn tools_registered_but_unused_stream_completes() {
 /// PURPOSE:  A real generated turn must stream its clauses to the TTS and commit both
 ///           messages to the harness history.
 /// SCENARIO: The local Qwen model answers a prompt through the real harness turn.
-/// ASSERTS:  The turn completes, `LlmFinished` is delivered to the real router, at least
-///           one clause reaches the TTS as a turn response, the pending job count equals
-///           the clause count, and production committed the query and the answer to the
-///           history.
+/// ASSERTS:  The turn completes, at least one clause reaches the TTS as a turn response,
+///           and production committed both the user query and the assistant answer to
+///           harness history.
 /// CLASS:    happy-path
 /// REQUIRES: the Qwen GGUF model + the production UDS LLM sidecar (F-002 fixed)
 /// MUTANT:   Remove `harness.history.push_assistant_turn(...)` from the completion path.
@@ -374,6 +384,27 @@ async fn harness_turn_streams_clauses_to_tts_and_commits_history() {
             !clauses.is_empty(),
             "Real LLM token streaming must produce at least one TTS clause"
         );
+
+        // The named MUTANT deletes this commit. Assert the persisted conversation pair
+        // rather than trusting a non-empty accumulator.
+        let harness_guard = rig.state.harness.lock();
+        let harness = harness_guard
+            .as_ref()
+            .expect("harness must stay mounted after a completed turn");
+        let messages = harness.messages();
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.role == Role::User && m.content.contains("Hello!")),
+            "production must commit the staged user query to history"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.role == Role::Assistant && !m.content.trim().is_empty()),
+            "production must commit the generated assistant answer to history"
+        );
+        drop(harness_guard);
 
         rig.shutdown();
     })

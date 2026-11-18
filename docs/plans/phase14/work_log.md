@@ -1,5 +1,25 @@
 # Phase 14 Work Log
 
+## 2026-11-18 — Checkpoint 3: Test-Side Fixes and Re-Verification (Senior Test Engineer)
+
+- **Role:** Senior Test Engineer. Test-only changes; no production source or spec edits.
+- **Scope:** all 11 critical false-greens from CP2 plus high-severity intent, join, quiescence, ignore-metadata, and hygiene findings.
+- **Key fixes:** playback helper now uses state-owned cancel/sink atomics; cancel-flag re-arm and TTS-fallback tests rebuilt around real production paths; history commits asserted; anti-architecture leaf tests replaced with a real `execute_turn` tool turn; guard test given FIFO sentinel + positive control; IPC routing test derives commands from production `generate_handler![]`; banned `try_recv` negative removed; compaction-exclusion tests strengthened to global scope; 18 intent blocks reconciled; joins propagated; 3 quiescence barriers added; owner/expiry added to all 4 ignored tests; 8 wall-clock asserts removed; one no-op-unload test folded.
+- **Suite verification:** `cargo nextest run --release --test-threads=1 --no-fail-fast` → **563 tests run: 561 passed, 2 failed, 4 skipped** (187.532s). The 2 failures are the authoritative red seams for TF-01 (global compaction exclusion); they are deliberately left red.
+- **Docs updated:** `docs/tests/test-review-report.md` (§10 fix register + final numbers), `docs/tests/test-findings.md` (TF-01 confirmed red), `docs/tests/test-baseline-report.md` (CP3 summary + historical baseline preserved).
+- **Status:** Checkpoint 3 complete — stopped for user summary. Backend engineer owns TF-01, TF-02, TF-03, TF-04 (Checkpoint 4). Mutation testing deferred to the final checkpoint.
+
+## 2026-11-18 — Checkpoint 2: Full Test-Suite Audit (Senior Test Engineer)
+
+- **Role:** Senior Test Engineer. Clean-room, read-only audit of tests; no production source changes.
+- **Grounding:** read rules, `/create-test`, `/review`, `/rca`, specs, refactor plan, last six commits. Confirmed commit `52023408` fixed the two spec/plan divergences (`Ready → Speaking`, typed-text barge-in) and verified both against `playback.rs:31-34` and `text.rs:60-92`.
+- **Suite evidence (executed):** `cargo nextest run --release --test-threads=1 --no-fail-fast` → **564 passed, 0 failed, 4 skipped** in 188.292s. Green does not imply defect-sensitive.
+- **Method:** mechanical rubric scan of 31,265 lines / 341 intent blocks / 26 binaries + 227 unit tests; four independent clean-room auditors over disjoint file groups; direct source re-verification of every 🔴 finding and a 🟠 sample.
+- **Result:** 11 critical false-greens, ~40 high-severity defects. Key finding: `db-spec.md §5.4/§8` mandates global compaction exclusion but `schema.rs:88` implements per-session; two tests encode the weaker contract and pass. Four E2E scenes call `process::exit(0)`. Playback tests inject fallback events and never set the hardware cancel flag.
+- **Artifacts:** created `docs/tests/test-review-report.md` (full rubric review), `docs/tests/test-findings.md` (production defects / unreachable scenes), `docs/tests/mutation_report.md` (pending placeholder); deleted legacy `test-audit-actual-issues-2026-11.md`; kept benchmark and baseline reports.
+- **Style guide:** added closed `docs/tests/` layout as §7.4 in `testing-style-guide.md`; replaced three dead phase14 doc pointers in both `testing-style-guide.md` and `test-engineer.md`.
+- **Status:** Checkpoint 2 complete — stopped for user summary. Test fixes deferred to Checkpoint 3; mutation testing deferred to final checkpoint.
+
 ## 2026-11-18 — SSOT Specification Alignment: Multimodal Text Barge-In & Ready Playback Ingress
 
 - **Role:** Principal System Architect.

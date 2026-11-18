@@ -480,17 +480,12 @@ async fn fact_delete_cascades_to_its_vector() {
     .expect("fact_delete_cascades_to_its_vector timed out");
 }
 
-/// PURPOSE:  Only one compaction may be in progress per session; a second
-///           one would compact the same turns twice and double-write the
-///           facts.
-/// SCENARIO: Record an in-progress compaction and then try to record a
-///           second one for the same session.
-/// ASSERTS:  The second call fails with a unique-constraint error naming the
-///           partial index.
+/// PURPOSE:  Only one compaction may be in progress across the whole database (db-spec §5.4/§8).
+/// SCENARIO: Record an in-progress compaction, then try a second for the same session and for a different session.
+/// ASSERTS:  Both calls fail with a unique-constraint error naming the partial index.
 /// CLASS:    error-path
 /// REQUIRES: none
-/// MUTANT:   Drop `idx_compactions_one_in_progress` from the migration — the
-///           error assertion would fail.
+/// MUTANT:   Scope `idx_compactions_one_in_progress` by session_id — the cross-session assertion would fail.
 #[tokio::test]
 async fn second_in_progress_compaction_is_rejected_by_partial_index() {
     tokio::time::timeout(Duration::from_secs(15), async {
@@ -523,6 +518,19 @@ async fn second_in_progress_compaction_is_rejected_by_partial_index() {
                 || err_str.contains("idx_compactions_one_in_progress"),
             "Error must indicate unique constraint failure, got: {}",
             err_str
+        );
+
+        // db-spec §5.4 requires GLOBAL exclusion, not per-session exclusion.
+        // A compaction for a different session must also be rejected while run_1 is active.
+        let other_session = 20302i64;
+        create_session_with_id(&conn, other_session, Some("default"))
+            .await
+            .expect("Failed to create second session");
+        let cross_session_res =
+            record_compaction_start(&conn, other_session, "soft", 1, 10).await;
+        assert!(
+            cross_session_res.is_err(),
+            "db-spec §5.4: only one in_progress compaction may exist across all sessions"
         );
     })
     .await

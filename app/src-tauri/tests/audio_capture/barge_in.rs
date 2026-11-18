@@ -183,10 +183,9 @@ async fn solo_playback_over_six_seconds_never_interrupts_with_pipewire_delay() {
 /// PURPOSE:  Real user speech during Speaking must interrupt the assistant.
 /// SCENARIO: After 2.5 s of clean reference, the mic hears double talk (user speech
 ///           over the speaker's playback).
-/// ASSERTS:  Speaking -> Listening; turn_id increments; interrupt raises cancel_flag;
-///           playback buffer is flushed by the discard path; the user's speech is
-///           flushed to STT as StreamChunks carrying the NEW turn_id.
-/// CLASS:    happy-path (barge-in) + interrupt wiring
+/// ASSERTS:  Speaking -> Listening; turn_id stays at TURN on Stage 1 (RULE-EVT-01A); the
+///           user's speech binds to the active turn and is flushed to STT as StreamChunks.
+/// CLASS:    happy-path
 /// REQUIRES: the test audio assets
 /// MUTANT:   Drop SpeechStart during Speaking (bracket arms never reached).
 #[tokio::test]
@@ -229,15 +228,6 @@ async fn double_talk_barge_in_cancels_the_playback_and_opens_listening() {
             scene.state.pipeline.turn_id.load(Ordering::Relaxed),
             TURN,
             "barge-in on SpeechStart must NOT advance turn_id before semantic resolution"
-        );
-        assert!(
-            scene
-                .state
-                .pipeline
-                .pending_tts_jobs
-                .load(Ordering::Relaxed)
-                == 0,
-            "interrupt must reset pending synthesis jobs"
         );
 
         // The discard path in PlaybackStreamContext empties the playback buffer.

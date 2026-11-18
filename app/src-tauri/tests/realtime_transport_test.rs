@@ -774,7 +774,7 @@ async fn purge_session_cache_removes_the_cache_file() {
 /// MUTANT:   Skip the health check in `create_realtime_provider` — the
 ///           health assertion would fail.
 #[tokio::test]
-#[ignore = "Requires live cloud API key (GEMINI_API_KEY or DEEPGRAM_API_KEY)"]
+#[ignore = "Requires live cloud API key (GEMINI_API_KEY or DEEPGRAM_API_KEY). owner: test-engineer; expiry: 2026-12-18; run: cargo nextest run --test realtime_transport_test -E 'test(live_cloud_realtime_handshake)' -- --ignored"]
 async fn live_cloud_realtime_handshake() {
     tokio::time::timeout(Duration::from_secs(30), async {
         let _guard = TempPathsGuard::new();

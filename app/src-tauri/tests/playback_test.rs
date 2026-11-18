@@ -132,13 +132,15 @@ async fn playback_gates_thinking_to_speaking_and_speaking_to_ready() {
             tokio::task::spawn_blocking(move || router_handle.join()),
         )
         .await
-        .expect("Router thread join timed out");
+        .expect("Router thread join timed out")
+        .expect("router thread panicked");
     })
     .await
     .expect("test_playback_gates_thinking_to_speaking_and_speaking_to_ready timed out");
 }
 
 /// PURPOSE:  The pre-roll cushion must not arm on a short utterance.
+/// SCENARIO: Ingest fewer than the pre-roll threshold samples, then flush.
 /// ASSERTS:  Playback does not start until the flush.
 /// CLASS:    edge-case
 /// REQUIRES: none
@@ -297,7 +299,8 @@ async fn playback_finished_is_deferred_while_a_job_is_pending() {
             tokio::task::spawn_blocking(move || router_handle.join()),
         )
         .await
-        .expect("Router thread join timed out");
+        .expect("Router thread join timed out")
+        .expect("router thread panicked");
     })
     .await
     .expect("test_playback_finished_deferred_while_pending timed out");
@@ -416,20 +419,15 @@ fn speech_detection_follows_the_audio_output_mode() {
         .expect("VAD actor thread join timed out");
 }
 
-/// PURPOSE:  A barge-in must stop the current turn and open the next one.
-/// SCENARIO: Speech starts while the assistant is speaking.
-/// ASSERTS:  The playback is cancelled, the turn id advances and the state becomes
-///           Listening.
+/// PURPOSE:  Stage 1 acoustic barge-in pauses generation without ending the active turn.
+/// SCENARIO: Speech starts while the assistant is speaking with synthesis work pending.
+/// ASSERTS:  turn_id is unchanged, turn_cancel_token stays armed, hardware_cancel_flag stays
+///           false, playback is muted, and the state becomes Listening (RULE-EVT-08 §1).
 /// CLASS:    happy-path
 /// REQUIRES: none
-/// MUTANT:   Skip the turn advance on a barge-in.
-/// Subtest 6: Barge-in interrupt lifecycle.
-/// Seed Speaking state during Turn 1 with pending synthesis and unplayed audio.
-/// PttStart arriving at the router cancels the turn, clears accumulator,
-/// cancels playback, rotates to Turn 2, and transitions state to Listening.
-
+/// MUTANT:   interrupt.rs: Set hardware_cancel_flag or cancel turn_cancel_token on SpeechStart.
 #[tokio::test]
-async fn barge_in_cancels_the_turn_and_advances_it() {
+async fn stage1_ptt_pauses_generation_without_ending_the_turn() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
@@ -562,7 +560,8 @@ async fn barge_in_cancels_the_turn_and_advances_it() {
             tokio::task::spawn_blocking(move || router_handle.join()),
         )
         .await
-        .expect("Router thread join timed out");
+        .expect("Router thread join timed out")
+        .expect("router thread panicked");
     })
     .await
     .expect("test_barge_in_cancels_and_advances_turn timed out");
@@ -618,7 +617,10 @@ async fn duplex_quiescence_playback_finished_before_llm_finished_returns_thinkin
         );
 
         let _ = event_tx.send(VoxEvent::Shutdown);
-        let _ = tokio::task::spawn_blocking(move || router_handle.join()).await;
+        tokio::task::spawn_blocking(move || router_handle.join())
+            .await
+            .expect("router thread join timed out")
+            .expect("router thread panicked");
     })
     .await
     .expect("test timed out");
@@ -648,38 +650,48 @@ async fn hardware_cancel_flag_rearmed_after_barge_in_produces_audible_chunks() {
 
         let router_handle = spawn_router(app.clone(), event_rx).expect("spawn router");
 
-        // Simulate barge-in on Turn 1
-        playback_engine.cancel();
+        // Real barge-in: cancel_active_turn latches the hardware cancel flag.
+        // PlaybackEngine::cancel() deliberately must NOT set this flag.
+        state.pipeline.cancel_active_turn();
+        assert!(
+            state.pipeline.hardware_cancel_flag.load(Ordering::Relaxed),
+            "cancel_active_turn must latch hardware_cancel_flag (RULE-EVT-09 §4)"
+        );
 
-        // Turn 2 commences
+        // Turn 2 commences; next_turn must re-arm the flag.
         let (turn_2, _token) = state.pipeline.next_turn();
         assert_eq!(turn_2, turn_1 + 1, "next_turn must advance turn_id");
+        assert!(
+            !state.pipeline.hardware_cancel_flag.load(Ordering::Relaxed),
+            "next_turn must re-arm hardware_cancel_flag after a real barge-in"
+        );
 
-        // Ingest audio chunk for Turn 2
+        // Turn 2 audio must be accepted, not dropped by a latched cancel flag.
         let chunk = vec![0.1f32; 4800];
         playback_engine.ingest_chunk(&chunk);
-
-        // Turn 2 audio must NOT be dropped by latched cancel flag
         assert!(
             playback_engine.buffer_len() > 0,
-            "Playback buffer must accept Turn 2 chunks after barge-in (cancel flag must be re-armed)"
+            "Playback buffer must accept Turn 2 chunks after the flag is re-armed"
         );
 
         let _ = event_tx.send(VoxEvent::Shutdown);
-        let _ = tokio::task::spawn_blocking(move || router_handle.join()).await;
+        tokio::task::spawn_blocking(move || router_handle.join())
+            .await
+            .expect("router thread join timed out")
+            .expect("router thread panicked");
     })
     .await
     .expect("test timed out");
 }
 
-/// PURPOSE:  Ensure zero-audio TTS synthesis emits a fallback PlaybackFinished event to close the quiescence latch and prevent pipeline hang.
-/// SCENARIO: Turn is in Thinking; TTS completes a clause with zero audio samples; pending_tts_jobs drops to 0; sink buffer is empty.
-/// ASSERTS:  Pipeline reaches Ready after LlmFinished and fallback PlaybackFinished per RULE-EVT-09 §4.
+/// PURPOSE:  A completed model pass whose audio is already drained must close the duplex latch.
+/// SCENARIO: Turn is in Thinking with pending_tts_jobs == 0 and an empty sink; LlmFinished arrives.
+/// ASSERTS:  llm_done latches true and the pipeline transitions Thinking -> Ready per RULE-EVT-09 §3.
 /// CLASS:    edge-case
 /// REQUIRES: none
-/// MUTANT:   tts/actor.rs: Delete fallback PlaybackFinished when remaining_jobs == 0 and buffer is empty.
+/// MUTANT:   router.rs: On LlmFinished with drained audio, set llm_done but do not transition to Ready.
 #[tokio::test]
-async fn zero_audio_fallback_emits_playback_finished_and_closes_quiescence_latch() {
+async fn llm_finished_with_drained_audio_closes_quiescence_latch() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
@@ -694,13 +706,9 @@ async fn zero_audio_fallback_emits_playback_finished_and_closes_quiescence_latch
         let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
         let router_handle = spawn_router(app.clone(), event_rx).expect("spawn router");
 
-        // LLM finishes (emits LlmFinished)
+        // The cognitive loop finishes with no synthesis work outstanding. The router
+        // must evaluate the quiescence law itself; the test injects no exit event.
         let _ = event_tx.send(VoxEvent::LlmFinished { turn_id });
-
-        // Zero-audio clause: zero samples generated, fallback PlaybackFinished emitted
-        let _ = event_tx.send(VoxEvent::PlaybackFinished {
-            turn_id,
-        });
 
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline {
@@ -713,11 +721,18 @@ async fn zero_audio_fallback_emits_playback_finished_and_closes_quiescence_latch
         assert_eq!(
             state.pipeline.state(),
             InteractionState::Ready,
-            "Fallback PlaybackFinished with LlmFinished must resolve quiescence to Ready"
+            "LlmFinished with drained audio must resolve quiescence to Ready"
+        );
+        assert!(
+            state.pipeline.is_llm_done(),
+            "LlmFinished must latch llm_done for the active turn"
         );
 
         let _ = event_tx.send(VoxEvent::Shutdown);
-        let _ = tokio::task::spawn_blocking(move || router_handle.join()).await;
+        tokio::task::spawn_blocking(move || router_handle.join())
+            .await
+            .expect("router thread join timed out")
+            .expect("router thread panicked");
     })
     .await
     .expect("test timed out");

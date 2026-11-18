@@ -237,11 +237,9 @@ async fn compaction_commit_stages_every_fact_in_the_ingestion_queue() {
     .expect("compaction_commit_stages_every_fact_in_the_ingestion_queue timed out");
 }
 
-/// PURPOSE:  Two compactions of the same session must not run at once; the
-///           second one would duplicate every extracted fact.
-/// SCENARIO: Record an in-progress compaction and try to record a second one
-///           for the same session.
-/// ASSERTS:  The second call fails with a `UNIQUE constraint failed` error.
+/// PURPOSE:  db-spec §5.4 requires at most one in_progress compaction across the whole database.
+/// SCENARIO: Record an in-progress compaction; try a second for the same session and for a different session.
+/// ASSERTS:  Both calls fail with a `UNIQUE constraint failed` error.
 /// CLASS:    error-path
 /// REQUIRES: none
 /// MUTANT:   Drop the partial unique index from the migration — the error
@@ -278,6 +276,22 @@ async fn second_in_progress_compaction_on_a_session_is_rejected() {
             .unwrap()
             .to_string()
             .contains("UNIQUE constraint failed"));
+
+        // Global exclusion (db-spec §5.4/§8): a different session must also be blocked.
+        let other_session = 9104i64;
+        let other_turns = (1..=2)
+            .map(|i| DatasetTurn {
+                turn: i,
+                user: format!("Other user {}", i),
+                assistant: format!("Other bot {}", i),
+            })
+            .collect::<Vec<_>>();
+        seed_turns(&conn, other_session, &other_turns).await;
+        let cross_session = record_compaction_start(&conn, other_session, "auto", 1, 2).await;
+        assert!(
+            cross_session.is_err(),
+            "db-spec §5.4: a second session must not start a compaction while one is in progress"
+        );
     })
     .await
     .expect("second_in_progress_compaction_on_a_session_is_rejected timed out");
@@ -747,7 +761,7 @@ async fn compaction_request_includes_the_prior_summary_tag() {
 /// MUTANT:   Change `fetch_turns_for_compaction` to cap the slice at 20 turns
 ///           — the turn-range assertions would fail.
 #[tokio::test]
-#[ignore = "Requires remote GPU server with Ollama gemma3:12b running"]
+#[ignore = "Requires remote GPU server with Ollama gemma3:12b running. owner: test-engineer; expiry: 2026-12-18; run: cargo nextest run --test memory_compaction_test -E 'test(compaction_slice_100_turns_against_a_remote_ollama_server)' -- --ignored"]
 async fn compaction_slice_100_turns_against_a_remote_ollama_server() {
     tokio::time::timeout(std::time::Duration::from_secs(600), async {
         let _guard = TempPathsGuard::new();

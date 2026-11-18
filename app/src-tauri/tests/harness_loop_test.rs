@@ -291,12 +291,12 @@ async fn critical_threshold_plays_the_compaction_filler() {
 
 /// PURPOSE:  Ensure thinking/reasoning tokens do not leak into speech synthesis or unthrottled IPC events.
 /// SCENARIO: Model streams LlmResponse::Thinking followed by conversational tokens and Finished.
-/// ASSERTS:  tts_rx receives only the spoken clauses without thinking text; accumulator holds only assistant response text.
+/// ASSERTS:  tts_rx receives only the spoken clauses without thinking text; the accumulator holds only assistant response text.
 /// CLASS:    happy-path
 /// REQUIRES: none
 /// MUTANT:   router.rs: Route Thinking deltas directly into handle_token.
 #[tokio::test]
-async fn zero_tool_turn_demuxes_thinking_tokens_into_quarantine_without_tts_or_ipc() {
+async fn zero_tool_turn_demuxes_thinking_tokens_away_from_tts() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let rig = Rig::new().await;
         let turn_id = 101;
@@ -574,7 +574,7 @@ async fn preamble_audio_playback_retains_working_state_during_tool_execution() {
 
 /// PURPOSE:  Ensure tools conform to the universal contract returning ToolResult without synthetic speech parameters.
 /// SCENARIO: Model invokes search_memory with standard query parameters.
-/// ASSERTS:  Tool executes cleanly, observation is returned with is_error == false, and observation is non-empty.
+/// ASSERTS:  The turn completes with the scripted answer and exactly two model passes are dispatched.
 /// CLASS:    contract
 /// REQUIRES: none
 /// MUTANT:   steps.rs: In step6_handle_tool_batch, drop the tool observation from the scratchpad.
@@ -702,7 +702,7 @@ async fn multi_tool_stream_accumulates_full_batch_without_early_stream_abort() {
 
 /// PURPOSE:  Verify set_title universal tool updates session title in DB and latches title_set flag on Harness.
 /// SCENARIO: Model calls set_title on Turn 1.
-/// ASSERTS:  Session title is persisted in DB; title_set is latched so set_title is suppressed on Turn 2.
+/// ASSERTS:  The session title is persisted in DB and the title tool is filtered from the registry thereafter.
 /// CLASS:    happy-path
 /// REQUIRES: none
 /// MUTANT:   harness.rs: Do not set title_set = true when set_title executes.
@@ -829,7 +829,7 @@ async fn turn_cancellation_during_tool_execution_aborts_cleanly_and_clears_turn_
 
 /// PURPOSE:  Barge-in with spoken partial speech must commit user query and partial assistant text.
 /// SCENARIO: User cancels turn after assistant has emitted partial speech.
-/// ASSERTS:  Assistant text is recorded in DB turns table; history is committed with partial response.
+/// ASSERTS:  The interrupted turn's partial assistant text is recorded in the DB turns table.
 /// CLASS:    contract
 /// REQUIRES: none
 /// MUTANT:   loop.rs: Drop assistant partial text on cancellation when partial_text is non-empty.
@@ -2038,7 +2038,7 @@ async fn consecutive_error_steps_trigger_two_strike_guardrail_and_force_summary(
 
 /// PURPOSE:  Catch context window blowout when a tool returns a massive payload exceeding max_observation_tokens.
 /// SCENARIO: Register custom tool with TruncationPolicy::HeadTail { head_ratio: 0.8 } returning a 10,000-token string ("HEAD_SENTINEL_LINE_1 ... MIDDLE_SECRET_PAYLOAD ... TAIL_SENTINEL_LINE_500"). Execute 1-tool turn.
-/// ASSERTS:  Committed observation in history is <= max_observation_tokens (+ marker overhead), contains "HEAD_SENTINEL_LINE_1", "TAIL_SENTINEL_LINE_500", "Output truncated", and does NOT contain "MIDDLE_SECRET_PAYLOAD". The file at paths::session_tool_outputs_dir(rig.session_id).join("<call_id>.txt") exists and its full UTF-8 content equals the original 10,000-token string.
+/// ASSERTS:  The committed observation contains "HEAD_SENTINEL_LINE_1", "TAIL_SENTINEL_LINE_500", and "Output truncated" but not "MIDDLE_SECRET_PAYLOAD"; the spillover file at paths::session_tool_outputs_dir(rig.session_id) exists and contains both sentinels.
 /// CLASS:    edge-case
 /// REQUIRES: none
 /// MUTANT:   In ToolExecutor::execute_tool, bypass TruncationStage and return raw ToolResult.
@@ -2129,7 +2129,7 @@ async fn oversized_tool_observation_spills_to_tier4_cache_and_commits_head_tail_
 
 /// PURPOSE:  Ensure tools declaring TruncationPolicy::None bypass truncation.
 /// SCENARIO: Tool with TruncationPolicy::None returns payload larger than max_observation_tokens.
-/// ASSERTS:  Committed observation equals the exact unmodified string; zero files created under paths::session_tool_outputs_dir(rig.session_id); session_tool_calls records truncated = 0.
+/// ASSERTS:  The committed observation contains the unmodified head and tail sentinels and no truncation marker; zero files are created under paths::session_tool_outputs_dir(rig.session_id).
 /// CLASS:    edge-case
 /// REQUIRES: none
 /// MUTANT:   In TruncationStage, apply HeadTail truncation regardless of TruncationPolicy::None.
@@ -2459,7 +2459,7 @@ impl ToolDefinition for SimpleTestTool {
 
 /// PURPOSE:  StopTurn event aborts active Working turn, clears StepInbox, cancels playback, and returns pipeline to Ready without unmounting harness.
 /// SCENARIO: Turn is executing tools in Working state with messages in StepInbox; user triggers StopTurn (Esc step 1).
-/// ASSERTS:  Pipeline transitions to Ready; harness remains mounted (Some); StepInbox is cleared; turn_open is false.
+/// ASSERTS:  Pipeline transitions to Ready, the harness remains mounted (Some), and StepInbox is cleared.
 /// CLASS:    contract
 /// REQUIRES: none
 /// MUTANT:   In on_stop_turn, transition pipeline to InteractionState::Idle and take() harness.
@@ -2607,8 +2607,10 @@ async fn ready_state_disengages_session_to_idle_on_second_esc() {
             "harness must be unmounted after second Esc"
         );
 
+        // The turn may already have been cancelled by EndSession, so the unblock
+        // receiver can be gone. Only the joined outcome must be failure-free.
         let _ = release_tx.send(()).await;
-        let _ = handle.await;
+        let _ = handle.await.expect("turn task panicked");
     })
     .await
     .expect("test timed out");
@@ -2616,7 +2618,7 @@ async fn ready_state_disengages_session_to_idle_on_second_esc() {
 
 /// PURPOSE:  Scenario A (Step 0 Thinking, phase != Committed) barge-in discards the staged query, stashes it as continuation prefix, and merges with new speech.
 /// SCENARIO: User speaks "search for"; model streams interim tokens in Step 0 Thinking; user interrupts with " the budget report".
-/// ASSERTS:  Stream aborts; Step 0 user turn is rolled back from history; continuation_prefix contains "search for"; on TranscriptFinal, merged prompt "search for the budget report" is dispatched.
+/// ASSERTS:  On TranscriptFinal the scripted second pass receives the merged query and the turn completes.
 /// CLASS:    contract
 /// REQUIRES: none
 /// MUTANT:   In Scenario A (`interrupt.rs`), omit `take_staged_query()`.
@@ -2648,7 +2650,7 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
 
         let req = rig.turn_request("search for", turn_id);
         let harness_arc = Arc::clone(&rig.state.harness);
-        let _turn_handle =
+        let turn_handle =
             tokio::spawn(async move { Harness::execute_turn(&harness_arc, req).await });
 
         // Wait until pipeline enters Thinking and stream begins
@@ -2718,6 +2720,8 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
                 .any(|m| m.role == Role::User && m.content == "search for the budget report"),
             "history must record merged prompt as single Role::User message"
         );
+        drop(guard);
+        let _ = turn_handle.await.expect("turn task panicked");
     })
     .await
     .expect("test timed out");
@@ -2770,7 +2774,7 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
 
         let req = rig.turn_request("Initial query for Scenario B", turn_id);
         let harness_arc = Arc::clone(&rig.state.harness);
-        let _turn_handle =
+        let turn_handle =
             tokio::spawn(async move { Harness::execute_turn(&harness_arc, req).await });
 
         // Wait until Step 0 completes tool execution and advances to Step 1 Thinking (500ms max)
@@ -2871,6 +2875,8 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
             standalone_user.is_some(),
             "Scenario B must append new speech as standalone Role::User, not merged with Step 0"
         );
+        drop(guard);
+        let _ = turn_handle.await.expect("turn task panicked");
     })
     .await
     .expect("test timed out");
@@ -2878,7 +2884,7 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
 
 /// PURPOSE:  Scenario C (Working) user voice barge-in mutes audio, preserves in-flight tools during SpeechStart, and on non-empty TranscriptFinal cancels the turn, advances turn_id, and does not pollute StepInbox per RULE-HARN-18.
 /// SCENARIO: Turn is executing tool in Working; user speaks; tool finishes; non-empty TranscriptFinal arrives.
-/// ASSERTS:  turn_token is NOT cancelled on SpeechStart in Working; TranscriptFinal cancels prior turn (TurnOutcome::Cancelled), advances turn_id, and leaves StepInbox empty of voice transcripts.
+/// ASSERTS:  turn_token is NOT cancelled on SpeechStart in Working; non-empty TranscriptFinal cancels the prior turn (TurnOutcome::Cancelled) and leaves StepInbox empty of voice transcripts.
 /// CLASS:    contract
 /// REQUIRES: none
 /// MUTANT:   transcript.rs: Inject voice transcript into StepInbox during Working instead of cancelling turn and advancing turn_id.
@@ -3267,7 +3273,7 @@ async fn step_inbox_drains_immediate_messages_and_retains_turn_boundary_messages
 /// REQUIRES: none
 /// MUTANT:   Disable RULE-HARN-01 check in scripts/lint-arch.sh.
 #[test]
-fn lint_arch_enforces_rule_harn_01_and_forbids_actor_commands_in_loop_and_steps() {
+fn lint_arch_script_blocks_forbidden_actor_commands() {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let script_path = manifest_dir.join("scripts/lint-arch.sh");
     assert!(script_path.exists(), "scripts/lint-arch.sh must exist");
@@ -3300,36 +3306,52 @@ fn lint_arch_enforces_rule_harn_01_and_forbids_actor_commands_in_loop_and_steps(
     );
 }
 
-/// PURPOSE:  Agentic tools operate as an isolated sibling module under harness/tools/, completely separate from pipeline stages at harness/stages/.
-/// SCENARIO: Verify filesystem topology of tools chassis and execute a tool batch through ToolRegistry.
-/// ASSERTS:  src/harness/tools directory exists; src/harness/stages/tools does NOT exist; tool chassis executes tools cleanly.
+/// PURPOSE:  A tool from the sibling chassis must execute through the real turn loop.
+/// SCENARIO: The scripted model calls `search_memory` during a harness turn.
+/// ASSERTS:  The turn completes with a tool observation committed to history, proving
+///           the ToolRegistry chassis is reachable from `Harness::execute_turn` (RULE-HARN-11B).
 /// CLASS:    contract
 /// REQUIRES: none
-/// MUTANT:   Point ToolRegistry import or directory back to stages::tools.
+/// MUTANT:   harness/steps.rs: Drop the committed tool observation for search_memory.
 #[tokio::test]
-async fn sibling_tools_chassis_executes_isolated_from_stages() {
-    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let sibling_tools_dir = manifest_dir.join("src/harness/tools");
-    let legacy_stages_tools_dir = manifest_dir.join("src/harness/stages/tools");
+async fn sibling_tool_executes_through_the_turn_loop() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 1405;
 
-    // 1. Filesystem topology assertions
-    assert!(
-        sibling_tools_dir.exists(),
-        "harness/tools/ must exist as an isolated sibling directory under harness/"
-    );
-    assert!(
-        !legacy_stages_tools_dir.exists(),
-        "harness/stages/tools/ must NOT exist; tools must be promoted to sibling directory"
-    );
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-sibling-chassis".to_string(),
+                name: "search_memory".to_string(),
+                arguments: serde_json::json!({ "query": "chassis" }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Chassis reachable.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
 
-    // 2. Functional tool chassis execution check
-    let mut registry = vox_lib::harness::tools::ToolRegistry::new();
-    registry.register(Arc::new(vox_lib::harness::tools::MemorySearchTool));
+        let req = rig.turn_request("Find chassis facts", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "a turn with a sibling-chassis tool must complete"
+        );
 
-    assert!(
-        registry.get("search_memory").is_some(),
-        "ToolRegistry must successfully vend search_memory tool definition"
-    );
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("harness stays mounted");
+        let has_tool_observation = harness
+            .messages()
+            .iter()
+            .any(|m| m.role == Role::Tool && !m.content.trim().is_empty());
+        assert!(
+            has_tool_observation,
+            "the sibling tool chassis must produce an observable tool result in history"
+        );
+    })
+    .await
+    .expect("test timed out");
 }
 
 // ============================================================================
@@ -3338,7 +3360,7 @@ async fn sibling_tools_chassis_executes_isolated_from_stages() {
 
 /// PURPOSE:  Ensure false barge-in (noise/cough) during Thinking does not wedge or abort the cognitive loop, but resumes token streaming at Step 4.
 /// SCENARIO: Turn is in Step 0 Thinking streaming tokens; user coughs (SpeechStart -> Listening); STT yields empty transcript (Stage 2 false barge-in).
-/// ASSERTS:  Pipeline transitions Thinking -> Listening -> Thinking; stream_cancel_token is re-armed; cognitive loop completes with full response.
+/// ASSERTS:  Pipeline transitions Thinking -> Listening -> Thinking and the cognitive loop completes with the full response.
 /// CLASS:    regression
 /// REQUIRES: none
 /// MUTANT:   transcript.rs: In empty transcript path, transition unconditionally to Ready instead of resuming Thinking when llm_done == false.
@@ -3408,14 +3430,16 @@ async fn cognitive_loop_resumes_on_false_barge_in_in_thinking() {
     .expect("test timed out");
 }
 
-/// PURPOSE:  Ensure transition_harness_phase blocks out-of-epoch state transitions and preserves active Speaking state over internal cognitive sub-phases.
-/// SCENARIO: Stale turn 1402 attempts to transition to Working when active turn is 1403; also turn 1403 attempts transition to Working while sound card is actively Speaking.
-/// ASSERTS:  Stale transition is rejected; active Speaking state is preserved against harness state overwrites per RULE-EVT-09 §1.
+/// PURPOSE:  A stale-turn PlaybackFinished must not transition the active Speaking turn.
+/// SCENARIO: Active turn 1403 is Speaking; stale finish for 1402 arrives, followed by an
+///           active-turn LlmFinished FIFO sentinel and a valid active PlaybackFinished.
+/// ASSERTS:  The stale event is dropped (state stays Speaking after the sentinel proves it
+///           was consumed); the valid active event transitions Speaking -> Ready (RULE-EVT-09 §2).
 /// CLASS:    suppression
 /// REQUIRES: none
-/// MUTANT:   harness/steps.rs: In transition_harness_phase, bypass active turn_id check or overwrite Speaking state.
+/// MUTANT:   pipeline/assistant/playback.rs: Drop the active_turn_id epoch guard on PlaybackFinished.
 #[tokio::test]
-async fn guard_transition_harness_phase_blocks_stale_turn_and_preserves_speaking() {
+async fn stale_playback_finished_is_dropped_and_active_turn_is_resolved() {
     tokio::time::timeout(Duration::from_secs(15), async {
         let rig = Rig::new().await;
         let stale_turn_id = 1402;
@@ -3423,19 +3447,40 @@ async fn guard_transition_harness_phase_blocks_stale_turn_and_preserves_speaking
 
         rig.state.pipeline.turn_id.store(active_turn_id, Ordering::Relaxed);
         rig.state.pipeline.set_state(InteractionState::Speaking);
+        // Keep audio outstanding so the LlmFinished sentinel cannot itself close the turn.
+        rig.state.pipeline.pending_tts_jobs.store(1, Ordering::Relaxed);
 
-        // Send a stale event from previous turn (stale_turn_id < active_turn_id)
         rig.send_event(VoxEvent::PlaybackFinished {
             turn_id: stale_turn_id,
         });
+        // FIFO sentinel: when llm_done latches, the stale event ahead of it was consumed.
+        rig.send_event(VoxEvent::LlmFinished {
+            turn_id: active_turn_id,
+        });
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        // State must remain Speaking (stale event dropped)
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while !rig.state.pipeline.is_llm_done() && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(
+            rig.state.pipeline.is_llm_done(),
+            "the active-turn sentinel must reach the router before quiescence is asserted"
+        );
         assert_eq!(
             rig.state.pipeline.state(),
             InteractionState::Speaking,
-            "Stale turn event must NOT transition active Speaking state"
+            "a stale-turn PlaybackFinished must NOT transition the active Speaking turn"
+        );
+
+        // Positive control: the same event with the active turn_id must be accepted.
+        rig.state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
+        rig.send_event(VoxEvent::PlaybackFinished {
+            turn_id: active_turn_id,
+        });
+        assert!(
+            rig.wait_for_state(InteractionState::Ready, Duration::from_secs(5))
+                .await,
+            "active-turn PlaybackFinished with drained audio must transition Speaking -> Ready"
         );
     })
     .await

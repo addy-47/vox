@@ -245,8 +245,8 @@ async fn full_conversational_turn_runs_from_idle_to_ready_and_persists_the_turn(
 
 /// PURPOSE:  True acoustic double-talk must interrupt the assistant mid-speech.
 /// SCENARIO: Assistant playback (turn 1) + user voice over speaker leakage at 120 ms skew.
-/// ASSERTS:  Speaking -> Listening on user onset; turn_id increments; the playback buffer
-///           is flushed by the interrupt discard path; the second turn completes to Ready.
+/// ASSERTS:  Speaking -> Listening on user onset; turn_id is unchanged on Stage 1; the second
+///           turn completes to Ready after the non-empty TranscriptFinal rotates the turn.
 /// CLASS:    end-to-end
 /// REQUIRES: VOX_MODELS_DIR
 /// MUTANT:   Disable the SpeechStart branch while Speaking in the router.
@@ -361,7 +361,7 @@ async fn true_acoustic_barge_in_during_speaking_cancels_and_completes() {
 /// CLASS:    end-to-end
 /// REQUIRES: VOX_MODELS_DIR
 /// MUTANT:   Drop the prefix stash in on_speech_start for Thinking.
-#[ignore = "PROD-BUG: LLM-CANCEL-STARVES — cancelled sidecar inference is not aborted; the merged turn hits the 30s idle timeout; see docs/tests/test-findings.md F-005"]
+#[ignore = "PROD-BUG: LLM-CANCEL-STARVES — cancelled sidecar inference is not aborted; the merged turn hits the 30s idle timeout; see docs/tests/test-findings.md TF-03. owner: backend-engineer; expiry: 2026-12-18; run: cargo nextest run --test e2e_voice_pipeline_test -E 'test(mid_thought_continuation_combines_both_bursts)' -- --ignored"]
 #[tokio::test]
 async fn mid_thought_continuation_combines_both_bursts() {
     // Real Qwen inference + real Kokoro synthesis of a forced 10-line reply
@@ -569,8 +569,7 @@ async fn sub_300ms_cough_recovers_to_ready_without_deadlock() {
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
         assert!(
-            wait_for_state(&state, InteractionState::Ready, Duration::from_secs(5)).await
-                || state.pipeline.state() == InteractionState::Ready,
+            wait_for_state(&state, InteractionState::Ready, Duration::from_secs(5)).await,
             "transient must recover to Ready via the fallback empty TranscriptFinal"
         );
         std::process::exit(0); // ORT teardown throws otherwise (F-004, see findings)
