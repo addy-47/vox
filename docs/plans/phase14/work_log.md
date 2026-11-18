@@ -1,5 +1,20 @@
 # Phase 14 Work Log
 
+## 2026-11-18 — SSOT Specification Alignment: Multimodal Text Barge-In & Ready Playback Ingress
+
+- **Role:** Principal System Architect.
+- **Objective:** Eliminate spec-to-code drift identified during lead audit across `docs/specs/events-spec.md` and `docs/specs/harness-spec.md`.
+- **Contract Hardening Applied:**
+  1. `docs/specs/events-spec.md`:
+     - Added `Ready --> Speaking: Audio Playback Starts (Late Ingress / Background Alert)` to state diagram.
+     - Added `Ready/Paused/Sleeping/Thinking/Speaking/Working --> Thinking: TextInput` edges to state diagram.
+     - Added `RULE-EVT-08D (Multimodal Typed Input & Text Barge-In)`: specifies immediate single-step turn abortion, `next_turn()` rotation, and dispatch when typed text arrives during active turns (`Thinking`, `Speaking`, `Working`). Codified `on_resume` auto-resumption from `Paused` and `Sleeping` to preserve user input while keeping `Idle` as the hard rejection boundary.
+     - Updated `RULE-EVT-09 §1` and Domain Matrix Table §5: explicitly allows `PlaybackStarted` from `Ready` for late audio playback ingress and background proactive announcements.
+  2. `docs/specs/harness-spec.md`:
+     - Updated `RULE-HARN-10B §3`: added `Ready` to the valid ingress states for `PlaybackStarted` $\to$ `Speaking`.
+     - Updated §4.4: unified user voice and typed text barge-in history contracts.
+- **Verification:** Specs and implementation code in `pipeline/assistant/{playback.rs, text.rs}` are now 100% congruent.
+
 ## 2026-11-18 — Final 3 Test Remediations & 100% Green Test Suite Certification
 
 - **Role:** Clean-Room Test Engineer.

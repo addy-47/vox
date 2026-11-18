@@ -45,6 +45,13 @@ stateDiagram-v2
     Thinking --> Listening: Barge-In (SpeechStart during Thinking)
     Thinking --> Speaking: Audio Playback Starts
     Working --> Speaking: Audio Playback Starts
+    Ready --> Speaking: Audio Playback Starts (Late Ingress / Background Alert)
+    Ready --> Thinking: TextInput
+    Paused --> Thinking: TextInput (Auto-Resume)
+    Sleeping --> Thinking: TextInput (Auto-Resume)
+    Speaking --> Thinking: TextInput (Barge-In)
+    Working --> Thinking: TextInput (Barge-In)
+    Thinking --> Thinking: TextInput (Barge-In)
     Speaking --> Thinking: Audio Drains (LLM Active, No Tool)
     Speaking --> Working: Audio Drains (LLM Active, Tool Active)
     Speaking --> Working: Tool Dispatched During Playback
@@ -136,8 +143,18 @@ stateDiagram-v2
   3. The model prompt for the new turn naturally inherits the entire conversation history, including all committed steps of the interrupted turn.
 - **RULE-EVT-08C (Working State Tool Non-Destruction on Acoustic Pause)**:
   Background tool executions run on Tokio tasks. Acoustic `SpeechStart` triggers Stage 1 (playback mute + `stream_cancel_token.cancel()`), but never aborts running tools. If `TranscriptFinal` is empty, tools continue to completion without loss of work. If `TranscriptFinal` is non-empty, `cancel_active_turn()` signals `turn_cancel_token`, which aborts the prior turn cleanly.
+- **RULE-EVT-08D (Multimodal Typed Input & Text Barge-In)**:
+  Typed user input (`TextInput`) provides an unambiguous, semantically complete query on ingress.
+  1. **Idle Rejection**: In `InteractionState::Idle`, typed input is dropped.
+  2. **Active State Interruption (Text Barge-In)**: If typed input arrives while in `Thinking`, `Speaking`, or `Working`, it represents an immediate user interruption. Because the text is already complete, it does NOT use the two-stage acoustic protocol. Instead, it:
+     a. Releases any active speech hold barrier (`inbox.release_speech_hold()`).
+     b. Mutes audio and aborts the in-flight turn via `cancel_active_turn()`.
+     c. Advances turn identity via `next_turn()`.
+     d. Clears accumulator state, stages the query, transitions to `Thinking`, and dispatches the new turn.
+  3. **Ready Ingress**: In `Ready`, typed input advances `next_turn()`, transitions to `Thinking`, and dispatches the turn.
+  4. **Standby Auto-Resume**: In `Paused` or `Sleeping`, the physical microphone is gated for acoustic privacy, but the session remains mounted. Receiving `TextInput` automatically resumes the session to `Ready` (`on_resume`) before executing the query, preventing dropped user input.
 - **RULE-EVT-09 (Duplex Speaking State Invariant & Quiescence Law)**:
-  1. **Playback Ingress**: Whenever audio playback begins on the sound card (`PlaybackStarted`), the pipeline transitions immediately from `Thinking` or `Working` to `Speaking`. If transitioning from `Working`, the active `ActivityEnvelope` in `current_activity` MUST NOT be cleared.
+  1. **Playback Ingress**: Whenever audio playback begins on the sound card (`PlaybackStarted`), the pipeline transitions immediately from `Thinking`, `Working`, or `Ready` to `Speaking`. If transitioning from `Working`, the active `ActivityEnvelope` in `current_activity` MUST NOT be cleared. Transitioning from `Ready` accommodates late audio playback ingress where generation finished before sound card buffer onset, as well as spontaneous proactive speech synthesis (e.g. background alerts).
   2. **Playback Completion & Duplex Return**: When sound card playback drains (`PlaybackFinished` where `pending_tts_jobs == 0`):
      - If `llm_done == true` (the cognitive loop has emitted `LlmFinished`): the turn is complete, and the pipeline transitions `Speaking` $\to$ `Ready`.
      - If `llm_done == false` AND `current_activity.is_some()`: audio has drained while tool execution remains active; the pipeline transitions `Speaking` $\to$ `Working` restoring the active activity envelope.
@@ -203,8 +220,8 @@ Vox operates across three primary domain topologies:
 | **`SpeechStart` / `PttStart`** | `Thinking`, `Working`, or `Speaking` | **Stage 1 (Acoustic & Stream Pause)**: Mutes audio playback immediately, cancels in-flight LLM stream via `stream_cancel_token`, allocates new `utterance_id`, transitions to `Listening`. Active tools continue. `turn_id` and `turn_cancel_token` remain preserved. | **Barge-In**: Mutes playback, sends interrupt command to server, allocates new turn ID, transitions to `Listening`. | If `Thinking`: captures turn $N+1$ without aborting turn $N$ transcription. |
 | **`SpeechEnd` / `PttStop`** | `Listening` | Transitions to `Thinking`. Dispatches captured audio to speech-to-text. | Transitions to `Thinking`. Signals speech completion to remote provider. | Transitions to `Thinking`. Dispatches audio to speech-to-text. |
 | **`TranscriptFinal`** | `Thinking` | **Stage 2 (Semantic Resolution)**: If non-empty: cancels prior turn via `cancel_active_turn()`, concatenates Step 0 staged query if present (`RULE-EVT-08A`), allocates `next_turn()`, transitions to `Thinking`, and dispatches query as brand new dialogue turn. If empty: preserves active turn, transitions to `Ready` if `llm_done`, `Working` if tool active, or rearms `stream_cancel_token` and resumes `Thinking`. | If words recognized: awaits remote audio. If empty: resets to `Ready`. | Transliterates if configured, dispatches text to desktop paste engine, resets to `Ready`. |
-| **`TextInput`** | `Ready` or `Paused` | Auto-resumes if paused, sets query in dialogue history, transitions to `Thinking`, generates response. | Auto-resumes if paused, sends text frame directly to WebSocket, transitions to `Thinking`. | Dropped (Dictation accepts voice input only). |
-| **`PlaybackStarted`** | `Thinking` or `Working` | Transitions to `Speaking`. Retains `current_activity` intact (does NOT wipe tool envelope). | Transitions to `Speaking`. | N/A (Dictation produces no audio output). |
+| **`TextInput`** | `Ready`, `Paused`, `Sleeping`, `Thinking`, `Speaking`, or `Working` | If `Ready`: advances `next_turn()`, transitions to `Thinking`, generates response. If `Paused` or `Sleeping`: auto-resumes session, advances `next_turn()`, transitions to `Thinking`. If `Thinking`, `Speaking`, or `Working`: acts as immediate text barge-in — cancels active turn via `cancel_active_turn()`, advances `next_turn()`, transitions to `Thinking`, and dispatches new query. If `Idle`: dropped. | If `Paused` or `Sleeping`: auto-resumes. If `Thinking`, `Speaking`, or `Working`: cancels active turn, sends text frame directly to WebSocket, transitions to `Thinking`. | Dropped (Dictation accepts voice input only). |
+| **`PlaybackStarted`** | `Thinking`, `Working`, or `Ready` | Transitions to `Speaking`. Retains `current_activity` intact if transitioning from `Working` (does NOT wipe tool envelope). Accepts `Ready` for late audio playback ingress or background proactive alerts. | Transitions to `Speaking`. | N/A (Dictation produces no audio output). |
 | **`PlaybackFinished`** | `Speaking` | **Duplex Quiescence Evaluation**: If `llm_done == true`, transitions to `Ready`. If `llm_done == false`, transitions back to `Working` (if `current_activity.is_some()`) or `Thinking`. | Transitions to `Ready` when server audio stream finishes playing. | N/A |
 | **`LlmFinished`** | `Thinking`, `Working`, or `Speaking` | Calls `mark_llm_finished(turn_id)` (epoch-guarded). If audio still playing or queued (`pending_tts_jobs > 0 || sink_occupied`): marks `llm_done = true`; state remains in its current value (`Speaking`, `Working`, or `Thinking`) — no transition fires. If audio already drained (`pending_tts_jobs == 0 && !sink_occupied`): transitions immediately to `Ready`. | Evaluates turn completion. | N/A |
 | **`TurnAborted`** | Any active state | Cancels audio, resets state directly to `Ready`. | Cancels audio, resets state directly to `Ready`. | Discards audio buffer, resets state directly to `Ready`. |

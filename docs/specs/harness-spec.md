@@ -160,7 +160,7 @@ flowchart TD
 - **RULE-HARN-10B (Streaming Speech Delivery & Duplex Quiescence Latch)**:
   1. Mid-stream clauses extracted by `ClauseChunker` MUST be dispatched to speech synthesis eagerly to guarantee $<800\text{ms}$ speech onset.
   2. Preamble audio playback on the sound card and background tool execution MUST execute concurrently. The coordinator MUST NOT await audio draining before launching tool futures.
-  3. When audio playback begins on the sound card (`PlaybackStarted`), the pipeline transitions `Thinking` or `Working` $\to$ `Speaking`. The active `ActivityEnvelope` in `current_activity` MUST NOT be cleared.
+  3. When audio playback begins on the sound card (`PlaybackStarted`), the pipeline transitions `Thinking`, `Working`, or `Ready` $\to$ `Speaking`. The active `ActivityEnvelope` in `current_activity` MUST NOT be cleared. Transitioning from `Ready` accommodates late audio playback ingress where generation finished before sound card buffer onset, as well as spontaneous proactive speech synthesis.
   4. When a generation pass finishes with zero tool calls (`StreamPassOutcome::Completed`), the cognitive ReAct loop is complete, and `loop.rs` emits `VoxEvent::LlmFinished { turn_id }`.
   5. Upon receiving `VoxEvent::LlmFinished`, `on_llm_finished` marks `llm_done = true` for the active turn. If audio synthesis and playback have already completely drained (`pending_tts_jobs == 0 && !sink_occupied`), `on_llm_finished` transitions the pipeline immediately to `InteractionState::Ready`.
   6. Transition to `InteractionState::Ready` is governed strictly by the **Duplex Quiescence Law**, evaluated on `PlaybackFinished` (`pending_tts_jobs == 0` with sound card buffer drained):
@@ -243,7 +243,7 @@ flowchart TD
     - Buffers external programmatic notifications (e.g. sidecar alerts, scheduled jobs) with `QueuedMessageDelivery::{Immediate, TurnBoundary}` in `stages/inbox.rs`.
     - `Immediate` messages drain at step boundaries into `ConversationHistoryStage` via `step6_await_and_drain_inbox`.
     - `TurnBoundary` messages drain upon terminal turn completion to trigger the next conversational turn.
-    - User voice barge-in creates standard dialogue turns in `turns` table and does NOT inject synthetic user messages into `StepInbox` or `session_steps`.
+    - User voice or typed text barge-in creates standard dialogue turns in `turns` table and does NOT inject synthetic user messages into `StepInbox` or `session_steps`.
 
 ---
 
