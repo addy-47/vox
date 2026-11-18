@@ -100,6 +100,15 @@ impl Default for DevanagariEngineCache {
     }
 }
 
+impl DevanagariEngineCache {
+    /// Releases the cached ORT session before a sibling engine unbinds.
+    pub fn clear(&self) {
+        if self.engine.lock().take().is_some() {
+            LIVE_DEVANAGARI_ENGINES.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+}
+
 impl Drop for DevanagariEngineCache {
     fn drop(&mut self) {
         if self.engine.lock().take().is_some() {

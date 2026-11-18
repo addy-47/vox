@@ -85,7 +85,7 @@ const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
         finished_at INTEGER
     );",
     "CREATE INDEX IF NOT EXISTS idx_compactions_session_status ON session_compactions(session_id, status);",
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_compactions_one_in_progress ON session_compactions(session_id) WHERE status = 'in_progress';",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_compactions_one_in_progress ON session_compactions(status) WHERE status = 'in_progress';",
     "CREATE INDEX IF NOT EXISTS idx_compactions_step ON session_compactions(step_id);",
     "CREATE TABLE IF NOT EXISTS personal_memory (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

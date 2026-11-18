@@ -129,12 +129,13 @@ impl LlmProvider for SidecarLlmProvider {
                 "seed": request.options.seed,
             });
 
-            let resp = client
-                .post(&completions_url)
-                .json(&payload)
-                .send()
-                .await
-                .map_err(|e| LlmError::Engine(format!("LLM sidecar request failed: {}", e)))?;
+            let resp = tokio::select! {
+                res = client
+                    .post(&completions_url)
+                    .json(&payload)
+                    .send() => res.map_err(|e| LlmError::Engine(format!("LLM sidecar request failed: {}", e)))?,
+                _ = cancel.cancelled() => return Ok(()),
+            };
 
             if !resp.status().is_success() {
                 return Err(LlmError::Engine(format!(
@@ -147,10 +148,14 @@ impl LlmProvider for SidecarLlmProvider {
             let mut line_buf = String::new();
             let mut demuxer = ThinkTagDemuxer::new();
 
-            while let Some(chunk_res) = stream.next().await {
-                if cancel.is_cancelled() {
-                    break;
-                }
+            loop {
+                let chunk_res = tokio::select! {
+                    maybe = stream.next() => match maybe {
+                        Some(res) => res,
+                        None => break,
+                    },
+                    _ = cancel.cancelled() => break,
+                };
 
                 let chunk =
                     chunk_res.map_err(|e| LlmError::Engine(format!("SSE chunk error: {}", e)))?;

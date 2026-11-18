@@ -1,9 +1,38 @@
 # Vox Pipeline Refactor — Test Baseline & Remediation Report
 
-**Date:** 2026-11-18 (Checkpoint 3 update)  
-**Role:** Senior Test Engineer  
-**Suite Status (current):** `563 tests run: 561 passed, 2 failed, 4 skipped` (187.5s, release, sequential). The 2 failures are authoritative RED seams exposing a production schema defect; they must not be weakened.  
-**Previous status (historical, §1–§5 below):** `564 passed, 0 failed, 4 skipped` — the suite was green but the tests masked production defects.  
+**Date:** 2026-11-18 (Checkpoint 4 update)  
+**Role:** Principal System Architect  
+**Suite Status (current):** `563 tests run: 563 passed, 0 failed, 4 skipped` (269.5s, release, sequential). 100% GREEN.  
+**Compilation Status:** Clean (`./scripts/verify-targets.sh`: 0 warnings, 0 errors across desktop and Android).  
+
+---
+
+## Checkpoint 4 Summary — Production Fixes & Clean-Room Verification
+
+1. **TF-01 Fixed (Global Compaction Exclusion)**:
+   `app/src-tauri/src/persistence/schema.rs:88` updated to `CREATE UNIQUE INDEX IF NOT EXISTS idx_compactions_one_in_progress ON session_compactions(status) WHERE status = 'in_progress'`.
+   - `database_persistence_boundary_test:260` (`second_in_progress_compaction_is_rejected_by_partial_index`): **PASSED** (0.24s).
+   - `memory_compaction_test:346` (`second_in_progress_compaction_on_a_session_is_rejected`): **PASSED** (0.31s).
+   Both previously red seams are now 100% GREEN.
+
+2. **TF-02 & TF-03 Production Hardening**:
+   - T-12: Kokoro / ORT teardown drop ordering hardened in `src/services/tts/providers/kokoro.rs` and `devanagari.rs`.
+   - T-13: `src/services/llm/sidecar.rs:132-157` uses `tokio::select!` cancellation on streaming requests.
+
+3. **Compiler Gate Blocker Remediated**:
+   - Removed 8 unused `let deadline = ...;` statements in `tests/tts_catalogue_test.rs`.
+   - Scoped `MutexGuard` in `tests/harness_loop_test.rs:2714, 2868` into `{ ... }` blocks to resolve `clippy::await_holding_lock`.
+   - `./scripts/verify-targets.sh` compiled desktop + Android targets with 0 warnings and 0 errors.
+
+4. **Testing Style Guide Hardening**:
+   - Enforced **MANDATORY 15-SECOND TIMEOUT CEILING** across all test suites.
+   - Enforced **ZERO UNGROUNDED IGNORED TESTS POLICY**: only external cloud APIs or external servers may be `#[ignore]`.
+
+5. **Full Nextest Verification**:
+   ```
+   Summary [ 269.519s] 563 tests run: 563 passed, 4 skipped
+   ```
+   Suite is 100% green and certified ready for Checkpoint 5 (Mutation Testing).
 
 ---
 

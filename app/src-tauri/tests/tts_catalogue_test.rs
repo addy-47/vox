@@ -62,8 +62,6 @@ const EXPECTED_EDGE_ERROR: &str =
 /// MUTANT:   Change the default provider id.
 #[test]
 fn fresh_install_resolves_to_supertonic() {
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-
     assert_eq!(
         TtsActiveProvider::default(),
         TtsActiveProvider::Supertonic,
@@ -190,8 +188,6 @@ async fn supertonic_path_produces_non_silent_samples() {
 /// MUTANT:   Swallow the provider error and return silence.
 #[test]
 fn edge_tts_path_returns_the_explicit_availability_error() {
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
-
     let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
     let (playback, _consumer) = common::harness::create_mock_playback_engine_with_handles(
         event_tx.clone(),
@@ -260,8 +256,6 @@ fn edge_tts_path_returns_the_explicit_availability_error() {
 /// MUTANT:   Drop the Edge TTS entry from the catalogue.
 #[test]
 fn edge_tts_is_still_in_the_provider_catalogue() {
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-
     let manifest = vox_lib::setup::manifest::VoxManifest::bundled();
     let tts_groups: Vec<_> = manifest
         .model_groups
@@ -318,8 +312,6 @@ fn edge_tts_is_still_in_the_provider_catalogue() {
 /// MUTANT:   Return the first provider for an unknown id.
 #[test]
 fn provider_factory_resolves_exactly_one_provider() {
-    let deadline = std::time::Instant::now() + Duration::from_secs(20);
-
     let model_dir = common::paths::get_supertonic_model_dir();
 
     // 1. The default selection resolves to Supertonic.
@@ -389,8 +381,6 @@ fn provider_factory_resolves_exactly_one_provider() {
 /// MUTANT:   Route Devanagari to Edge TTS.
 #[test]
 fn devanagari_route_declaration_targets_supertonic() {
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-
     // 1. The route target is named and is not the dead provider.
     assert_eq!(
         DEVANAGARI_ROUTE_PROVIDER, "supertonic",
@@ -433,8 +423,6 @@ fn devanagari_route_declaration_targets_supertonic() {
 /// MUTANT:   Fall back to another provider when the weights are missing.
 #[test]
 fn devanagari_route_reports_missing_supertonic_weights() {
-    let deadline = std::time::Instant::now() + Duration::from_secs(120);
-
     let (event_tx, _event_rx) = mpsc::channel::<VoxEvent>();
     let (playback, consumer_arc) = common::harness::create_mock_playback_engine_with_handles(
         event_tx.clone(),
@@ -510,8 +498,6 @@ fn devanagari_route_reports_missing_supertonic_weights() {
 /// MUTANT:   Return one global default for every provider.
 #[test]
 fn default_voice_is_provider_aware() {
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-
     // 1. The defaults are provider-scoped.
     assert_eq!(
         default_voice_id_for_provider("kokoro"),
@@ -599,8 +585,6 @@ fn default_voice_is_provider_aware() {
 /// MUTANT:   Drop the engine cache.
 #[test]
 fn devanagari_route_reuses_one_cached_engine() {
-    let deadline = std::time::Instant::now() + Duration::from_secs(180);
-
     let (event_tx, _event_rx) = mpsc::channel::<VoxEvent>();
     let (playback, consumer_arc) = common::harness::create_mock_playback_engine_with_handles(
         event_tx.clone(),

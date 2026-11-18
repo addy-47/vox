@@ -206,7 +206,8 @@ pub fn spawn_tts_worker(
         }
     }
 
-    log::info!("[TTS Worker] Loop exited. Provider will be dropped.");
+    log::info!("[TTS Worker] Loop exited. Releasing provider on worker thread.");
+    drop(provider);
 }
 
 /// Handles and flags passed when warming up the TTS actor.

@@ -141,8 +141,11 @@ Every fallible seam asserts both directions: the failure is surfaced, and the ha
 
 ### 5.4 Time
 
-- Every async test wraps its body in a timeout. A deadlock must fail, not hang.
-- Synchronous channel loops use a deadline or timeout primitive.
+> 🛑 **MANDATORY TIMEOUT CEILING: NO TIMEOUT IN ANY TEST MAY EXCEED 15 SECONDS.**
+> **Every test must fail fast. Even on a single-threaded release run, a deterministic response, state transition, or local model pass must produce an observable exit within 15 seconds. If there is no response, the test MUST NOT hang or poll for minutes; it MUST fail immediately! Long-running timeouts (e.g. 60s, 240s, 500s, 600s) are strictly forbidden across all unit, component, integration, and E2E suites.**
+
+- Every async test wraps its body in a timeout capped at $\le 15\text{s}$. A deadlock or stalled stream must fail fast, not hang.
+- Synchronous channel loops use a deadline or timeout primitive capped at $\le 15\text{s}$.
 - No wall-clock latency assertion belongs in the default tier. `< 15 ms` on a shared machine measures the scheduler and environment, not the product. Latency belongs in benchmarks or an explicitly marked benchmark subtest.
 - `sleep` may not be used to reach a state. Wait on the state transition or the event.
 
@@ -249,12 +252,15 @@ CI is green. Report the local command and its result, or report `unverified`.
 
 ---
 
-## 8. External Dependencies
+## 8. External Dependencies & Ignored Tests
+
+> 🛑 **ZERO UNGROUNDED IGNORED TESTS POLICY:**
+> **No test may be marked `#[ignore]` unless it strictly requires an external cloud provider API key (`GEMINI_API_KEY`, `DEEPGRAM_API_KEY`) or an external remote GPU server. Offline transports, local models (GGUF, Kokoro, Silero, Nemotron), and loopback network interfaces (WebSocket, localhost UDS) MUST NEVER be ignored. A local test that fails is a defect or broken contract—it must be fixed or pruned, never swept under an `#[ignore]` marker.**
 
 - Cloud provider keys are not required by the default suite. Live keys buy contract verification; they cost determinism, money, rate-limit flakes, and secret handling.
 - Offline transport tests intercept at the HTTP boundary and assert method, URL, headers, body shape, auth presence, timeout, retry count, and error mapping.
 - Recorded cassettes cover parser drift.
-- Live provider tests are `#[ignore]` or framework equivalents, run manually, and must carry owner, reason, and expiry date.
+- Live provider tests requiring external cloud credentials or remote hardware are `#[ignore]` or framework equivalents, run manually, and must carry owner, reason, and expiry date.
 - An ignored test with no owner, no reason, and no expiry is deleted, not ignored.
 
 ---

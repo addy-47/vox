@@ -5,6 +5,7 @@ use std::sync::{
 
 use parking_lot::Mutex;
 use tokio::spawn as spawn_task;
+use tokio_util::sync::CancellationToken;
 
 use crate::harness::{
     chassis::Harness,
@@ -172,15 +173,29 @@ async fn execute_loop_iterations(
         };
 
         // === STEP 5: Dispatch Request to Duplex LLM Pipe ===
+        // The provider must abort on either a turn cancel or a Stage 1 stream pause.
+        let gen_cancel = CancellationToken::new();
+        let bridge_cancel = gen_cancel.clone();
+        let turn_token = ctx.req.cancel.clone();
+        let stream_token = ctx.req.app_state.pipeline.stream_cancel_token();
+        let cancel_bridge = spawn_task(async move {
+            tokio::select! {
+                _ = turn_token.cancelled() => {},
+                _ = stream_token.cancelled() => {},
+            }
+            bridge_cancel.cancel();
+        });
+
         ctx.req.app_state.turn_metrics.record_llm_dispatch();
         let response_rx = match step5_dispatch_llm(
             ctx.req.llm_tx.as_ref(),
             generation_request,
             turn_id,
-            &ctx.req.cancel,
+            &gen_cancel,
         ) {
             Ok(rx) => rx,
             Err(err) => {
+                cancel_bridge.abort();
                 return step7_handle_error(
                     ctx.harness_arc,
                     turn_id,
@@ -193,6 +208,7 @@ async fn execute_loop_iterations(
         // === STEP 6: Stream Tokens & Intercept Tool Calls ===
         let stream_res =
             step6_run_stream_pass(ctx.stream_stage, ctx.stream_handles, response_rx).await;
+        cancel_bridge.abort();
         match stream_res {
             Ok(pass_outcome) => {
                 let (action, circuit_broken) =

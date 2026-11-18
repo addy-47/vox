@@ -131,6 +131,14 @@ impl KokoroEngine {
     }
 }
 
+impl Drop for KokoroEngine {
+    fn drop(&mut self) {
+        // Unbind the Supertonic ORT session before the Kokoro session is released.
+        self.devanagari.clear();
+        log::info!("[Kokoro] Released synthesis sessions in unwind order");
+    }
+}
+
 impl TtsProvider for KokoroEngine {
     /// Declares this provider's capabilities.
     fn caps() -> ProviderCaps {

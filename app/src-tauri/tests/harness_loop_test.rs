@@ -2711,16 +2711,17 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        let guard = rig.state.harness.lock();
-        let harness = guard.as_ref().unwrap();
-        assert!(
-            harness
-                .messages()
-                .iter()
-                .any(|m| m.role == Role::User && m.content == "search for the budget report"),
-            "history must record merged prompt as single Role::User message"
-        );
-        drop(guard);
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().unwrap();
+            assert!(
+                harness
+                    .messages()
+                    .iter()
+                    .any(|m| m.role == Role::User && m.content == "search for the budget report"),
+                "history must record merged prompt as single Role::User message"
+            );
+        }
         let _ = turn_handle.await.expect("turn task panicked");
     })
     .await
@@ -2865,17 +2866,18 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
         }
 
         // Assert new speech committed as standalone Role::User without Step 0 prepended
-        let guard = rig.state.harness.lock();
-        let harness = guard.as_ref().unwrap();
-        let messages = harness.messages();
-        let standalone_user = messages
-            .iter()
-            .find(|m| m.role == Role::User && m.content == "Also check the weather");
-        assert!(
-            standalone_user.is_some(),
-            "Scenario B must append new speech as standalone Role::User, not merged with Step 0"
-        );
-        drop(guard);
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().unwrap();
+            let messages = harness.messages();
+            let standalone_user = messages
+                .iter()
+                .find(|m| m.role == Role::User && m.content == "Also check the weather");
+            assert!(
+                standalone_user.is_some(),
+                "Scenario B must append new speech as standalone Role::User, not merged with Step 0"
+            );
+        }
         let _ = turn_handle.await.expect("turn task panicked");
     })
     .await
