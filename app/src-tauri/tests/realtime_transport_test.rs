@@ -208,83 +208,9 @@ async fn outbound_commands_are_encoded_and_reach_the_origin() {
     .expect("outbound_commands_are_encoded_and_reach_the_origin timed out");
 }
 
-/// PURPOSE:  An inbound binary frame must be decoded into the PCM samples
-///           the provider sent; a mis-decoded frame plays back as noise.
-/// SCENARIO: Have the origin send a binary frame carrying two little-endian
-///           i16 samples and read the provider event.
-/// ASSERTS:  An `AudioChunk` event arrives whose samples are exactly
-///           `[16, 32]`.
-/// CLASS:    happy-path
-/// REQUIRES: none
-/// MUTANT:   Swap the byte order in the binary decoder — the sample
-///           assertion would fail.
-#[tokio::test]
-async fn inbound_binary_frame_is_decoded_into_an_audio_chunk_event() {
-    tokio::time::timeout(Duration::from_secs(15), async {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let server_addr = listener.local_addr().unwrap();
+// Folded into `src/services/realtime/providers/deepgram/session.rs` unit tests:
+// this scene asserted the test-owned TestDriver decoder, not production decode.
 
-        let server_task = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
-
-            // Send binary audio chunk back to client
-            let audio_bytes = vec![0x10, 0x00, 0x20, 0x00]; // i16 values: [16, 32]
-            ws.send(Message::Binary(audio_bytes.into())).await.unwrap();
-
-            let _ = ws.close(None).await;
-        });
-
-        let (ws_write, ws_read) = connect_to_ws(server_addr).await;
-        let (event_tx, mut event_rx) = mpsc::channel(64);
-        let (_state_tx, state_rx) = tokio::sync::watch::channel(InteractionState::Ready);
-        let turn_id_ref = Arc::new(AtomicU32::new(1));
-
-        let reconnect_fn: ReconnectFn = Box::new(move || {
-            Box::pin(async move {
-                anyhow::bail!("Reconnect not expected in wire framing test");
-            })
-        });
-
-        let driver = Arc::new(TestDriver::new());
-        let config = HarnessConfig {
-            max_reconnect_attempts: 1,
-            reconnect_base_delay_secs: 0,
-            reconnect_factor_secs: 0,
-        };
-
-        let init = make_harness_init(
-            ws_write,
-            ws_read,
-            reconnect_fn,
-            event_tx,
-            state_rx,
-            turn_id_ref,
-        );
-
-        let _handles = spawn_harness(driver, config, init);
-
-        let event = tokio::time::timeout(Duration::from_secs(5), event_rx.recv())
-            .await
-            .expect("Must receive inbound event within timeout")
-            .expect("Channel must remain open");
-
-        match event {
-            RealtimeProviderEvent::AudioChunk(pcm) => {
-                assert_eq!(
-                    pcm,
-                    vec![16, 32],
-                    "Inbound audio chunk PCM must match wire bytes"
-                );
-            }
-            other => panic!("Expected AudioChunk event, got: {:?}", other),
-        }
-
-        server_task.await.unwrap();
-    })
-    .await
-    .expect("inbound_binary_frame_is_decoded_into_an_audio_chunk_event timed out");
-}
 
 /// PURPOSE:  When the provider says goodbye the harness must reconnect and
 ///           keep the session usable; a session that dies on a polite

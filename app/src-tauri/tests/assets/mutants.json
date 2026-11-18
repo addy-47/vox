@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "description": "One-line silent production defects seeded from intent-block MUTANT lines. Each mutant is applied, its bound test runs in release mode, then the file is restored byte-for-byte.",
+  "mutants": [
+    {
+      "id": "M01",
+      "name": "hardware_cancel_flag rearm latches true instead of clearing",
+      "smoke": true,
+      "file": "src/pipeline/atomics.rs",
+      "target": "    pub fn rearm_hardware_cancel_flag(&self) {\n        self.hardware_cancel_flag.store(false, Ordering::Release);",
+      "replacement": "    pub fn rearm_hardware_cancel_flag(&self) {\n        self.hardware_cancel_flag.store(true, Ordering::Release);",
+      "test": {
+        "binary": "playback_test",
+        "filter": "hardware_cancel_flag_rearmed_after_barge_in_produces_audible_chunks"
+      },
+      "expected": "next_turn can no longer re-arm the flag; the false assertion fails"
+    },
+    {
+      "id": "M02",
+      "name": "quiescence law never returns Ready when llm_done",
+      "smoke": true,
+      "file": "src/pipeline/assistant/playback.rs",
+      "target": "    let target = if state.pipeline.is_llm_done() {\n        InteractionState::Ready",
+      "replacement": "    let target = if state.pipeline.is_llm_done() {\n        InteractionState::Thinking",
+      "test": {
+        "binary": "playback_test",
+        "filter": "playback_finished_is_deferred_while_a_job_is_pending"
+      },
+      "expected": "the final Ready assertion fails after pending jobs drain"
+    },
+    {
+      "id": "M03",
+      "name": "compaction exclusion scoped per session instead of globally",
+      "smoke": false,
+      "file": "src/persistence/schema.rs",
+      "target": "ON session_compactions(status) WHERE status = 'in_progress';",
+      "replacement": "ON session_compactions(session_id) WHERE status = 'in_progress';",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "second_in_progress_compaction_is_rejected_by_partial_index"
+      },
+      "expected": "the cross-session compaction insert succeeds and the assertion fails"
+    },
+    {
+      "id": "M04",
+      "name": "duplex return drops to Thinking instead of restoring Working",
+      "smoke": false,
+      "file": "src/pipeline/assistant/playback.rs",
+      "target": "    } else if state.pipeline.current_activity().is_some() {\n        InteractionState::Working",
+      "replacement": "    } else if state.pipeline.current_activity().is_some() {\n        InteractionState::Thinking",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "preamble_audio_playback_retains_working_state_during_tool_execution"
+      },
+      "expected": "the duplex-return assertion fails because activity is not restored"
+    }
+  ]
+}

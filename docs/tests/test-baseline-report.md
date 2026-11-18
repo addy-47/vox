@@ -1,11 +1,43 @@
 # Vox Pipeline Refactor — Test Baseline & Remediation Report
 
-**Date:** 2026-11-18 (Checkpoint 4 update)  
-**Role:** Principal System Architect  
-**Suite Status (current):** `563 tests run: 563 passed, 0 failed, 4 skipped` (269.5s, release, sequential). 100% GREEN.  
-**Compilation Status:** Clean (`./scripts/verify-targets.sh`: 0 warnings, 0 errors across desktop and Android).  
+**Date:** 2026-11-18 (Checkpoint 4.5 update)  
+**Role:** Senior Test Engineer  
+**Suite Status (current):** `566 tests run: 564 passed, 2 failed, 2 skipped` (695.5s, release, sequential). The suite is **not green by design**: two previously hidden local failures are now exposed. The bad assertion introduced during this pass was corrected and re-verified green.  
+**Previous status (Checkpoint 4, historical):** `563 passed, 0 failed, 4 skipped` — green, but two local failures were hidden behind `#[ignore]`.  
 
 ---
+
+## Checkpoint 4.5 Summary — No Hidden Failures
+
+Command executed this session:
+```bash
+cd app/src-tauri
+cargo nextest run --release --test-threads=1 --no-fail-fast
+# 566 tests run: 564 passed, 2 failed, 2 skipped  [695.480s]
+```
+
+**The two failures are deliberate and documented:**
+
+| Test | Cause | Finding |
+| :--- | :--- | :--- |
+| `e2e_voice_pipeline_test::mid_thought_continuation_combines_both_bursts` | `#[ignore]` removed. Fails after 505.5s with `Exceeded max tool iterations without terminal response`, then panics at `e2e_voice_pipeline_test.rs:488`. | TF-03 — tool-loop defect, not sidecar cancellation |
+| `remote_link_test::ws_link_passes_generic_conformance_suite` | `#[ignore]` removed. Fails case `control_independent_of_audio`: malformed message at `remote_link_test.rs:607`. | TF-04 — WsLink contract mismatch |
+
+The C-11 assertion error found in the first run was corrected to compare against the host key supplied to the handshake. `remote_connection_pairing_handshake_approved_reaches_connected` now passes in the final run.
+
+**Changes in CP4.5:**
+- `testing-style-guide.md §5.4`: replaced the blanket 15s timeout with **per-stage first-output ceilings of 5s** (LLM first token, STT first partial/final, TTS first audio chunk). Overall E2E timeouts may be longer.
+- `testing-style-guide.md §8`: two local `#[ignore]` markers removed. Only cloud-key and remote-hardware ignores remain.
+- C-10: realtime binary decode moved from a test-owned double to a production-driver unit test in `src/services/realtime/providers/deepgram/session.rs`.
+- C-11: remote pairing test no longer asserts its own DB write; it now checks the controller record written by production `pair_device`.
+- `test-findings.md` reconciled: TF-01/05/06/07 closed, TF-02/03/04 open.
+- Mutation tooling: `remote-mutate.py` and `remote-campaign-runner.py` deleted; `scripts/mutation-runner.py` added with local/remote modes, `--mutants`, `--smoke`, `--dry-run`, byte-exact revert, and report generation. `tests/assets/mutants.json` contains four mutants.
+
+**Mutation runner smoke test (verified):** M01 killed, M02 survived, both files reverted byte-for-byte, report written. M02 survivor is a genuine test weakness (the tested branch is bypassed by `on_llm_finished`); RCA recorded in `mutation_report.md`. **Full campaign deferred** until the suite baseline and findings are accepted.
+
+---
+
+## Historical Checkpoint 4 Summary — Production Fixes & Clean-Room Verification
 
 ## Checkpoint 4 Summary — Production Fixes & Clean-Room Verification
 

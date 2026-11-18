@@ -87,12 +87,13 @@ async fn open_migrated_db(dir: &std::path::Path, file_name: &str) -> (VoxDb, tur
 // Subtests
 // ============================================================================
 
-/// PURPOSE:  A full controller-initiated pairing via pair_device must reach Paired state and persist peers in Turso DB on both sides.
-/// SCENARIO: Controller calls pair_device with valid pairing token and host public key over loopback; Host accepts, runs Noise handshake, validates proved identity through PairingCoordinator, approves, and completes pairing.
-/// ASSERTS:  Controller reaches RemoteLinkState::Paired, and each peer is inserted into their respective Turso DB paired_devices table.
+/// PURPOSE:  A controller-initiated pairing via pair_device must reach Paired and persist the proved host.
+/// SCENARIO: Controller calls pair_device with a valid token and host public key over loopback; Host runs the Noise handshake and validates identity.
+/// ASSERTS:  Controller reaches RemoteLinkState::Paired and production `pair_device` persists the host with the exact public key supplied to the handshake.
+///           The host-side DB insert is performed by the test scaffold, so it is not asserted as production behavior.
 /// CLASS:    happy-path
 /// REQUIRES: none
-/// MUTANT:   Remove insert_paired_device call in pair_device for host persistence.
+/// MUTANT:   Remove insert_paired_device in pairing_client.rs::pair_device — the controller-side persistence assertion fails.
 #[tokio::test]
 async fn remote_connection_pairing_handshake_approved_reaches_connected() {
     let dir = tempdir().expect("tempdir");
@@ -210,23 +211,17 @@ async fn remote_connection_pairing_handshake_approved_reaches_connected() {
     // 9. Assertions
     assert_eq!(controller_manager.state(), RemoteLinkState::Paired);
 
-    // Assert controller persisted host in Turso DB
+    // Observable exit produced by production `pair_device`: the controller persists
+    // the host with the exact static key proved by the Noise handshake.
     let stored_host = get_paired_device(&controller_conn, host_id.as_str())
         .await
-        .expect("query host in controller db");
-    assert!(
-        stored_host.is_some(),
-        "Host MUST be saved in controller's paired_devices"
-    );
-    assert_eq!(stored_host.unwrap().display_name, "Vox Host");
-
-    // Assert host persisted controller in Turso DB
-    let stored_controller = get_paired_device(&host_conn, &claimed_req.device_id)
-        .await
-        .expect("query controller in host db");
-    assert!(
-        stored_controller.is_some(),
-        "Controller MUST be saved in host's paired_devices"
+        .expect("query host in controller db")
+        .expect("Host MUST be saved in controller's paired_devices");
+    assert_eq!(stored_host.display_name, "Vox Host");
+    assert_eq!(
+        stored_host.public_key,
+        host_key.public_key().to_vec(),
+        "production pair_device must persist the host key supplied to the handshake"
     );
 }
 

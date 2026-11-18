@@ -141,12 +141,16 @@ Every fallible seam asserts both directions: the failure is surfaced, and the ha
 
 ### 5.4 Time
 
-> 🛑 **MANDATORY TIMEOUT CEILING: NO TIMEOUT IN ANY TEST MAY EXCEED 15 SECONDS.**
-> **Every test must fail fast. Even on a single-threaded release run, a deterministic response, state transition, or local model pass must produce an observable exit within 15 seconds. If there is no response, the test MUST NOT hang or poll for minutes; it MUST fail immediately! Long-running timeouts (e.g. 60s, 240s, 500s, 600s) are strictly forbidden across all unit, component, integration, and E2E suites.**
+> 🛑 **MANDATORY PER-STAGE FIRST-OUTPUT CEILING: 5 SECONDS.**
+> This is a **time-to-first-output** budget, not a total test duration. A model-backed stage that produces no first output within 5 seconds has failed; the test must fail immediately and name the stage. A full E2E pass may take longer once all stages have produced their first output.
 
-- Every async test wraps its body in a timeout capped at $\le 15\text{s}$. A deadlock or stalled stream must fail fast, not hang.
-- Synchronous channel loops use a deadline or timeout primitive capped at $\le 15\text{s}$.
-- No wall-clock latency assertion belongs in the default tier. `< 15 ms` on a shared machine measures the scheduler and environment, not the product. Latency belongs in benchmarks or an explicitly marked benchmark subtest.
+- **LLM:** first streamed token within $5\text{s}$ of dispatch (TTFT). Assert the first-token event, not the full answer.
+- **STT:** first partial transcript within $5\text{s}$ of the first bound audio chunk (or the final transcript when partials are disabled).
+- **TTS:** first non-silent audio chunk within $5\text{s}$ of clause dispatch.
+- Each stage with a generator must carry one bounded `wait_for_first_*` assertion with the 5s ceiling. Produce the event through the production seam; never synthesize it in the test.
+- Every async test still wraps its body in an overall timeout so a deadlock fails rather than hangs. The overall timeout may exceed 5s for full E2E scenes; it must not be used as a substitute for the per-stage first-output assertion.
+- Synchronous channel loops use a deadline or timeout primitive.
+- No wall-clock **total duration** assertion belongs in the default tier. The per-stage first-output ceilings above are contract assertions, not scheduler benchmarks. Latency measurement belongs in benchmarks or an explicitly marked benchmark subtest.
 - `sleep` may not be used to reach a state. Wait on the state transition or the event.
 
 ### 5.5 Ground truth

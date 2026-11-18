@@ -22,10 +22,7 @@
   ```
 - **Suspected location:** `app/src-tauri/src/persistence/schema.rs:88`; index migration needs a new schema version (ZBC — no compatibility layer).
 - **Owner for fix:** backend engineer / system architect (spec vs code decision).
-- **Test action (COMPLETED):** both compaction tests now assert cross-session rejection and are **RED** in the CP3 suite:
-  - `database_persistence_boundary_test::second_in_progress_compaction_is_rejected_by_partial_index` — panics at `tests/database_persistence_boundary_test.rs:531`.
-  - `memory_compaction_test::second_in_progress_compaction_on_a_session_is_rejected` — panics at `tests/memory_compaction_test.rs:291`.
-  - The assertions are authoritative. Do not weaken them. The suite stays red until the schema index is corrected.
+- **Status: CLOSED.** Backend commit `ac67587d` changed `schema.rs:88` to `ON session_compactions(status) WHERE status = 'in_progress'`. Both strengthened tests now pass in the full suite. No assertion was weakened.
 
 ### TF-02 — E2E teardown crash forces `process::exit(0)`
 - **Tests:** `e2e_voice_pipeline_test.rs:240, 351, 516, 576` (all four full-loop scenes).
@@ -36,23 +33,23 @@
 - **Owner for fix:** backend engineer (runtime teardown) + test engineer (rig teardown).
 - **Test action:** remove the exits once teardown is fixed; until then these four scenes provide no teardown evidence.
 
-### TF-03 — Mid-thought continuation E2E is ignored
-- **Test:** `e2e_voice_pipeline_test.rs:364` `mid_thought_continuation_combines_both_bursts`.
-- **Symptom (as recorded in the ignore reason):** cancelled sidecar inference is not aborted; the merged turn hits the 30 s idle timeout.
-- **Expected:** `RULE-EVT-08A` — two bursts merge into one combined query and complete within the persist deadline.
-- **Evidence:** `#[ignore = "PROD-BUG: LLM-CANCEL-STARVES — cancelled sidecar inference is not aborted; the merged turn hits the 30s idle timeout; see docs/tests/test-findings.md F-005"]`.
-- **Suspected location:** sidecar cancel handling in `src/services/llm/sidecar.rs` / `harness/stages/streaming/router.rs`.
-- **Owner for fix:** backend engineer.
-- **Test action:** keep the assertion intact; add owner/expiry to the ignore marker; un-ignore after the fix.
+### TF-03 — Mid-thought continuation E2E fails (un-ignored in CP4.5)
+- **Test:** `e2e_voice_pipeline_test.rs` `mid_thought_continuation_combines_both_bursts`.
+- **Symptom:** the merged turn never persists. Full-suite run at CP4.5: `FAIL + LEAK` after **505.5s** with `Exceeded max tool iterations without terminal response` on turn 1 and a panic at `e2e_voice_pipeline_test.rs:488` (`the merged turn must persist to the database`).
+- **Expected:** `RULE-EVT-08A` — two bursts merge into one query and complete within the persist deadline.
+- **Root cause revised:** sidecar cancel starvation was fixed in `ac67587d`. The remaining failure is a **tool-loop defect**, not cancellation. The forced 10-line answer drives the coordinator past its terminal-response budget.
+- **Suspected location:** `src/harness/steps.rs` / `src/harness/loop.rs` terminal-response detection; `e2e_voice_pipeline_test.rs:400-490` prompt forces 10 lines.
+- **Owner for fix:** backend engineer (tool loop) + test engineer (scenario prompt).
+- **Test action:** `#[ignore]` removed in CP4.5. Failure is exposed, not hidden. Keep red until fixed; also add a per-stage first-token ceiling per the updated §5.4 so this fails in seconds, not 505s.
 
-### TF-04 — WsLink cannot pass the generic conformance suite
-- **Test:** `remote_link_test.rs:588` `ws_link_passes_generic_conformance_suite` (ignored).
-- **Symptom:** the generic suite assumes shared-socket control/audio semantics; `WsLink` splits control and audio onto separate link instances.
+### TF-04 — WsLink cannot pass the generic conformance suite (un-ignored in CP4.5)
+- **Test:** `remote_link_test.rs` `ws_link_passes_generic_conformance_suite`.
+- **Symptom:** at CP4.5 the un-ignored test fails immediately: `conformance case control_independent_of_audio failed: Some("the receive failed: protocol failure: malformed message: expected value at line 1 column 1")` at `remote_link_test.rs:607`.
 - **Expected:** one conformance contract applicable to both `LoopbackLink` and `WsLink`, or an explicit per-transport contract.
-- **Evidence:** ignore reason `VERIFY: RC-SUITE-1 — generic suite assumes shared-socket control/audio semantics; WsLink splits control and audio onto separate link instances`.
-- **Suspected location:** `tests/common/remote_conformance.rs` (suite assumptions) vs `src/services/remote/.../ws_link.rs`.
+- **Evidence:** six `ws_link_*` focused subtests pass; only the generic-suite mapping fails.
+- **Suspected location:** `tests/common/remote_conformance.rs` (assumes one shared socket) vs WsLink's split control/audio links.
 - **Owner for fix:** backend engineer + test engineer (contract decision).
-- **Test action:** add owner/expiry; six `ws_link_*` subtests remain the valid coverage.
+- **Test action:** `#[ignore]` removed in CP4.5. Failure is exposed. Keep red until the contract or link is fixed.
 
 ### TF-05 — Hardware cancel flag re-arm path is never exercised
 - **Test:** `playback_test.rs:634` `hardware_cancel_flag_rearmed_after_barge_in_produces_audible_chunks`.
@@ -96,14 +93,16 @@ These are environment-limited, not production defects. Per style guide §8 they 
 
 | ID | Category | Production owner | Test action | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| TF-01 | Spec/schema divergence | backend + architect | strengthen to global exclusion | OPEN |
-| TF-02 | Runtime teardown | backend + test | remove `process::exit(0)` after fix | OPEN |
-| TF-03 | Sidecar cancel starvation | backend | un-ignore after fix | OPEN |
-| TF-04 | Link contract mismatch | backend + test | add owner/expiry, decide contract | OPEN |
-| TF-05 | Unverified cancel re-arm | test | wire to production atomics | OPEN |
-| TF-06 | Unverified TTS fallback | test | drive real zero-audio synthesis | OPEN |
-| TF-07 | Unverified history commit | test | assert history accessor | OPEN |
-| TF-08 | External cloud key | test | add owner/expiry | OPEN |
-| TF-09 | External Ollama server | test | add owner/expiry, remove hardcoded URL | OPEN |
+| TF-01 | Spec/schema divergence | backend + architect | global unique index | **CLOSED** (`ac67587d`) |
+| TF-02 | Runtime teardown | backend + test | remove `process::exit(0)` after teardown fix | **OPEN** |
+| TF-03 | Sidecar cancel / tool-loop defect | backend | un-ignored in CP4.5; keep red until fixed | **OPEN — NO LONGER HIDDEN** |
+| TF-04 | Link contract mismatch | backend + test | un-ignored in CP4.5; fix contract or link | **OPEN — NO LONGER HIDDEN** |
+| TF-05 | Cancel re-arm path | test | wire to production atomics | **CLOSED** (CP3) |
+| TF-06 | TTS fallback path | test | renamed to drained-audio test; fallback path remains unverified | **CLOSED as finding** (renamed honestly) |
+| TF-07 | History commit | test | assert history accessor | **CLOSED** (CP3) |
+| TF-08 | External cloud key | test | owner/expiry present; allowed by §8 | OPEN (external dependency) |
+| TF-09 | External Ollama server | test | owner/expiry present; hardcoded URL still present | OPEN (external dependency) |
+
+CP4.5 policy: local failures are never hidden with `#[ignore]`. TF-03 and TF-04 were un-ignored and will surface as red until their underlying defects are fixed.
 
 No finding in this file is fixed by weakening an assertion. Production fixes are owned by `backend-engineer`; test fixes by the test engineer in Checkpoint 3.

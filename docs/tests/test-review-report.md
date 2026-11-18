@@ -320,3 +320,21 @@ Applied in this session, without touching production code or specs:
 | Hygiene | Added owner/expiry to all four `#[ignore]` tests; removed 8 default-tier wall-clock assertions; removed a no-op-unload test; fixed a wrong test name. |
 
 **Still open (not fixed here, by design):** C-10 (realtime decoder tests the double), C-11 (remote pairing self-fulfilled assertion), the ~20 🟠 leaf-entry and intent items in §4 that require larger seam rewrites, and the 13 sleep-to-state sites. These remain documented findings, not hidden by weaker assertions. Mutation testing is deferred.
+
+---
+
+## 11. Checkpoint 4.5 — hardening and mutation-runner smoke test
+
+**Policy change:** the mandatory 15s total-timeout ceiling was replaced with per-stage **first-output** ceilings of 5s: LLM first token, STT first partial/final, TTS first audio chunk. Overall E2E timeouts remain bounded but may exceed 5s. A test fails fast when a stage never produces its first output.
+
+**No hidden failures:** TF-03 and TF-04 had their `#[ignore]` markers removed. Both now fail in the full suite and stay in `test-findings.md` as open defects. Only the cloud-key and remote-Ollama tests remain ignored (per §8).
+
+**C-10 fixed:** `inbound_binary_frame_is_decoded_into_an_audio_chunk_event` asserted the behaviour of `TestDriver::handle_frame`, a test-owned decoder. It was folded into two new unit tests inside `src/services/realtime/providers/deepgram/session.rs` that call the production `DeepgramDriver::handle_frame` / `encode`. The MUTANT now targets production byte order.
+
+**C-11 fixed:** `remote_connection_pairing_handshake_approved_reaches_connected` wrote the host row itself and then asserted it. The self-fulfilled assertion was deleted. The remaining assertion checks the controller row written by production `pair_device`, including the exact host key supplied to the handshake.
+
+**Mutation tooling verified:** `remote-mutate.py` and `remote-campaign-runner.py` deleted. `scripts/mutation-runner.py` added: `--mutants`, `--mode local|remote`, `--smoke`, `--dry-run`; applies one-line edits, runs the bound release test, restores bytes in `finally`, and writes `docs/tests/mutation_report.md`. `tests/assets/mutants.json` holds four mutants. Dry-run validated all four targets as unique. Smoke run: M01 KILLED, M02 SURVIVED, both reverted, report written.
+
+**New test-quality finding from the smoke run (M02):** `playback_finished_is_deferred_while_a_job_is_pending` claims the `PlaybackFinished` quiescence branch is the exit, but `LlmFinished` with drained audio already moves the pipeline to `Ready`. The branch mutant survives. Fix: latch `llm_done` while audio is still active, then drive `PlaybackFinished` so the branch under test is the only path to `Ready`. RCA is in `mutation_report.md`.
+
+**Full campaign is deferred** until this baseline and the findings are accepted. The current suite is not green (563/566), which is the correct, honest state while TF-03 and TF-04 are open.

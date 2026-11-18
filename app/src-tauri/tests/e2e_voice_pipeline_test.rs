@@ -361,7 +361,8 @@ async fn true_acoustic_barge_in_during_speaking_cancels_and_completes() {
 /// CLASS:    end-to-end
 /// REQUIRES: VOX_MODELS_DIR
 /// MUTANT:   Drop the prefix stash in on_speech_start for Thinking.
-#[ignore = "PROD-BUG: LLM-CANCEL-STARVES — cancelled sidecar inference is not aborted; the merged turn hits the 30s idle timeout; see docs/tests/test-findings.md TF-03. owner: backend-engineer; expiry: 2026-12-18; run: cargo nextest run --test e2e_voice_pipeline_test -E 'test(mid_thought_continuation_combines_both_bursts)' -- --ignored"]
+// TF-03 un-ignored: a local failure is a defect, never an #[ignore]. The sidecar
+// cancel path is fixed in ac67587d; any remaining failure is a real tool-loop defect.
 #[tokio::test]
 async fn mid_thought_continuation_combines_both_bursts() {
     // Real Qwen inference + real Kokoro synthesis of a forced 10-line reply

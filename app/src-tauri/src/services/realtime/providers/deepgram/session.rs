@@ -342,3 +342,46 @@ fn dispatch_deepgram_server_message(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicU32;
+
+    fn driver() -> DeepgramDriver {
+        DeepgramDriver {
+            state: Arc::new(Mutex::new(DeepgramSessionState {
+                last_assistant_text: String::new(),
+                turn_id: Arc::new(AtomicU32::new(1)),
+                server_turn_cursor: None,
+            })),
+        }
+    }
+
+    /// The production decoder must turn a little-endian i16 frame into PCM samples.
+    /// Mutating the byte order here must turn this test red.
+    #[tokio::test]
+    async fn binary_frame_decodes_to_pcm_with_production_driver() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let d = driver();
+        let action = d.handle_frame(
+            Message::Binary(vec![0x10, 0x00, 0x20, 0x00].into()),
+            &tx,
+        );
+        assert!(matches!(action, FrameAction::Continue));
+        match rx.recv().await.expect("audio event emitted") {
+            RealtimeProviderEvent::AudioChunk(pcm) => assert_eq!(pcm, vec![16i16, 32i16]),
+            other => panic!("expected AudioChunk, got {other:?}"),
+        }
+    }
+
+    /// The production encoder must emit little-endian bytes for outbound PCM.
+    #[test]
+    fn outbound_pcm_is_encoded_little_endian_by_production_driver() {
+        let d = driver();
+        match d.encode(OutboundCommand::Audio(vec![16, 32])) {
+            Some(Message::Binary(bytes)) => assert_eq!(bytes.as_ref(), &[0x10, 0x00, 0x20, 0x00]),
+            other => panic!("expected binary audio frame, got {other:?}"),
+        }
+    }
+}

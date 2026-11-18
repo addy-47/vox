@@ -1,5 +1,17 @@
 # Phase 14 Work Log
 
+## 2026-11-18 — Checkpoint 4.5: No Hidden Failures, Per-Stage 5s Ceiling & Mutation Runner Smoke Test
+
+- **Role:** Senior Test Engineer.
+- **Policy:** replaced the 15s total-timeout ceiling with per-stage first-output ceilings of 5s (LLM first token, STT first partial/final, TTS first audio chunk) in `testing-style-guide.md §5.4`. Overall E2E timeouts remain bounded but may be longer.
+- **No hidden failures:** removed `#[ignore]` from `e2e_voice_pipeline_test::mid_thought_continuation_combines_both_bursts` (TF-03) and `remote_link_test::ws_link_passes_generic_conformance_suite` (TF-04). Both now fail openly in the full suite and are recorded in `test-findings.md`.
+- **Test-quality fixes:** C-10 — realtime binary decode moved from a test-owned double to production-driver unit tests in `src/services/realtime/providers/deepgram/session.rs`. C-11 — removed the self-fulfilled host DB assertion in `remote_connection_test.rs`; the test now validates production `pair_device` persistence.
+- **Findings reconciled:** TF-01/05/06/07 closed; TF-02/03/04 open; external-dependency ignores retained.
+- **Mutation tooling:** deleted `remote-mutate.py` and `remote-campaign-runner.py`; added `scripts/mutation-runner.py` (local default, optional `--remote`, `--mutants`, `--smoke`, `--dry-run`, byte-exact revert, report generation) and `tests/assets/mutants.json`.
+- **Suite verification:** `cargo nextest run --release --test-threads=1 --no-fail-fast` → **566 tests run: 564 passed, 2 failed, 2 skipped** (695.480s, final run). The two failures are the newly exposed TF-03/TF-04. A bad assertion introduced in the first run was corrected and re-verified green.
+- **Mutation smoke test:** M01 KILLED, M02 SURVIVED; both mutants reverted byte-for-byte; `mutation_report.md` written. M02 survivor is a genuine test weakness, RCA recorded. Full campaign deferred.
+- **Status:** CP4.5 complete — stopped for user summary. Full mutation campaign awaits acceptance of baseline and findings.
+
 ## 2026-11-18 — Checkpoint 4: Defect Resolution, Compile Gate Unblock & 100% Green Suite Baseline Certification
 
 - **Role:** Senior System Architect.

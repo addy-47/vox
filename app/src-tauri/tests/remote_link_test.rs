@@ -585,7 +585,8 @@ async fn loopback_passes_generic_conformance_suite() {
 /// REQUIRES: none (loopback WS, no external endpoints)
 /// MUTANT:   Break WsLink framing, ordering or backpressure in ws_link.rs.
 #[tokio::test]
-#[ignore = "VERIFY: RC-SUITE-1 — generic suite assumes shared-socket control/audio semantics; WsLink splits control and audio onto separate link instances (see docs/tests/test-findings.md TF-04). owner: test-engineer; expiry: 2026-12-18; run: cargo nextest run --test remote_link_test -E 'test(ws_link_passes_generic_conformance_suite)' -- --ignored"]
+// TF-04 un-ignored: the generic conformance suite is a local contract. If WsLink
+// cannot satisfy it, the contract or the link is defective — do not hide the failure.
 async fn ws_link_passes_generic_conformance_suite() {
     let report = run_link_conformance(|| async {
         let listener =
