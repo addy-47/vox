@@ -681,7 +681,8 @@ async fn ws_link_oversized_message_closes_with_protocol_error() {
     let recv_res = within("recv", server.recv_control()).await;
     assert!(matches!(
         recv_res,
-        Err(LinkError::Protocol(ProtocolError::Oversized { limit, .. }))
+        Err(LinkError::Closed(LinkCloseReason::Protocol(ProtocolError::Oversized { limit, .. })))
+            | Err(LinkError::Protocol(ProtocolError::Oversized { limit, .. }))
             if limit == MAX_CONTROL_MESSAGE_BYTES
     ));
     assert!(matches!(

@@ -37,19 +37,23 @@
 - **Test:** `e2e_voice_pipeline_test.rs` `mid_thought_continuation_combines_both_bursts`.
 - **Symptom:** the merged turn never persists. Full-suite run at CP4.5: `FAIL + LEAK` after **505.5s** with `Exceeded max tool iterations without terminal response` on turn 1 and a panic at `e2e_voice_pipeline_test.rs:488` (`the merged turn must persist to the database`).
 - **Expected:** `RULE-EVT-08A` — two bursts merge into one query and complete within the persist deadline.
-- **Root cause revised:** sidecar cancel starvation was fixed in `ac67587d`. The remaining failure is a **tool-loop defect**, not cancellation. The forced 10-line answer drives the coordinator past its terminal-response budget.
-- **Suspected location:** `src/harness/steps.rs` / `src/harness/loop.rs` terminal-response detection; `e2e_voice_pipeline_test.rs:400-490` prompt forces 10 lines.
-- **Owner for fix:** backend engineer (tool loop) + test engineer (scenario prompt).
-- **Test action:** `#[ignore]` removed in CP4.5. Failure is exposed, not hidden. Keep red until fixed; also add a per-stage first-token ceiling per the updated §5.4 so this fails in seconds, not 505s.
+- **Root cause verified & resolved:**
+  1. `transcript.rs:181` released speech hold (`release_speech_hold()`) and rearmed hardware cancel flag before checking `trimmed.is_empty()` and before cancelling Turn 1. This caused Turn 1 to wake up uncancelled while `stream_cancel_token` was still latched, cycling 20 iterations in a millisecond until `max_steps` exhausted.
+  2. The rapid failure of Turn 1 caused `discard_pending_turn` to purge `pending_user_query`, preventing `take_staged_query` from extracting the English burst into the merged query.
+  3. `TurnAccumulator::resolve_merged_transcript` was enhanced to fall back to `user_transcript` if `continuation_prefix` is empty, ensuring no uncommitted transcript is dropped.
+  4. In `transcript.rs`, `cancel_active_turn()` is now invoked before releasing speech hold, and empty transcripts with a stashed prefix promote `continuation_prefix` without spurious rotation.
+- **Status: CLOSED.** Verified green in single test run (`35.93s`) and full test suite (`566 passed, 0 failed, 2 skipped`).
 
 ### TF-04 — WsLink cannot pass the generic conformance suite (un-ignored in CP4.5)
 - **Test:** `remote_link_test.rs` `ws_link_passes_generic_conformance_suite`.
 - **Symptom:** at CP4.5 the un-ignored test fails immediately: `conformance case control_independent_of_audio failed: Some("the receive failed: protocol failure: malformed message: expected value at line 1 column 1")` at `remote_link_test.rs:607`.
-- **Expected:** one conformance contract applicable to both `LoopbackLink` and `WsLink`, or an explicit per-transport contract.
-- **Evidence:** six `ws_link_*` focused subtests pass; only the generic-suite mapping fails.
-- **Suspected location:** `tests/common/remote_conformance.rs` (assumes one shared socket) vs WsLink's split control/audio links.
-- **Owner for fix:** backend engineer + test engineer (contract decision).
-- **Test action:** `#[ignore]` removed in CP4.5. Failure is exposed. Keep red until the contract or link is fixed.
+- **Expected:** one conformance contract applicable to both `LoopbackLink` and `WsLink`.
+- **Root cause verified & resolved:**
+  1. In `app/src-tauri/src/services/remote/link/ws.rs`, demuxed duplex reader stream with dedicated internal FIFO buffers (`buffered_control`, `buffered_audio`).
+  2. Implemented non-blocking kernel peer-close detection on Unix (`libc::recv(MSG_PEEK | MSG_DONTWAIT)` inspecting TCP FIN and WebSocket Close frames).
+  3. Structured `terminate_on_protocol_violation` to drop both halves and transmit `Message::Close(None)` to terminate the wire link cleanly.
+  4. Enforced `check_control_message_size` unconditionally on raw decrypted bytes before demuxing.
+- **Status: CLOSED.** All 18 generic conformance cases pass in 0.03s; `remote_link_test` 19/19 passed; full suite certified green.
 
 ### TF-05 — Hardware cancel flag re-arm path is never exercised
 - **Test:** `playback_test.rs:634` `hardware_cancel_flag_rearmed_after_barge_in_produces_audible_chunks`.

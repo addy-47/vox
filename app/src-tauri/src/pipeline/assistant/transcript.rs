@@ -179,45 +179,91 @@ pub fn on_transcript_final<R: tauri::Runtime>(
     };
 
     if is_held {
-        {
-            let guard = state.harness.lock();
-            if let Some(ref harness) = *guard {
-                harness.inbox().release_speech_hold();
-            }
-        }
-        state.pipeline.rearm_hardware_cancel_flag();
-
         if trimmed.is_empty() {
-            // False barge-in: resume the active turn without cancelling it.
-            if state.pipeline.is_llm_done() {
-                transition(InteractionState::Ready, None, ctx, app, state);
-            } else if state.pipeline.current_activity().is_some() {
-                transition(InteractionState::Working, None, ctx, app, state);
-            } else {
-                state.pipeline.rearm_stream_cancel_token();
-                transition(InteractionState::Thinking, None, ctx, app, state);
+            let has_continuation = !state.pipeline_accumulator.lock().continuation_prefix.is_empty();
+            if !has_continuation {
+                // False barge-in: resume the active turn without cancelling it.
+                {
+                    let guard = state.harness.lock();
+                    if let Some(ref harness) = *guard {
+                        harness.inbox().release_speech_hold();
+                    }
+                }
+                state.pipeline.rearm_hardware_cancel_flag();
+
+                if state.pipeline.is_llm_done() {
+                    transition(InteractionState::Ready, None, ctx, app, state);
+                } else if state.pipeline.current_activity().is_some() {
+                    transition(InteractionState::Working, None, ctx, app, state);
+                } else {
+                    state.pipeline.rearm_stream_cancel_token();
+                    transition(InteractionState::Thinking, None, ctx, app, state);
+                }
+                log::info!(
+                    "[Pipeline::Transcript] False barge-in on turn {} released speech hold",
+                    turn_id
+                );
+                let app_handle = app.clone();
+                let db = state.db.clone();
+                tauri::async_runtime::spawn(async move {
+                    let params = NotificationParams {
+                        category: NotificationCategory::Pipeline,
+                        severity: Severity::Info,
+                        impact: Some(PipelineImpact::None),
+                        action: Action::Transient,
+                        title: "Voice Assistant",
+                        message: "Speech detected, but no words recognized.",
+                        group_key: Some("assistant:empty_speech"),
+                        session_id: None,
+                        metadata: None,
+                        duration_ms: None,
+                    };
+                    let _ = services::notifications::notify(&app_handle, &db, params).await;
+                });
+                return;
             }
-            log::info!(
-                "[Pipeline::Transcript] False barge-in on turn {} released speech hold",
-                turn_id
+
+            // Empty transcript promotes stashed continuation_prefix for turn_id without rotating.
+            {
+                let guard = state.harness.lock();
+                if let Some(ref harness) = *guard {
+                    harness.inbox().release_speech_hold();
+                }
+            }
+            let raw_query = {
+                let mut acc = state.pipeline_accumulator.lock();
+                let merged = acc.resolve_merged_transcript("");
+                acc.continuation_prefix.clear();
+                acc.awaiting_continuation = false;
+                acc.bound_utterance_id = None;
+                merged
+            };
+            let transliterate_enabled = state
+                .settings
+                .read()
+                .map(|s| s.stt.transliterate_enabled)
+                .unwrap_or(false);
+            let query = transliterate_if_hi(&raw_query, true, transliterate_enabled);
+
+            state.pipeline_accumulator.lock().clear();
+            state
+                .pipeline_accumulator
+                .lock()
+                .set_user_transcript(query.clone());
+            state.turn_metrics.start_turn(turn_id);
+            state.turn_metrics.record_transcript_final();
+            let payload = TranscriptPayload {
+                turn_id,
+                text: query.clone(),
+                owner: Some(ctx.owner),
+            };
+            let _ = emit_ipc_to(
+                app,
+                target_window(ctx.owner),
+                IpcEvent::TranscriptFinal(payload),
             );
-            let app_handle = app.clone();
-            let db = state.db.clone();
-            tauri::async_runtime::spawn(async move {
-                let params = NotificationParams {
-                    category: NotificationCategory::Pipeline,
-                    severity: Severity::Info,
-                    impact: Some(PipelineImpact::None),
-                    action: Action::Transient,
-                    title: "Voice Assistant",
-                    message: "Speech detected, but no words recognized.",
-                    group_key: Some("assistant:empty_speech"),
-                    session_id: None,
-                    metadata: None,
-                    duration_ms: None,
-                };
-                let _ = services::notifications::notify(&app_handle, &db, params).await;
-            });
+            transition(InteractionState::Thinking, None, ctx, app, state);
+            spawn_harness_turn_task(turn_id, query, app, state, ctx);
             return;
         }
 
@@ -254,7 +300,7 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         }
 
         // RULE-EVT-08A merges only an uncommitted Step 0 query; Step K >= 1 stays standalone.
-        let query = if committed_work {
+        let raw_query = if committed_work {
             trimmed.clone()
         } else if let Some(prefix) = staged.filter(|p| !p.trim().is_empty()) {
             format!("{} {}", prefix.trim(), trimmed)
@@ -267,30 +313,21 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             merged
         };
 
-        // SpeechEnd already resolved: append the merged words to the active turn.
-        if !committed_work && current_state == InteractionState::Thinking {
-            state
-                .pipeline_accumulator
-                .lock()
-                .set_user_transcript(query.clone());
-            state.turn_metrics.record_transcript_final();
-            let payload = TranscriptPayload {
-                turn_id,
-                text: query.clone(),
-                owner: Some(ctx.owner),
-            };
-            let _ = emit_ipc_to(
-                app,
-                target_window(ctx.owner),
-                IpcEvent::TranscriptFinal(payload),
-            );
-            transition(InteractionState::Thinking, None, ctx, app, state);
-            spawn_harness_turn_task(turn_id, query, app, state, ctx);
-            return;
-        }
+        let transliterate_enabled = state
+            .settings
+            .read()
+            .map(|s| s.stt.transliterate_enabled)
+            .unwrap_or(false);
+        let query = transliterate_if_hi(&raw_query, true, transliterate_enabled);
 
-        // Transcript arrived while still Listening: rotate a fresh dialogue turn.
+        // Non-empty transcript on barge-in cancels the prior turn and advances to a new dialogue turn (RULE-EVT-08A / RULE-EVT-08 §2b).
         state.pipeline.cancel_active_turn();
+        {
+            let guard = state.harness.lock();
+            if let Some(ref harness) = *guard {
+                harness.inbox().release_speech_hold();
+            }
+        }
         let (new_turn_id, _) = state.pipeline.next_turn();
         state.pipeline_accumulator.lock().clear();
         state

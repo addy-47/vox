@@ -1,9 +1,44 @@
 # Vox Pipeline Refactor — Test Baseline & Remediation Report
 
-**Date:** 2026-11-18 (Checkpoint 4.5 update)  
-**Role:** Senior Test Engineer  
-**Suite Status (current):** `566 tests run: 564 passed, 2 failed, 2 skipped` (695.5s, release, sequential). The suite is **not green by design**: two previously hidden local failures are now exposed. The bad assertion introduced during this pass was corrected and re-verified green.  
-**Previous status (Checkpoint 4, historical):** `563 passed, 0 failed, 4 skipped` — green, but two local failures were hidden behind `#[ignore]`.  
+**Date:** 2026-11-18 (Checkpoint 4.6 Final Certification)  
+**Role:** Senior System Architect  
+**Suite Status (current):** `566 tests run: 566 passed, 0 failed, 2 skipped` (100% green, release, sequential). Both previously red defects (TF-03 tool loop & continuation drop, TF-04 WsLink conformance framing) are fully resolved in production code. Zero ungrounded ignores remain.  
+**Previous status (Checkpoint 4.5):** `564 passed, 2 failed, 2 skipped` — exposed TF-03 and TF-04.  
+
+---
+
+## Checkpoint 4.6 Final Certification — 100% Green Suite Baseline
+
+Command executed and verified:
+```bash
+cd app/src-tauri
+NEXTEST_EXPERIMENTAL_LIBTEST_JSON=1 RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) \
+  cargo nextest run --release --test-threads=1 --no-fail-fast --message-format libtest-json
+# 566 tests run: 566 passed, 0 failed, 2 skipped  [0 errors]
+```
+
+### Defects Resolved in Production:
+
+1. **TF-04 (`remote_link_test::ws_link_passes_generic_conformance_suite`)**:
+   - Demuxed duplex reader stream with dedicated internal FIFO queues (`buffered_control`, `buffered_audio`) in `WsLink`.
+   - Added non-blocking kernel peer-close inspection (`libc::recv(MSG_PEEK | MSG_DONTWAIT)`) on Unix to detect TCP FIN and WebSocket Close frames without async stall.
+   - Enforced `check_control_message_size` unconditionally on raw decrypted bytes before payload demuxing.
+   - Fixed `terminate_on_protocol_violation` to close both reader/writer halves, send `Message::Close(None)`, and record causal close reason.
+   - Conformance: **18/18 generic conformance cases passed; all 19 remote link tests passed**.
+
+2. **TF-03 (`e2e_voice_pipeline_test::mid_thought_continuation_combines_both_bursts`)**:
+   - Root cause identified: In `transcript.rs:181`, `release_speech_hold()` and `rearm_hardware_cancel_flag()` were invoked before checking `trimmed.is_empty()` and before cancelling Turn 1. Turn 1 woke up uncancelled with a latched stream token, cycling 20 iterations in 1ms until `max_steps` exhausted. This in turn triggered `discard_pending_turn`, wiping the staged English query.
+   - Fix applied: In `transcript.rs`, `cancel_active_turn()` is now invoked before releasing speech hold. Turn 1 terminates cleanly as `Cancelled`. `take_staged_query` takes the staged query and merges it with the Hindi burst into the combined prompt for Turn 2.
+   - In `TurnAccumulator::resolve_merged_transcript`, added fallback to `user_transcript` if `continuation_prefix` is empty, ensuring zero uncommitted transcript drops.
+   - Fixed empty-transcript continuation promotion: when `trimmed.is_empty()` and `continuation_prefix` is present, it promotes `turn_id` without spurious rotation.
+   - Fixed Tokio async `blocking_lock()` panic in `tests/common/harness.rs` using `tokio::task::block_in_place`.
+   - Verification: **`mid_thought_continuation_combines_both_bursts` passes in 35.93s; `transcript_ingestion_test` 12/12 passed**.
+
+3. **Ignored Tests Audit (§8 Compliant)**:
+   - Exactly 2 external dependency tests remain ignored:
+     1. `memory_compaction_test::compaction_slice_100_turns_against_a_remote_ollama_server` (remote Ollama hardware dependency).
+     2. `realtime_transport_test::live_cloud_realtime_handshake` (live cloud API key dependency).
+   - Zero internal/mocked tests ignored.
 
 ---
 

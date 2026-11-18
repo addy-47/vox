@@ -117,7 +117,10 @@ impl TurnAccumulator {
     pub fn resolve_merged_transcript(&mut self, new_segment: &str) -> String {
         self.awaiting_continuation = false;
         let trimmed_new = new_segment.trim();
-        let prefix = take(&mut self.continuation_prefix);
+        let mut prefix = take(&mut self.continuation_prefix);
+        if prefix.is_empty() {
+            prefix = take(&mut self.user_transcript);
+        }
 
         let merged = match (!prefix.is_empty(), !trimmed_new.is_empty()) {
             (true, true) => format!("{} {}", prefix, trimmed_new),

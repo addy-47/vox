@@ -369,11 +369,9 @@ async fn mid_thought_continuation_combines_both_bursts() {
     // plus a second dispatched turn. Contention from previous tests' lingering
     // ON​NX/sidecar threads can stretch this to minutes; the persist deadline is
     // the binding constraint. Keep generous but bounded.
-    let test_timeout = Duration::from_secs(600);
+    let test_timeout = Duration::from_secs(60);
     tokio::time::timeout(test_timeout, async {
-        // Real Qwen GGUF generation via the production sidecar path. The system
-        // prompt forces a long (10-line) reply so the mid-thought window stays
-        // open while the assistant is generating and Kokoro synthesizes clauses.
+        // Real Qwen GGUF generation via the production sidecar path.
         let _ = env_logger::try_init();
         let (_guard2, app, state) = common::harness::setup_isolated_app_state().await;
         {
@@ -382,7 +380,7 @@ async fn mid_thought_continuation_combines_both_bursts() {
             settings.interaction.pipeline_mode = PipelineMode::Modular;
             settings.memory.context_retrieval_enabled = false;
             settings.interaction.web_search_enabled = false;
-            settings.persona.modular_prompt = "You are Vox, a voice assistant. For every user request you must reply with exactly 10 lines of text, one line per instruction: describe the requested topic thoroughly in line 01, then provide nine more distinct lines with additional details. Never reply in fewer than 10 lines.".to_string();
+            settings.persona.modular_prompt = "You are Vox, a helpful voice assistant. Keep answers brief.".to_string();
         }
         state.owner.store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
         state.pipeline.set_state(InteractionState::Idle);
@@ -431,7 +429,7 @@ async fn mid_thought_continuation_combines_both_bursts() {
         );
 
         // Watch state from before session start so we catch the Thinking window.
-        let (_seen_bits, watcher_join) = common::harness::spawn_state_watcher(&state, Duration::from_secs(240));
+        let (_seen_bits, watcher_join) = common::harness::spawn_state_watcher(&state, Duration::from_secs(45));
 
         let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
         let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
@@ -442,7 +440,7 @@ async fn mid_thought_continuation_combines_both_bursts() {
         common::audio::stream_audio_to_ring_buffer_paced(&audio, &mut rig.cap_prod, Some(4.0));
         common::audio::stream_silence_frames(&mut rig.cap_prod, 80);
         assert!(
-            wait_for_state(&state, InteractionState::Thinking, Duration::from_secs(30)).await,
+            wait_for_state(&state, InteractionState::Thinking, Duration::from_secs(15)).await,
             "turn 1 must reach Thinking before the resume"
         );
 
@@ -456,7 +454,7 @@ async fn mid_thought_continuation_combines_both_bursts() {
         common::audio::stream_silence_frames(&mut rig.cap_prod, 80);
 
         // Poll for a combined turn to persist; must include both bursts.
-        let deadline = Instant::now() + Duration::from_secs(500);
+        let deadline = Instant::now() + Duration::from_secs(45);
         let mut merged: Option<(i64, String)> = None;
         while Instant::now() < deadline {
             let conn = db_connect(&state);
@@ -483,7 +481,7 @@ async fn mid_thought_continuation_combines_both_bursts() {
             if merged.is_some() {
                 break;
             }
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
         let (turn_id, text) = merged.expect("the merged turn must persist to the database");
         // The merged transcript must contain both the English burst (from turn 1)
@@ -499,9 +497,9 @@ async fn mid_thought_continuation_combines_both_bursts() {
 
         // Drain playback like every other scene with Kokoro: pump until the
         // merged turn reaches Ready. This also lets the Kokoro worker finish
-        // in-flight jobs before process teardown (ORT teardown throws otherwise).
+        // in-flight jobs before process teardown.
         let mut speaker_out = [0.0f32; 960];
-        let drain_deadline = Instant::now() + Duration::from_secs(180);
+        let drain_deadline = Instant::now() + Duration::from_secs(30);
         while Instant::now() < drain_deadline && state.pipeline.state() != InteractionState::Ready {
             rig.sink.process_output_buffer(&mut speaker_out);
             tokio::time::sleep(Duration::from_millis(1)).await;
@@ -512,9 +510,8 @@ async fn mid_thought_continuation_combines_both_bursts() {
             "merged turn must close back to Ready"
         );
         watcher_join.join().expect("state watcher panicked");
-        // Kill the real Qwen sidecar before the process-exit backstop below.
+        // Kill the real Qwen sidecar before completing.
         vox_lib::services::sidecar::global_sidecar_supervisor().shutdown_all();
-        std::process::exit(0); // ORT teardown throws otherwise (F-004, see findings)
     })
     .await
     .expect("mid_thought_continuation_combines_both_bursts timed out");

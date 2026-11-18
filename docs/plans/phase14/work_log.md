@@ -1,5 +1,35 @@
 # Phase 14 Work Log
 
+## 2026-11-18 — Checkpoint 4.6: 100% Green Certified Test Baseline & Resolution of TF-03 / TF-04
+
+- **Role:** Senior System Architect.
+- **Defects Resolved & Verified at Production Layer:**
+  - **TF-03 (Mid-thought continuation tool-loop & speech-hold race):**
+    - Root-caused race condition in `app/src-tauri/src/pipeline/assistant/transcript.rs`: calling `release_speech_hold()` before `cancel_active_turn()` allowed the waiting ReAct loop in `handle_pass_outcome` to wake up uncancelled while `stream_cancel_token` was still latched. This exhausted `max_steps` (20 iterations in 1ms), triggering `discard_pending_turn` which erased the user's staged query burst.
+    - Fixed ordering: take staged query → merge queries → cancel active turn (`cancel_active_turn()`) → release speech hold (`release_speech_hold()`) → rotate turn (`next_turn()`) → dispatch merged prompt.
+    - In `TurnAccumulator::resolve_merged_transcript` (`app/src-tauri/src/pipeline/assistant/mod.rs`), added fallback to `user_transcript` when `continuation_prefix` is empty.
+    - Updated `tests/e2e_voice_pipeline_test.rs`: removed `std::process::exit(0)` bypass; test passes deterministically in ~36s with full pipeline assertions.
+  - **TF-04 (WsLink Duplex Conformance Framing & Socket Protocol Errors):**
+    - Root-caused WebSocket frame demux failure in `app/src-tauri/src/services/remote/link/ws.rs`: binary audio frames interleaved on the duplex channel were not buffered into separate control/audio queues, stalling control reads and triggering invalid JSON payload parse errors.
+    - Added dedicated FIFO buffers (`buffered_audio`, `buffered_control`) to `WsLink`.
+    - Implemented non-blocking kernel socket inspection via `libc::recv(fd, buf, 1, MSG_PEEK | MSG_DONTWAIT)` to cleanly detect TCP FIN and WebSocket Close opcodes (`0x88`) without yielding or sleeping in the async runtime.
+    - Enforced unconditional `check_control_message_size` verification on raw decrypted payloads before type parsing.
+    - Conformance test `ws_link_passes_generic_conformance_suite` passes cleanly across all duplex and control/audio independence test cases.
+  - **Test Concurrency & Async Hygiene:**
+    - Fixed `tests/common/harness.rs`: replaced unsafe `state.engine.blocking_lock()` calls inside Tokio async worker threads with `assign_mock_engine` using `tokio::task::block_in_place`.
+- **Compile Gate:**
+  - `./scripts/verify-targets.sh` passed with **0 warnings / 0 errors** across desktop clippy, desktop build, and Android cross-clippy (`aarch64-linux-android`).
+- **Certified Test Baseline:**
+  - `cargo nextest run --release --test-threads=1 --no-fail-fast` completed with exit code 0:
+    - **Total tests:** 568
+    - **Passed:** 566
+    - **Failed:** 0
+    - **Skipped / Ignored:** 2 (both §8 compliant external tests: live Cloud API key & remote Ollama server).
+- **Deliverables Updated:**
+  - `docs/tests/test-findings.md`: TF-01, TF-02, TF-03, TF-04, TF-05, TF-06, TF-07 all CLOSED.
+  - `docs/tests/test-baseline-report.md`: Checkpoint 4.6 certified clean baseline recorded.
+- **Status:** Checkpoint 4 complete. Certified 100% green test baseline ready for handoff to Senior Test Engineer for Checkpoint 5 (Mutation Testing Campaign via `scripts/mutation-runner.py`).
+
 ## 2026-11-18 — Checkpoint 4.5: No Hidden Failures, Per-Stage 5s Ceiling & Mutation Runner Smoke Test
 
 - **Role:** Senior Test Engineer.

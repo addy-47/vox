@@ -654,6 +654,18 @@ pub async fn get_test_app_and_state() -> (
     (app, state)
 }
 
+fn assign_mock_engine(state: &vox_lib::core::state::AppState, engine: vox_lib::core::engine::VoxEngine) {
+    if let Ok(mut guard) = state.engine.try_lock() {
+        *guard = Some(engine);
+    } else if tokio::runtime::Handle::try_current().is_ok() {
+        tokio::task::block_in_place(|| {
+            *state.engine.blocking_lock() = Some(engine);
+        });
+    } else {
+        *state.engine.blocking_lock() = Some(engine);
+    }
+}
+
 /// Attaches a mock VoxEngine with a specified VAD command sender to the managed AppState.
 pub fn attach_mock_engine_with_vad_to_state<R: tauri::Runtime>(
     _app: &AppHandle<R>,
@@ -683,11 +695,7 @@ pub fn attach_mock_engine_with_vad_to_state<R: tauri::Runtime>(
         tts_handle: None,
         orchestrator_handle: None,
     };
-    if let Ok(mut guard) = state.engine.try_lock() {
-        *guard = Some(engine);
-    } else {
-        *state.engine.blocking_lock() = Some(engine);
-    }
+    assign_mock_engine(state, engine);
     state
         .pipeline
         .set_state(vox_lib::core::state::InteractionState::Ready);
@@ -745,11 +753,7 @@ pub fn attach_mock_engine_with_llm_tts_to_state<R: tauri::Runtime>(
         tts_handle: None,
         orchestrator_handle: None,
     };
-    if let Ok(mut guard) = state.engine.try_lock() {
-        *guard = Some(engine);
-    } else {
-        *state.engine.blocking_lock() = Some(engine);
-    }
+    assign_mock_engine(state, engine);
     state
         .pipeline
         .set_state(vox_lib::core::state::InteractionState::Ready);
@@ -786,11 +790,7 @@ pub fn attach_mock_engine_with_pipeline_tx_to_state<R: tauri::Runtime>(
         tts_handle: None,
         orchestrator_handle: None,
     };
-    if let Ok(mut guard) = state.engine.try_lock() {
-        *guard = Some(engine);
-    } else {
-        *state.engine.blocking_lock() = Some(engine);
-    }
+    assign_mock_engine(state, engine);
     state
         .pipeline
         .set_state(vox_lib::core::state::InteractionState::Ready);
@@ -884,11 +884,7 @@ pub fn attach_rig_engine(
         tts_handle: None,
         orchestrator_handle: None,
     };
-    if let Ok(mut guard) = state.engine.try_lock() {
-        *guard = Some(engine);
-    } else {
-        *state.engine.blocking_lock() = Some(engine);
-    }
+    assign_mock_engine(state, engine);
 }
 
 /// Capture→AEC→VAD chain, wired identically to src/core/engine.rs.
