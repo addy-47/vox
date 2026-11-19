@@ -509,11 +509,18 @@ async fn late_arriving_final_is_captured_as_a_continuation_prefix() {
 
     // Stash for continuation and mark older physical utterance segment
     let interrupted_turn = rig.state.pipeline.peek_turn_id();
+    // Allocate a real newer utterance so the late-final check (bound < peek) is
+    // genuinely true instead of relying on a synthetic zero id.
+    rig.state.pipeline.next_utterance_id();
     {
         let mut acc = rig.state.pipeline_accumulator.lock();
         acc.stash_for_continuation();
         acc.bound_utterance_id = Some(0);
     }
+    assert!(
+        rig.state.pipeline.peek_utterance_id() > 0,
+        "a physical utterance must have been allocated"
+    );
 
     // The late final belongs to the interrupted speech segment
     rig.send(VoxEvent::TranscriptFinal {

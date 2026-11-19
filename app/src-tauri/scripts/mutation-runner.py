@@ -44,7 +44,10 @@ def load_mutants(path: Path):
         raise ValueError("mutants.json must be version 1 with a 'mutants' array")
     required = {"id", "name", "file", "target", "replacement", "test"}
     for m in data["mutants"]:
-        missing = required - set(m)
+        if m.get("skip_reason"):
+            missing = {"id", "name", "test"} - set(m)
+        else:
+            missing = required - set(m)
         if missing:
             raise ValueError(f"mutant {m.get('id', '?')} missing keys: {sorted(missing)}")
         if not m["test"].get("binary"):
@@ -124,11 +127,11 @@ def display_path(path: Path) -> str:
         return str(path)
 
 
-def write_report(results, mode, mutants_path, smoke):
+def write_report(results, mode, mutants_path, smoke, phase=None):
     lines = [
         "# Vox Mutation Report",
         "",
-        "**Status:** " + ("SMOKE TEST ONLY — not a full campaign" if smoke else "FULL CAMPAIGN"),
+        "**Status:** " + (phase or ("SMOKE TEST ONLY — not a full campaign" if smoke else "FULL CAMPAIGN")),
         f"**Mode:** {mode}  ",
         f"**Mutant set:** `{display_path(mutants_path)}`  ",
         f"**Runner:** `app/src-tauri/scripts/mutation-runner.py`",
@@ -138,11 +141,16 @@ def write_report(results, mode, mutants_path, smoke):
     ]
     killed = 0
     survived = 0
+    skipped = 0
     for r in results:
-        state = "yes" if r["killed"] else "NO"
+        if r.get("skipped"):
+            state = "skip"
+            skipped += 1
+        else:
+            state = "yes" if r["killed"] else "NO"
         killed += int(r["killed"])
-        survived += int(not r["killed"])
-        note = (r.get("error") or r.get("note") or "").replace("\n", " ")[:120]
+        survived += int(not r["killed"] and not r.get("skipped"))
+        note = (r.get("error") or r.get("skip_reason") or r.get("note") or "").replace("\n", " ")[:120]
         lines.append(
             f"| {r['id']} — {r['name']} | `{r['test']}` | {state} | {r['seconds']:.1f} | {note} |"
         )
@@ -150,15 +158,20 @@ def write_report(results, mode, mutants_path, smoke):
     score = f"{100.0 * killed / total:.1f}%" if total else "n/a"
     lines += [
         "",
-        f"**Mutation score:** {score} ({killed}/{total} killed; {survived} survived).",
+        f"**Mutation score:** {score} ({killed}/{total} killed; {survived} survived; {skipped} skipped as unmutatable).",
         "",
         "## Surviving mutants — RCA pending",
         "",
     ]
-    survivors = [r for r in results if not r["killed"]]
+    survivors = [r for r in results if not r["killed"] and not r.get("skipped")]
     if survivors:
         for r in survivors:
             lines.append(f"- **{r['id']} — {r['name']}** (`{r['test']}`): {r.get('error', 'test passed under the mutant')}")
+            tail = r.get("output_tail", "").strip()
+            if tail:
+                lines.append("  ```text")
+                lines.extend("  " + line for line in tail.splitlines())
+                lines.append("  ```")
     else:
         lines.append("None in this run.")
     lines += [
@@ -181,10 +194,16 @@ def main():
     ap.add_argument("--smoke", action="store_true", help="run only mutants tagged smoke: true")
     ap.add_argument("--dry-run", action="store_true", help="validate inputs without applying mutants")
     ap.add_argument("--report", type=Path, default=DEFAULT_REPORT)
+    ap.add_argument("--ids", help="comma-separated mutant ids to run (targeted re-run)")
     args = ap.parse_args()
 
     DEFAULT_REPORT = args.report
     mutants = load_mutants(args.mutants)
+    if args.ids:
+        wanted = {x.strip() for x in args.ids.split(",") if x.strip()}
+        mutants = [m for m in mutants if m["id"] in wanted]
+        if not mutants:
+            raise SystemExit(f"no mutants matched ids: {wanted}")
     if args.smoke:
         mutants = [m for m in mutants if m.get("smoke")]
         if not mutants:
@@ -193,6 +212,9 @@ def main():
 
     if args.dry_run:
         for m in mutants:
+            if m.get("skip_reason"):
+                log(f"SKIP {m['id']} — {m['skip_reason']}")
+                continue
             path = APP_SRC_TAURI / m["file"]
             if not path.is_file():
                 raise SystemExit(f"missing target file {path}")
@@ -204,6 +226,16 @@ def main():
 
     results = []
     for m in mutants:
+        if m.get("skip_reason"):
+            results.append({
+                "id": m["id"], "name": m["name"], "test": m["test"]["binary"],
+                "killed": False, "seconds": 0.0, "skipped": True,
+                "skip_reason": m["skip_reason"], "output_tail": "",
+            })
+            log(f"{m['id']}: SKIPPED — {m['skip_reason']}")
+            write_report(results, args.mode, args.mutants, args.smoke,
+                         phase=f"CAMPAIGN IN PROGRESS — {len(results)}/{len(mutants)}")
+            continue
         path = APP_SRC_TAURI / m["file"]
         command = test_command(m)
         original = None
@@ -217,6 +249,7 @@ def main():
                 "id": m["id"], "name": m["name"], "test": m["test"]["binary"],
                 "killed": killed, "seconds": seconds,
                 "note": "expected-failure: " + m.get("expected", "test fails") if killed else "test passed under mutant",
+                "output_tail": output[-1200:],
             })
             log(f"{m['id']}: {'KILLED' if killed else 'SURVIVED'} in {seconds:.1f}s")
         except subprocess.TimeoutExpired:
@@ -224,18 +257,22 @@ def main():
                 "id": m["id"], "name": m["name"], "test": m["test"]["binary"],
                 "killed": False, "seconds": 900.0,
                 "error": "runner timeout — inconclusive, manual triage required",
+                "output_tail": "",
             })
             log(f"{m['id']}: TIMEOUT")
         except Exception as exc:
             results.append({
                 "id": m["id"], "name": m["name"], "test": m["test"]["binary"],
                 "killed": False, "seconds": 0.0, "error": f"runner error: {exc}",
+                "output_tail": "",
             })
             log(f"{m['id']}: ERROR {exc}")
         finally:
             if original is not None:
                 restore_mutant(path, original)
                 log(f"{m['id']}: production file reverted")
+        write_report(results, args.mode, args.mutants, args.smoke,
+                     phase=f"CAMPAIGN IN PROGRESS — {len(results)}/{len(mutants)}")
     write_report(results, args.mode, args.mutants, args.smoke)
     if any(not r["killed"] and "error" in r for r in results):
         raise SystemExit("campaign had inconclusive mutants — see report")

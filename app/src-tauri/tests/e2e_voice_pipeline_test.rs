@@ -237,7 +237,6 @@ async fn full_conversational_turn_runs_from_idle_to_ready_and_persists_the_turn(
             "persisted user text must be non-empty"
         );
         assert_eq!(assistant_text, "Hello! How can I help you today?");
-        std::process::exit(0); //// ORT FastGelu teardown throws otherwise (F-004, see findings)
     })
     .await
     .expect("full_conversational_turn_runs_from_idle_to_ready_and_persists_the_turn timed out");
@@ -348,7 +347,6 @@ async fn true_acoustic_barge_in_during_speaking_cancels_and_completes() {
             InteractionState::Ready,
             "second turn must complete to Ready"
         );
-        std::process::exit(0); // ORT FastGelu teardown throws otherwise (F-004, see findings)
     })
     .await
     .expect("true_acoustic_barge_in_during_speaking_cancels_and_completes timed out");
@@ -570,7 +568,6 @@ async fn sub_300ms_cough_recovers_to_ready_without_deadlock() {
             wait_for_state(&state, InteractionState::Ready, Duration::from_secs(5)).await,
             "transient must recover to Ready via the fallback empty TranscriptFinal"
         );
-        std::process::exit(0); // ORT teardown throws otherwise (F-004, see findings)
     })
     .await
     .expect("sub_300ms_cough_recovers_to_ready_without_deadlock timed out");

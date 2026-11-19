@@ -31,7 +31,7 @@
 - **Evidence:** `std::process::exit(0); //// ORT FastGelu teardown throws otherwise (F-004, see findings)`.
 - **Suspected location:** ONNX Runtime teardown in the Kokoro TTS path; `tests/common/harness.rs::E2eVoiceRig::drop` cannot currently absorb it.
 - **Owner for fix:** backend engineer (runtime teardown) + test engineer (rig teardown).
-- **Test action:** remove the exits once teardown is fixed; until then these four scenes provide no teardown evidence.
+- **Status: CLOSED.** All four `std::process::exit(0)` calls were removed after the teardown fixes in `3e687088` and the playback-drain pattern was applied to every scene. Verified: `e2e_voice_pipeline_test` 4/4 passed in 23.7s with clean unwinding and no forced exits.
 
 ### TF-03 — Mid-thought continuation E2E fails (un-ignored in CP4.5)
 - **Test:** `e2e_voice_pipeline_test.rs` `mid_thought_continuation_combines_both_bursts`.
@@ -88,8 +88,8 @@ These are environment-limited, not production defects. Per style guide §8 they 
 
 | Test | Blocker | Owner / expiry |
 | :--- | :--- | :--- |
-| `realtime_transport_test.rs:777` `live_cloud_realtime_handshake` | live `GEMINI_API_KEY` or `DEEPGRAM_API_KEY` | missing — add |
-| `memory_compaction_test.rs:750` `compaction_slice_100_turns_against_a_remote_ollama_server` | remote Ollama `gemma3:12b`; also hardcodes an IP URL | missing — add; move URL to config |
+| `realtime_transport_test.rs` `live_cloud_realtime_handshake` | live `GEMINI_API_KEY` or `DEEPGRAM_API_KEY` | owner: test-engineer; expiry: 2026-12-18 |
+| `memory_compaction_test.rs` `compaction_slice_100_turns_against_a_remote_ollama_server` | remote Ollama `gemma3:12b`; URL still hardcoded | owner: test-engineer; expiry: 2026-12-18; config move still open |
 
 ---
 
@@ -98,15 +98,17 @@ These are environment-limited, not production defects. Per style guide §8 they 
 | ID | Category | Production owner | Test action | Status |
 | :--- | :--- | :--- | :--- | :--- |
 | TF-01 | Spec/schema divergence | backend + architect | global unique index | **CLOSED** (`ac67587d`) |
-| TF-02 | Runtime teardown | backend + test | remove `process::exit(0)` after teardown fix | **OPEN** |
-| TF-03 | Sidecar cancel / tool-loop defect | backend | un-ignored in CP4.5; keep red until fixed | **OPEN — NO LONGER HIDDEN** |
-| TF-04 | Link contract mismatch | backend + test | un-ignored in CP4.5; fix contract or link | **OPEN — NO LONGER HIDDEN** |
+| TF-02 | Runtime teardown | backend + test | all four `process::exit(0)` bypasses removed | **CLOSED** — `e2e_voice_pipeline_test` 4/4 green without forced exits |
+| TF-03 | Tool-loop / speech-hold race | backend | reorder release-hold after cancel; merge staged query | **CLOSED** (`3e687088`) — merged-turn scene 10.9s green |
+| TF-04 | WsLink duplex framing | backend | separate control/audio FIFO buffers + FIN/Close inspection | **CLOSED** (`3e687088`) — full conformance suite green |
 | TF-05 | Cancel re-arm path | test | wire to production atomics | **CLOSED** (CP3) |
 | TF-06 | TTS fallback path | test | renamed to drained-audio test; fallback path remains unverified | **CLOSED as finding** (renamed honestly) |
 | TF-07 | History commit | test | assert history accessor | **CLOSED** (CP3) |
 | TF-08 | External cloud key | test | owner/expiry present; allowed by §8 | OPEN (external dependency) |
 | TF-09 | External Ollama server | test | owner/expiry present; hardcoded URL still present | OPEN (external dependency) |
 
-CP4.5 policy: local failures are never hidden with `#[ignore]`. TF-03 and TF-04 were un-ignored and will surface as red until their underlying defects are fixed.
+**Current status:** TF-01 through TF-07 are all CLOSED. TF-08 and TF-09 remain open only because they require an external cloud key or a remote GPU server, which §8 explicitly permits as `#[ignore]`. No local test is hidden behind `#[ignore]`.
 
-No finding in this file is fixed by weakening an assertion. Production fixes are owned by `backend-engineer`; test fixes by the test engineer in Checkpoint 3.
+Verified baseline after the merge: `cargo nextest run --release --test-threads=1 --no-fail-fast` → **566 passed, 0 failed, 2 skipped**. All four E2E scenes now run without `process::exit(0)` and pass in ~24s total.
+
+No finding was closed by weakening an assertion. Production fixes were owned by the backend engineer; test fixes by the test engineer.
