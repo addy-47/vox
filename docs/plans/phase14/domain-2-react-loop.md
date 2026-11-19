@@ -14,18 +14,19 @@ In Domain 1, the streaming foundation established the **3-Stream Demuxer**, quar
 2. **Harness-Owned Concurrency Wave Scheduler:** The v1 harness iterates through model-emitted tool calls serially (`for call in calls`), incurring an $O(\sum T_i)$ latency penalty. In v2, `ToolExecutor::execute_batch` schedules calls using Harness-owned barriers: consecutive read-only/idempotent tools (`ToolExecutionMode::Parallel`, including `set_title`) execute concurrently via `futures_util::future::join_all`, while mutating tools (`ToolExecutionMode::Exclusive`) form strict sequential barriers that drain preceding waves before running alone.
 3. **Deterministic Order & 1:1 Bijection Preservation:** Even when parallel tools complete out of order on the Tokio thread pool, `execute_batch` reassembles all tool execution outcomes into the exact order declared by the model before committing to history. Furthermore, if batch execution is cancelled or suspended mid-batch, fallback observations (`"Tool execution cancelled"`) are synthesized for all unexecuted calls, maintaining a strict 1:1 `tool_calls` $\leftrightarrow$ `Role::Tool` bijection that prevents provider HTTP 400 errors.
 4. **Relational Step Tracking in Turso DB (Option B):** The v1 database schema stores isolated `session_tool_calls` without any relational model of cognitive steps or trajectory progression. In v2, a dedicated `session_steps` table establishes a clean 1:N hierarchy (`sessions` $\to$ `turns` $\to$ `session_steps` $\to$ `session_tool_calls`), recording step indices, spoken preamble text, tool counts, and execution durations under MVCC guarantees. `PersistenceEvent::StepCompleted` is dispatched strictly *before* child `PersistenceEvent::ToolCallExecuted` events to guarantee foreign key referential integrity in FIFO processing.
-5. **Reentrant Step Ceiling & Mandatory Summary Pass:** The v1 coordinator loops up to 20 times, but if the limit is breached, it aborts with a raw error. In v2, reaching `MAX_TOOL_STEPS` triggers an intentional, tool-free summary generation pass (`allow_tools = false`), forcing the model to synthesize its findings into a clear spoken answer for the user (`AudioIntent::TurnResponse`).
+5. **Reentrant Step Ceiling & Mandatory Summary Pass:** The v1 coordinator loops up to 20 times, but if the limit is breached, it aborts with a raw error. In v2, reaching `MAX_TOOL_STEPS` triggers an intentional, tool-free summary generation pass (`allow_tools = false`), forcing the model to synthesize its findings into a clear spoken answer for the user.
 6. **Object-Safe, Forward-Compatible Tool Trait:** `ToolDefinition` self-declares its `execution_mode(&self, args: &Value)`. Adding new tools requires zero changes to the barrier scheduler or loop coordinator.
+7. **Atomic Step 0 Intake & Staging Invariant:** In v1, user turns were immediately committed into `ConversationHistoryStage` on intake and rolled back via `rollback_last_user_turn` if cancelled before output. In v2, user queries are staged in `pending_user_query` and committed to history atomically only upon the first assistant artifact (`commit_tool_step` or `commit_completed_turn`), eradicating history rollbacks entirely.
 
 ---
 
 ## 2. Trace: Current v1 Tool Execution & Failure Modes
 
-Entry point: Reception of tool calls from the LLM stream via `StreamPassOutcome::ToolCallsReceived` in `app/src-tauri/src/services/harness/loop.rs:337`
+Entry point: Reception of tool calls from the LLM stream via `StreamPassOutcome::ToolCallsReceived` in `app/src-tauri/src/harness/loop.rs`
 Exit point(s):
-- Success Exit: Terminal turn completion in `app/src-tauri/src/services/harness/steps.rs:652` (`step7_commit_completed`)
-- Cancellation Exit: Turn cancelled / user barge-in in `app/src-tauri/src/services/harness/steps.rs:570` (`step7_handle_cancelled`)
-- Error Exit: Turn error in `app/src-tauri/src/services/harness/steps.rs:621` (`step7_handle_error`)
+- Success Exit: Terminal turn completion in `app/src-tauri/src/harness/steps.rs` (`step7_commit_completed`)
+- Cancellation Exit: Turn cancelled / user barge-in in `app/src-tauri/src/harness/steps.rs` (`step7_handle_cancelled`)
+- Error Exit: Turn error in `app/src-tauri/src/harness/steps.rs` (`step7_handle_error`)
 Depth: Deep trace of tool batch handling, serial iteration, scratchpad accumulation, token budgeting, and persistence handoff.
 
 ### Phase 1 — Tool Batch Interception & Scratchpad Initialization
@@ -33,37 +34,37 @@ Depth: Deep trace of tool batch handling, serial iteration, scratchpad accumulat
 1. **What:** The turn coordinator receives a stream pass outcome containing the extracted spoken preamble text and a list of requested tool calls.
    **Who:** `StreamRoutingStage` delivers `StreamPassOutcome::ToolCallsReceived` to `handle_pass_outcome` in `services::harness::loop`.
    **Trigger:** The streaming demuxer encounters end-of-stream with buffered tool call invocations.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/loop.rs:337-341](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/loop.rs#L337-L341)
+   **Grounding:** Traced — [app/src-tauri/src/harness/loop.rs:337-341](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/loop.rs#L337-L341)
    **Owner:** `services::harness::loop`
 
 2. **What:** The coordinator checks whether tool execution is permitted; if tools are disabled, it discards all tool calls and commits only the preamble text.
    **Who:** `handle_pass_outcome` in `services::harness::loop`.
    **Trigger:** `allow_tools == false` during a forced final summary pass.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/loop.rs:342-353](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/loop.rs#L342-L353)
+   **Grounding:** Traced — [app/src-tauri/src/harness/loop.rs:342-353](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/loop.rs#L342-L353)
    **Owner:** `services::harness::loop`
 
 3. **What:** The coordinator delegates the tool list, preamble text, and the mutable scratchpad reference to the batch execution step function.
    **Who:** `handle_pass_outcome` calls `step6_handle_tool_batch` in `services::harness::steps`.
    **Trigger:** `allow_tools == true` with non-empty `calls`.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/loop.rs:355-356](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/loop.rs#L355-L356)
+   **Grounding:** Traced — [app/src-tauri/src/harness/loop.rs:355-356](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/loop.rs#L355-L356)
    **Owner:** `services::harness::steps`
 
 4. **What:** The execution step clears the stream accumulator's assistant response buffer to prepare for subsequent generation passes.
    **Who:** `step6_execute_tools` in `services::harness::steps`.
    **Trigger:** Entry into `step6_execute_tools`.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:441-445](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L441-L445)
+   **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:441-445](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L441-L445)
    **Owner:** `services::harness::steps`
 
 5. **What:** The step function pushes a synthetic assistant message containing the preamble text and the cloned list of tool calls into the in-memory scratchpad.
    **Who:** `step6_execute_tools` mutates `scratchpad: &mut Vec<ChatMessage>`.
    **Trigger:** Requirement to represent the tool invocation in LLM context.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:448-454](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L448-L454)
+   **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:448-454](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L448-L454)
    **Owner:** `services::harness::steps`
 
 6. **What:** The step function emits a non-terminal pipeline phase notification using exclusively the name of the first tool in the batch.
    **Who:** `step6_execute_tools` calls `enter_non_terminal_phase`.
    **Trigger:** Beginning tool batch execution.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:456-468](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L456-L468)
+   **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:456-468](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L456-L468)
    **Owner:** `services::harness::steps`
 
 ### Phase 2 — Serial Tool Execution & Budget Clamping
@@ -71,55 +72,55 @@ Depth: Deep trace of tool batch handling, serial iteration, scratchpad accumulat
 7. **What:** The step function calculates the maximum allowed observation tokens by inspecting conversation history, the ephemeral scratchpad, and active tool definitions.
    **Who:** `ContextBudgetStage::calculate_max_observation_tokens` in `services::harness::stages::budget`.
    **Trigger:** Calculation prior to iterating tool calls.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:470-492](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L470-L492), [app/src-tauri/src/services/harness/stages/budget.rs:83-93](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/stages/budget.rs#L83-L93)
+   **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:470-492](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L470-L492), [app/src-tauri/src/harness/stages/budget.rs:83-93](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/stages/budget.rs#L83-L93)
    **Owner:** `services::harness::stages::budget`
 
 8. **What:** The step function enters a sequential loop over every tool call in the emitted batch.
    **Who:** `step6_execute_tools` executes a standard Rust `for call in calls` loop.
    **Trigger:** Beginning iteration over the batch.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:494](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L494)
+   **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:494](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L494)
    **Owner:** `services::harness::steps`
 
 9. **What:** At the beginning of each iteration, the loop checks the cancellation token; if cancelled, it logs a notice and immediately exits the loop, returning true.
    **Who:** `step6_execute_tools` checks `ctx.req.cancel.is_cancelled()`.
    **Trigger:** External cancellation or user barge-in signal.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:495-502](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L495-L502)
+   **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:495-502](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L495-L502)
    **Owner:** `services::harness::steps`
 
 10. **What:** The step function constructs a single-tool execution context containing app state, session ID, turn ID, cancellation token, and observation budget.
     **Who:** `step6_execute_tools` instantiates `ToolExecutionContext`.
     **Trigger:** Preparation for single tool invocation.
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:504-511](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L504-L511)
+    **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:504-511](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L504-L511)
     **Owner:** `services::harness::steps`
 
 11. **What:** The step function invokes the tool executor asynchronously for the single tool call and awaits its completion before moving to the next call.
     **Who:** `ToolExecutor::execute_tool` in `services::harness::stages::tools::executor`.
     **Trigger:** Serial loop execution step.
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:513-519](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L513-L519)
+    **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:513-519](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L513-L519)
     **Owner:** `services::harness::stages::tools::executor`
 
 12. **What:** The tool executor looks up the tool in the registry, records metrics, runs the tool with timeout and cancellation races, and dispatches a persistence event.
     **Who:** `ToolExecutor::execute_tool` calls `run_with_guards` and `dispatch_persistence`.
     **Trigger:** Execution of a single tool.
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/stages/tools/executor.rs:87-156](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/stages/tools/executor.rs#L87-L156)
+    **Grounding:** Traced — [app/src-tauri/src/harness/stages/tools/executor.rs:87-156](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/stages/tools/executor.rs#L87-L156)
     **Owner:** `services::harness::stages::tools::executor`
 
 13. **What:** The persistence dispatcher queues a `PersistenceEvent::ToolCallExecuted` to the asynchronous database worker channel without step index or step identifier.
     **Who:** `dispatch_persistence` in `services::harness::stages::tools::executor`.
     **Trigger:** Tool execution finish.
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/stages/tools/executor.rs:21-52](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/stages/tools/executor.rs#L21-L52)
+    **Grounding:** Traced — [app/src-tauri/src/harness/stages/tools/executor.rs:21-52](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/stages/tools/executor.rs#L21-L52)
     **Owner:** `services::harness::stages::tools::executor`
 
 14. **What:** If the executed tool is `set_title` and succeeded without error, the step function acquires the harness lock and marks `title_set = true`.
     **Who:** `step6_execute_tools` mutates `harness.title_set`.
     **Trigger:** Successful `set_title` tool outcome.
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:521-526](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L521-L526)
+    **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:521-526](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L521-L526)
     **Owner:** `services::harness::steps`
 
 15. **What:** The step function pushes the tool result content into the scratchpad as a message with role `Role::Tool` and the tool call ID.
     **Who:** `step6_execute_tools` mutates `scratchpad`.
     **Trigger:** Receipt of tool execution outcome.
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:528-534](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L528-L534)
+    **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:528-534](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L528-L534)
     **Owner:** `services::harness::steps`
 
 ### Phase 3 — Cancellation Failure Mode (Dropped Scratchpad & State Erasure)
@@ -127,31 +128,31 @@ Depth: Deep trace of tool batch handling, serial iteration, scratchpad accumulat
 16. **What:** If cancellation was detected during or immediately after the tool batch, the coordinator branches to terminal cancellation handling.
     **Who:** `handle_pass_outcome` calls `step7_handle_cancelled` in `services::harness::steps`.
     **Trigger:** `cancelled == true` from `step6_handle_tool_batch`.
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/loop.rs:357-359](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/loop.rs#L357-L359)
+    **Grounding:** Traced — [app/src-tauri/src/harness/loop.rs:357-359](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/loop.rs#L357-L359)
     **Owner:** `services::harness::loop`
 
 17. **What:** The cancellation handler constructs `CancelledTurnContext` with an empty string for `partial_text` and omits the `scratchpad` entirely.
     **Who:** `cancelled_ctx` in `services::harness::loop`.
     **Trigger:** Invocation of cancellation finalization.
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/loop.rs:358](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/loop.rs#L358), [app/src-tauri/src/services/harness/loop.rs:367-381](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/loop.rs#L367-L381)
+    **Grounding:** Traced — [app/src-tauri/src/harness/loop.rs:358](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/loop.rs#L358), [app/src-tauri/src/harness/loop.rs:367-381](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/loop.rs#L367-L381)
     **Owner:** `services::harness::loop`
 
 18. **What:** In `step7_handle_cancelled`, because `partial_text` is empty, the handler executes the `else if` branch and calls `rollback_last_user_turn()`.
     **Who:** `step7_handle_cancelled` in `services::harness::steps`.
     **Trigger:** `ctx.partial_text.trim().is_empty()`.
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:607-609](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L607-L609)
+    **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:607-609](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L607-L609)
     **Owner:** `services::harness::steps`
 
 19. **What:** The history stage checks if the last message in working memory has role `Role::User`; because scratchpad messages were never committed to `ConversationHistoryStage`, the last message is indeed the initial user query, which is popped and permanently deleted from memory.
-    **Who:** `ConversationHistoryStage::rollback_last_user_turn` in `services::harness::stages::history`.
+    **Who:** `ConversationHistoryStage::rollback_last_user_turn` in `harness::stages::history` (v1); replaced by `Harness::discard_pending_turn` in `harness::chassis` (v2).
     **Trigger:** Rollback call on cancelled turn with empty assistant text.
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/stages/history.rs:86-96](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/stages/history.rs#L86-L96)
+    **Grounding:** Traced — [app/src-tauri/src/harness/stages/history.rs:86-96](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/stages/history.rs#L86-L96)
     **Owner:** `services::harness::stages::history`
 
 20. **What:** The scratchpad vector allocated in `execute_loop_iterations` is dropped at function exit, resulting in complete loss of all executed tool calls and observations from the ongoing session.
     **Who:** Rust memory deallocation of `scratchpad: Vec<ChatMessage>`.
     **Trigger:** Function return from `execute_loop_iterations`.
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/loop.rs:153](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/loop.rs#L153), [app/src-tauri/src/services/harness/loop.rs:220](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/loop.rs#L220)
+    **Grounding:** Traced — [app/src-tauri/src/harness/loop.rs:153](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/loop.rs#L153), [app/src-tauri/src/harness/loop.rs:220](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/loop.rs#L220)
     **Owner:** `services::harness::loop`
 
 ### Phase 4 — Reentrant Prompt Assembly Coupling & Delayed Commit
@@ -159,25 +160,25 @@ Depth: Deep trace of tool batch handling, serial iteration, scratchpad accumulat
 21. **What:** If execution was not cancelled, the coordinator increments the iteration counter and checks context budget, passing `scratchpad` as a separate slice.
     **Who:** `execute_loop_iterations` calls `check_loop_budget`.
     **Trigger:** Reentrant loop continuation (`LoopAction::Continue`).
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/loop.rs:169-170](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/loop.rs#L169-L170), [app/src-tauri/src/services/harness/loop.rs:259-299](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/loop.rs#L259-L299)
+    **Grounding:** Traced — [app/src-tauri/src/harness/loop.rs:169-170](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/loop.rs#L169-L170), [app/src-tauri/src/harness/loop.rs:259-299](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/loop.rs#L259-L299)
     **Owner:** `services::harness::loop`
 
 22. **What:** The request assembly stage concatenates `harness.history.messages()` with `scratchpad` to construct the next LLM conversation input.
     **Who:** `step4_assemble_request` delegates to `PromptBuilderStage::build_generation_request`.
     **Trigger:** Re-dispatch of generation request for step $K + 1$.
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:366-371](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L366-L371), [app/src-tauri/src/services/harness/stages/prompt.rs:156-175](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/stages/prompt.rs#L156-L175)
+    **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:366-371](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L366-L371), [app/src-tauri/src/harness/stages/prompt.rs:156-175](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/stages/prompt.rs#L156-L175)
     **Owner:** `services::harness::stages::prompt`
 
 23. **What:** Only after a stream pass completes with zero tool calls does the coordinator finally commit the scratchpad messages and final assistant text into `harness.history`.
     **Who:** `step7_commit_completed` in `services::harness::steps`.
     **Trigger:** Receipt of `StreamPassOutcome::Completed`.
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/loop.rs:323-329](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/loop.rs#L323-L329), [app/src-tauri/src/services/harness/steps.rs:660-669](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L660-L669)
+    **Grounding:** Traced — [app/src-tauri/src/harness/loop.rs:323-329](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/loop.rs#L323-L329), [app/src-tauri/src/harness/steps.rs:660-669](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L660-L669)
     **Owner:** `services::harness::steps`
 
 24. **What:** If the loop reaches `MAX_TOOL_STEPS` (20 passes) without receiving a terminal completion, the coordinator does not generate a summary; it aborts the turn with an error.
     **Who:** `execute_loop_iterations` calls `step7_handle_error`.
     **Trigger:** Exceeding loop iteration limit.
-    **Grounding:** Traced — [app/src-tauri/src/services/harness/loop.rs:248-256](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/loop.rs#L248-L256)
+    **Grounding:** Traced — [app/src-tauri/src/harness/loop.rs:248-256](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/loop.rs#L248-L256)
     **Owner:** `services::harness::loop`
 
 ---
@@ -420,7 +421,7 @@ async fn run_parallel_wave(
 In v2, the ephemeral `scratchpad: Vec<ChatMessage>` parameter is completely removed. At the completion of every cognitive step, results are committed immediately to `ConversationHistoryStage`:
 
 ```rust
-// services/harness/stages/history.rs
+// harness/stages/history.rs
 impl ConversationHistoryStage {
     pub fn commit_tool_step(
         &mut self,
@@ -468,31 +469,83 @@ impl ConversationHistoryStage {
 }
 ```
 
-### 4.2 Protected Turn History Rollback Invariant
+### 4.2 Atomic Step 0 Intake & Staging Invariant (Zero History Rollbacks)
 
-Under v1, user barge-in on Step 1 erased the user turn from history if `partial_text` was empty. Under v2:
-1. `step6_execute_tool_batch` **always** executes `commit_tool_step` before returning—even if cancelled mid-batch (using the synthesized `"Tool execution cancelled"` outcomes).
-2. Because `commit_tool_step` has run, `last.role` in `ConversationHistoryStage` is `Role::Tool`.
-3. `rollback_last_user_turn()` verifies `last.role == Role::User` and cleanly no-ops:
+Under v1, user barge-in on Step 1 erased the user turn from history if `partial_text` was empty because `step7_handle_cancelled` called `rollback_last_user_turn()`. In v2, history rollback has been completely eliminated in favor of an **Atomic Step 0 Staging Invariant**:
+
+1. **Step 0 Intake Staging:** During `step1_intake`, `harness.stage_user_query(turn_id, query)` stages the user query in `pending_user_query: Option<(u32, String)>` without appending it to `ConversationHistoryStage`. Canonical history remains untouched during intake.
+2. **Atomic Step 1+ Tool Commit:** `commit_tool_step` automatically flushes `pending_user_query` to `history.messages` before appending assistant tool calls and observations.
+3. **Atomic Final Completion Commit:** `commit_completed_turn` automatically flushes `pending_user_query` to `history.messages` before appending the assistant text response.
+4. **Step 0 Cancellation Without Output:** If a turn is cancelled before any speech or tool execution, `step7_handle_cancelled` calls `harness.discard_pending_turn(ctx.turn_id)`, clearing `pending_user_query` with zero history mutation and zero database artifacts.
+5. **Prompt Continuation on Voice Barge-In:** When interrupted during thinking, `take_staged_query` extracts the staged query so the Hindi/English continuation combines both bursts cleanly without history pollution.
 
 ```rust
-// services/harness/stages/history.rs
-pub fn rollback_last_user_turn(&mut self) -> Option<ChatMessage> {
-    if let Some(last) = self.messages.last() {
-        if last.role == Role::User {
-            let popped = self.messages.pop();
-            self.kv_synced_index = self.messages.len();
-            log::info!("[Harness::History] Unanswered user turn rolled back");
-            return popped;
+// harness/chassis.rs
+impl Harness {
+    /// Stages a user query without mutating canonical history until the first assistant artifact.
+    pub fn stage_user_query(&mut self, turn_id: u32, query: String) -> bool {
+        self.pending_user_query = Some((turn_id, query.clone()));
+        self.has_played_filler = false;
+        self.guardrails_state = TurnGuardrailsState::default();
+        let assembled_system = self.prompt.assemble();
+        self.history.sync_system_prompt(&assembled_system);
+        let Some(budget) = self.budget.as_ref() else {
+            return false;
+        };
+        let tracked_tokens = budget.calculate_tracked_tokens(self.history.messages())
+            + crate::services::memory::ml::estimate_tokens(&query);
+        let (_, status) = budget.evaluate_utilization(tracked_tokens);
+        status == ContextStatus::Critical
+    }
+
+    /// Commits the staged query and tool artifacts as one atomic turn boundary.
+    pub fn commit_tool_step(
+        &mut self,
+        preamble: String,
+        calls: Vec<CanonicalToolCall>,
+        results: Vec<(String, String)>,
+    ) {
+        self.flush_staged_user_query();
+        self.history.commit_tool_step(preamble, calls, results);
+    }
+
+    /// Commits the staged query and final assistant response atomically.
+    pub fn commit_completed_turn(&mut self, assistant_response: String) {
+        if assistant_response.trim().is_empty() {
+            self.pending_user_query = None;
+            return;
+        }
+        self.flush_staged_user_query();
+        self.history.push_assistant_turn(assistant_response);
+    }
+
+    /// Drops a staged query when its turn terminates without an assistant artifact.
+    pub fn discard_pending_turn(&mut self, turn_id: u32) {
+        if matches!(self.pending_user_query, Some((id, _)) if id == turn_id) {
+            self.pending_user_query = None;
         }
     }
-    // If last message is Role::Assistant or Role::Tool, rollback is strictly forbidden!
-    None
+
+    /// Takes the staged query for Scenario A prompt continuation.
+    pub fn take_staged_query(&mut self, turn_id: u32) -> Option<String> {
+        if matches!(self.pending_user_query, Some((id, _)) if id == turn_id) {
+            let (_, text) = self.pending_user_query.take()?;
+            Some(text)
+        } else {
+            None
+        }
+    }
+
+    fn flush_staged_user_query(&mut self) {
+        if let Some((_, text)) = self.pending_user_query.take() {
+            self.history.push_user_turn(text);
+        }
+    }
 }
 ```
 
-- **Step 0 Interruption (Zero Tools Run, Zero Preamble Committed):** If user barges in while assistant is generating thinking tokens before preamble or tool execution begins, `last.role == Role::User`. The unanswered query is popped cleanly.
-- **Step $\ge 1$ Interruption (Preamble Committed or Tools Run):** Preceding tool steps and user input remain permanent in history. The follow-up turn retains full cognitive context.
+- **Step 0 Interruption (Zero Tools Run, Zero Preamble Committed):** `discard_pending_turn` drops `pending_user_query`. Working memory retains only previously completed turns.
+- **Step $\ge 1$ Interruption (Preamble Committed or Tools Run):** Preceding tool steps and user input are already committed to canonical history. The follow-up turn retains full cognitive context.
 
 ---
 
@@ -530,7 +583,7 @@ In v1, `ToolExecutor::execute_tool` called `dispatch_persistence` directly insid
 4. Because `PersistenceWorker` processes events sequentially from a FIFO queue, the parent `session_steps` row is guaranteed to be inserted before child `session_tool_calls` rows!
 
 ```rust
-// services/harness/steps.rs
+// harness/steps.rs
 // Dispatch persistence events in strict parent-then-child sequence:
 let now = current_timestamp_ms();
 let step_duration_ms = step_start.elapsed().as_millis() as u64;
@@ -667,11 +720,11 @@ sequenceDiagram
     
     Note over Backend,LLM: Step 1: Preamble + Tool Batch Emitted
     LLM-->>Backend: Content tokens ("Let me check your notes and search the web.")
-    Backend->>UI: Audio playback starts (AudioIntent::InterimFiller)
+    Backend->>UI: Audio playback starts (TtsCommand::Generate)
     LLM-->>Backend: ToolCallsReceived: [search_memory, web_search, write_file]
     
     Note over Backend,UI: Boundary 2 IPC Emission
-    Backend->>UI: emit_ipc(InteractionState::Working, ActivityEnvelope { kind: Tool, name: "search_memory" })
+    Backend->>UI: transition_harness_phase(Working, ActivityEnvelope { kind: Tool, name: "search_memory" })
     
     Note over Backend,Tools: Boundary 3 Wave Scheduling
     rect rgb(230, 245, 255)
@@ -687,16 +740,16 @@ sequenceDiagram
     end
     
     Note over Backend,DB: Step Boundary Commit
-    Backend->>Backend: harness.history.commit_tool_step(...)
+    Backend->>Backend: harness.commit_tool_step(...) [flushes staged query + tool batch]
     Backend->>DB: FIFO Event 1: persist_tx.send(StepCompleted { id: "step_1", ... })
     Backend->>DB: FIFO Event 2: persist_tx.send(ToolCallExecuted x3 linked to "step_1")
     
     Note over Backend,LLM: Step 2: Final Synthesis
     Backend->>LLM: GenerationRequest with updated History (step = 1)
     LLM-->>Backend: StreamPassOutcome::Completed ("I updated your file with the latest notes.")
-    Backend->>UI: Audio synthesis & playback (AudioIntent::TurnResponse)
+    Backend->>UI: Audio synthesis & playback (TtsCommand::Generate)
     Backend->>DB: persist_tx.send(TurnCompleted)
-    Backend->>UI: emit_ipc(InteractionState::Ready) via Two-Key Quiescence Latch
+    Backend->>UI: transition to Ready via Quiescence Latch (llm_done && audio drained)
 ```
 
 ---
@@ -706,8 +759,8 @@ sequenceDiagram
 | Failure Scenario | Exact Trigger Condition | Observed Behavior in v1 | Deterministic Behavior in v2 |
 | :--- | :--- | :--- | :--- |
 | **Single Tool Error in Parallel Wave** | One tool in a parallel wave fails (e.g. `web_search` returns 429 Rate Limited), while sibling tools succeed. | In v1, tools ran serially; if tool 1 failed, tool 2 still ran, but both remained in volatile scratchpad. | **Error Isolation:** Sibling tools in the `join_all` wave run to normal completion. The failed tool produces `is_error = true` with error description. Both outcomes commit to history in exact declaration order. |
-| **Mid-Batch User Barge-in / Cancellation** | User speaks while a wave or barrier tool is actively executing (`cancel.is_cancelled() == true`). | **Severe Bug:** Loop exits; scratchpad is dropped; `step7_handle_cancelled` calls `rollback_last_user_turn()`, erasing the user prompt and losing all executed tools. | **Protected History & Bijection:** In-flight futures abort. Fallback outcomes (`"Tool execution cancelled"`) are synthesized for unexecuted calls. Step commits immediately to history. `rollback_last_user_turn()` sees `last.role == Role::Tool` and safely no-ops. |
-| **Step Ceiling Breach (`MAX_TOOL_STEPS = 20`)** | Model engages in reentrant tool looping without emitting a terminal text completion for 20 steps. | Coordinator aborts with `step7_handle_error("Exceeded max tool iterations without terminal response")`. User hears silence or error toast. | **Forced Summary Pass:** Coordinator sets `allow_tools = false` and triggers a final generation pass. The model synthesizes all observations collected across prior 20 steps into a spoken conclusion (`AudioIntent::TurnResponse`). |
+| **Mid-Batch User Barge-in / Cancellation** | User speaks while a wave or barrier tool is actively executing (`cancel.is_cancelled() == true`). | **Severe Bug:** Loop exits; scratchpad is dropped; `step7_handle_cancelled` calls `rollback_last_user_turn()`, erasing the user prompt and losing all executed tools. | **Protected History & Bijection:** In-flight futures abort. Fallback outcomes (`"Tool execution cancelled"`) are synthesized for unexecuted calls. Step commits immediately to history (`commit_tool_step` flushes staged user query). Preceding tool observations and prompt remain permanently preserved in history. |
+| **Step Ceiling Breach (`MAX_TOOL_STEPS = 20`)** | Model engages in reentrant tool looping without emitting a terminal text completion for 20 steps. | Coordinator aborts with `step7_handle_error("Exceeded max tool iterations without terminal response")`. User hears silence or error toast. | **Forced Summary Pass:** Coordinator sets `allow_tools = false` and triggers a final generation pass. The model synthesizes all observations collected across prior 20 steps into a spoken conclusion. |
 | **Tool Execution Timeout (13s)** | Tool hangs or stalls on network I/O or deadlock. | Outer `tokio::time::timeout` hard-kills the future after 15s, returning timeout string. | `run_with_guards` checks `tool.handles_own_timeout()`. If false, clamps at `TOOL_EXECUTION_TIMEOUT` (13s). If true (e.g. `bash` auto-backgrounding), yields control to tool's internal task manager. |
 | **Database Persistence Channel Full / Dropped** | `persist_tx` buffer fills due to disk contention or heavy write load. | `try_send` fails; warning logged; turn continues. | `try_send` failure is logged as a warning; execution hot-path never stalls. Turso MVCC connection retries transient busy errors on worker thread. |
 | **Model Emits Unknown Tool Name** | LLM hallucinates an unregistered tool name. | Serial loop returns `ToolExecutionOutcome` with error; pushes to scratchpad. | `execute_tool` immediately returns `is_error = true` ("Tool not found in registry"), records metrics, and feeds error observation back to model to prompt recovery. |
@@ -722,22 +775,22 @@ Cognitive tool definitions MUST NOT declare execution flow categories (`Terminal
 ### RULE-HARN-11A (Multi-Tool Batch Collection & Barrier Wave Scheduling)
 The streaming demuxer collects all tool call requests emitted during a generation pass into a single batch. The tool execution engine (`ToolExecutor::execute_batch`) schedules batch execution using Harness-owned barriers: contiguous `Parallel` tools run concurrently via `futures_util::future::join_all`, while `Exclusive` tools form strict sequential barriers that drain preceding waves before executing alone. Outcomes MUST be committed to history in the exact sequence declared by the model, preserving deterministic declaration order across concurrent completions.
 
-### RULE-HARN-11B (Coordinator State Machine Authority & Immediate Step Commits)
-The Harness coordinator (`loop.rs`) exclusively owns state machine transitions (`Thinking` $\to$ `Working` $\to$ `Speaking` $\to$ `Ready`). Intermediate cognitive ReAct iterations MUST NOT be accumulated in volatile turn-scoped scratchpads. At each step boundary, the assistant preamble message and all associated tool observations MUST be committed immediately to `ConversationHistoryStage` via `commit_tool_step`. If batch execution is cancelled or suspended mid-batch (`cancel.is_cancelled()` or `SuspendForUser`), `commit_tool_step` MUST synthesize `"Tool execution cancelled"` fallback observations for all unexecuted calls in the batch, guaranteeing a strict 1:1 `tool_calls` $\leftrightarrow$ `Role::Tool` bijection and preventing provider HTTP 400 errors on subsequent turns.
+### RULE-HARN-11B (Coordinator State Machine Authority, Off-Thread Guarding & Immediate Step Commits)
+The Harness coordinator (`loop.rs`) routes state transitions exclusively through `transition_harness_phase` enforcing Epoch/Cancel and Duplex Audio Priority guards. Step 0 user queries MUST be staged via `stage_user_query` and committed atomically upon the first assistant artifact. Intermediate cognitive ReAct iterations MUST NOT be accumulated in volatile turn-scoped scratchpads. At each step boundary, the assistant preamble message and all associated tool observations MUST be committed immediately to `ConversationHistoryStage` via `commit_tool_step`. If batch execution is cancelled or suspended mid-batch (`cancel.is_cancelled()` or `SuspendForUser`), `commit_tool_step` MUST synthesize `"Tool execution cancelled"` fallback observations for all unexecuted calls in the batch, guaranteeing a strict 1:1 `tool_calls` $\leftrightarrow$ `Role::Tool` bijection and preventing provider HTTP 400 errors on subsequent turns.
 
 ### RULE-HARN-11C (Reentrant Step Loop Ceiling & Mandatory Summary Pass)
-The coordinator supports iterative ReAct execution up to `MAX_TOOL_STEPS = 20`. If step 20 is reached without a terminal answer, the coordinator disables tools (`allow_tools = false`) and executes a mandatory final summary generation pass, producing a complete spoken summary (`AudioIntent::TurnResponse`). The coordinator MUST NOT abort with an unhandled error unless the summary pass itself fails.
+The coordinator supports iterative ReAct execution up to `MAX_TOOL_STEPS = 20`. If step 20 is reached without a terminal answer, the coordinator disables tools (`allow_tools = false`) and executes a mandatory final summary generation pass, producing a complete spoken summary. The coordinator MUST NOT abort with an unhandled error unless the summary pass itself fails.
 
 ### RULE-HARN-11D (Relational Trajectory SSOT in Turso DB)
 Cognitive trajectories MUST be persisted relationally in the local Turso database engine under a 1:N hierarchy:
 `sessions (1)` $\to$ `turns (N)` $\to$ `session_steps (M)` $\to$ `session_tool_calls (K)`.
 `PersistenceWorker` processes events in FIFO order. `PersistenceEvent::StepCompleted` MUST be dispatched before the batch's `PersistenceEvent::ToolCallExecuted` events to guarantee the foreign key parent row exists before child rows are inserted.
 
-### RULE-HARN-12 (Interruption, Cancellation & Non-Rollback Invariant)
+### RULE-HARN-12 (Atomic Step 0 Intake, Cancellation & Non-Rollback Invariant)
 When a turn is interrupted (barge-in):
 1. Active tool execution tasks and child futures MUST be aborted via `CancellationToken`.
-2. User turn rollback (`rollback_last_user_turn`) is strictly restricted to Step 0 interruptions where zero assistant speech and zero tool executions have occurred (`last.role == Role::User`).
-3. Once Step 1 tools have commenced execution or spoken a preamble, `commit_tool_step` has run (`last.role == Role::Tool`), and rollback is strictly forbidden. Preceding tool observations remain permanently preserved in history.
+2. If interrupted during Step 0 before any speech or tool output, `harness.discard_pending_turn(turn_id)` drops the staged query without mutating `ConversationHistoryStage`. History rollbacks are obsolete and strictly forbidden.
+3. Once Step 1 tools commence or speech begins, `commit_tool_step` or `commit_completed_turn` flushes the staged user query into canonical history, and it remains permanently preserved.
 
 ---
 
@@ -745,13 +798,14 @@ When a turn is interrupted (barge-in):
 
 | File Path | Nature | Specific Modifications |
 | :--- | :--- | :--- |
-| `app/src-tauri/src/services/harness/stages/tools/mod.rs` | Contract | Add `ToolExecutionMode { Parallel, Exclusive }`, `ToolControlAction`, and update `ToolDefinition` trait. |
-| `app/src-tauri/src/services/harness/stages/tools/executor.rs` | Implementation | Implement `execute_batch` and `run_parallel_wave` using `join_all`. Support early-exit bijection synthesis. |
-| `app/src-tauri/src/services/harness/stages/history.rs` | Implementation | Add `commit_tool_step` with `assert_eq!(calls.len(), tool_results.len())`. Update `rollback_last_user_turn` to protect committed tool steps. |
-| `app/src-tauri/src/services/harness/stages/budget.rs` | Cleanup (ZBC) | Remove `scratchpad: &[ChatMessage]` from `calculate_tracked_tokens_with_extras` and `calculate_max_observation_tokens`. |
-| `app/src-tauri/src/services/harness/stages/prompt.rs` | Cleanup (ZBC) | Remove `scratchpad: &[ChatMessage]` from `build_generation_request`; assemble prompt directly from unified history. |
-| `app/src-tauri/src/services/harness/steps.rs` | Replacement | Replace serial loop with `step6_execute_tool_batch`. Commit step to history immediately. Dispatch `StepCompleted` before `ToolCallExecuted`. |
-| `app/src-tauri/src/services/harness/loop.rs` | Replacement | Implement reentrant loop with configurable `max_steps`. Force `allow_tools = false` summary pass on ceiling breach. |
+| `app/src-tauri/src/harness/tools/mod.rs` | Contract | Add `ToolExecutionMode { Parallel, Exclusive }`, `ToolControlAction`, and update `ToolDefinition` trait. |
+| `app/src-tauri/src/harness/tools/executor.rs` | Implementation | Implement `execute_batch` and `run_parallel_wave` using `join_all`. Support early-exit bijection synthesis. |
+| `app/src-tauri/src/harness/stages/history.rs` | Implementation | Add `commit_tool_step` with `assert_eq!(calls.len(), tool_results.len())`. Purge `rollback_last_user_turn`. |
+| `app/src-tauri/src/harness/stages/budget.rs` | Cleanup (ZBC) | Remove `scratchpad: &[ChatMessage]` from `calculate_tracked_tokens_with_extras` and `calculate_max_observation_tokens`. Account for tool arguments. |
+| `app/src-tauri/src/harness/stages/prompt.rs` | Cleanup (ZBC) | Remove `scratchpad: &[ChatMessage]` from `build_generation_request`; assemble prompt directly from unified history. |
+| `app/src-tauri/src/harness/steps.rs` | Replacement | Replace serial loop with `step6_execute_tool_batch`. Stage Step 0 query atomically. Use `transition_harness_phase`. Dispatch `StepCompleted` before `ToolCallExecuted`. |
+| `app/src-tauri/src/harness/loop.rs` | Replacement | Implement reentrant loop with configurable `max_steps`. Force `allow_tools = false` summary pass on ceiling breach. Support `StreamPassOutcome::PausedForSpeech` and turn supersession. |
+| `app/src-tauri/src/harness/chassis.rs` | Lifecycle | Implement atomic Step 0 intake: `stage_user_query`, `commit_completed_turn`, `discard_pending_turn`, `take_staged_query`. Purge `TurnPhase`. |
 | `app/src-tauri/src/persistence/schema.rs` | Database | Increment `SCHEMA_VERSION = 17`. Add `session_steps` table and rebuild `session_tool_calls` table with foreign key. |
 | `app/src-tauri/src/persistence/mod.rs` | Persistence | Add `PersistenceEvent::StepCompleted` and update `PersistenceEvent::ToolCallExecuted` with `step_id` and `step_index`. |
 | `app/src-tauri/src/persistence/steps.rs` | Persistence | New module: implement `persist_step` for inserting into `session_steps`. |
@@ -832,21 +886,21 @@ If two `Parallel` tools share a `Barrier::new(2)`, the barrier **only** resolves
 ```rust
 /// PURPOSE:  Catch loss of completed tool observations or accidental deletion of the user prompt when a turn is cancelled after Step 1 completes.
 /// SCENARIO: Step 1 executes [set_title, search_memory] and commits; during Step 2 tool execution, `cancel_token.cancel()` fires.
-/// ASSERTS:  TurnOutcome is Cancelled; `harness.messages()` retains the User message, Step 1 Assistant(tool_calls) + 2 Tool observations, and Step 2 Assistant(tool_calls) + synthesized cancelled Tool observation (zero orphaned tool_call_ids); `state.pipeline.is_turn_open()` is false after router processes VoxEvent::Cancelled.
+/// ASSERTS:  TurnOutcome is Cancelled; `harness.messages()` retains the User message, Step 1 Assistant(tool_calls) + 2 Tool observations, and Step 2 Assistant(tool_calls) + synthesized cancelled Tool observation (zero orphaned tool_call_ids); pipeline state transitions cleanly per Quiescence Law.
 /// CLASS:    regression
 /// REQUIRES: none
-/// MUTANT:   In `ConversationHistoryStage::rollback_last_user_turn` (`history.rs`), remove the `if last.role == Role::User` guard so it pops unconditionally, OR move `commit_tool_step` back to `step7_commit_completed`.
+/// MUTANT:   In `Harness::commit_tool_step` (`chassis.rs`), omit `flush_staged_user_query()`, OR in `step6_execute_tool_batch` (`steps.rs`), omit `commit_tool_step` on cancellation.
 ```
 
 #### Subtest 4: `step_zero_cancellation_before_speech_or_tools_rolls_back_unanswered_user_turn`
 
 ```rust
-/// PURPOSE:  Catch stale unanswered Role::User turns polluting history when the user barges in during Step 0 thinking before any preamble speech or tool execution.
+/// PURPOSE:  Catch stale unanswered queries polluting history when the user barges in during Step 0 thinking before any preamble speech or tool execution.
 /// SCENARIO: Model streams Thinking tokens in Step 0 and `cancel_token.cancel()` triggers before any Token or ToolCall is emitted.
-/// ASSERTS:  TurnOutcome is Cancelled; `rollback_last_user_turn` pops the unanswered Role::User message leaving only Role::System in `harness.messages()`; `turn_open` is false.
+/// ASSERTS:  TurnOutcome is Cancelled; `discard_pending_turn` drops the staged query leaving only Role::System in `harness.messages()`; `pending_user_query` is None.
 /// CLASS:    suppression
 /// REQUIRES: none
-/// MUTANT:   In `step7_handle_cancelled` (`steps.rs`), delete the call to `harness.rollback_last_user_turn()`.
+/// MUTANT:   In `step7_handle_cancelled` (`steps.rs`), delete the call to `harness.discard_pending_turn(ctx.turn_id)`.
 ```
 
 #### Subtest 5: `step_ceiling_breach_disables_tools_and_forces_spoken_summary_pass`
@@ -854,7 +908,7 @@ If two `Parallel` tools share a `Barrier::new(2)`, the barrier **only** resolves
 ```rust
 /// PURPOSE:  Catch hard turn abort on reaching MAX_TOOL_STEPS instead of synthesizing a final tool-free spoken answer.
 /// SCENARIO: Configure Harness with `max_steps = 3`; scripted LLM emits a tool call on Steps 0, 1, and 2, then on the forced summary pass (`allow_tools == false`) emits final spoken text.
-/// ASSERTS:  LLM worker receives 4 requests total; requests 0..=2 have non-empty `tools`, request 3 has `tools.is_empty()` (or `None`); TurnOutcome is Completed with the final summary text dispatched to TTS as `AudioIntent::TurnResponse`; all 3 tool steps (6 messages) + final Assistant message are in `harness.messages()`.
+/// ASSERTS:  LLM worker receives 4 requests total; requests 0..=2 have non-empty `tools`, request 3 has `tools.is_empty()` (or `None`); TurnOutcome is Completed with the final summary text dispatched to TTS; all 3 tool steps (6 messages) + final Assistant message are in `harness.messages()`.
 /// CLASS:    edge-case
 /// REQUIRES: none
 /// MUTANT:   In `execute_loop_iterations` (`loop.rs`), return `TurnOutcome::Error` when `step_index >= max_steps` instead of setting `allow_tools = false`.

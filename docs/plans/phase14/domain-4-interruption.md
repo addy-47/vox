@@ -29,14 +29,17 @@ Domain 4 introduces four core pillars:
 - **Two-Step `Esc` & Disengage UX (`RULE-HARN-18`)**:
   - Step 1: Active turn (`Thinking`, `Working`, `Speaking`, `Listening`) aborts cleanly to `Ready` via discrete `stop_turn` IPC command. Audio mutes; active work cancels; session remains engaged; models stay warm in RAM.
   - Step 2: `Ready` state disengages cleanly to `Idle` via `end_session`.
-- **Three-Scenario Steering Protocol**:
-  - **Scenario A (Pre-Working Thinking — Step 0)**: In-flight stream cancels; proposed tool calls are discarded; premature Step 0 user turn rolls back synchronously; user speech merges into prompt; model re-prompts in `Thinking`.
-  - **Scenario B (Mid-Turn Thinking — Step $K \ge 1$)**: In-flight stream cancels; uncommitted tool calls are discarded; committed tool steps remain permanently in history; accumulator is cleared; new speech commits as standalone `Role::User(new_speech)`; model re-prompts in `Thinking`.
-  - **Scenario C (Active Working)**: Audio mutes immediately; in-flight tools complete current step; speech hold engages on `StepInbox`; step boundary holds via `wait_if_speech_held`; speech buffers into `StepInbox`; step boundary commits tool results and user message; loop advances to Step $K+1$.
-- **`StepInbox` with Speech-Hold Latch**:
+- **Three-Scenario Steering & Interruption Protocol (Two-Stage Lifecycle)**:
+  - **Stage 1 (Acoustic Pause / SpeechStart / PTT)**: Audio playback mutes; active token stream pauses via `stream_cancel_token`; speech segment binds to monotonic `utterance_id` (`VadCommand::BindUtterance`); speech hold engages on `StepInbox`; pipeline enters `Listening` preserving `current_activity`. `turn_cancel_token` remains armed; `hardware_cancel_flag` remains false; tools continue running.
+  - **Stage 2 (Transcript Resolution / TranscriptFinal)**:
+    - **False Barge-In (Empty Transcript / Cough / False VAD)**: Re-arms `hardware_cancel_flag`; releases speech hold (`inbox.release_speech_hold()`). If `llm_done` -> `Ready`; if `current_activity.is_some()` -> `Working`; else re-arms `stream_cancel_token`, transitions to `Thinking`, and cognitive loop resumes at Step 4 with zero lost work.
+    - **Scenario A (Pre-Working Thinking — Step 0 Real Barge-In)**: In-flight stream pauses; prior turn cancels via `cancel_active_turn()`; staged Step 0 query extracts via `take_staged_query` into continuation stash; dialogue advances via `next_turn()`; new speech merges with stashed prefix; model prompts in `Thinking`.
+    - **Scenario B (Mid-Turn Thinking — Step $K \ge 1$ Real Barge-In)**: Prior turn cancels via `cancel_active_turn()`; committed tool steps remain permanently in history; accumulator clears; dialogue advances via `next_turn()`; new speech commits as standalone `Role::User(new_speech)`; model prompts in `Thinking`.
+    - **Scenario C (Active Working Real Barge-In)**: In-flight tools finish or receive clean cancellation placeholders (`"Tool execution cancelled"`); speech hold releases; prior turn cancels via `cancel_active_turn()`; dialogue advances via `next_turn()`; model prompts in `Thinking`. **Voice barge-in is never pushed into `StepInbox`** (`StepInbox` is strictly for external programmatic events).
+- **`StepInbox` Role & Speech-Hold Latch**:
   - Carries `speech_hold_active: AtomicBool` and `notify: tokio::sync::Notify`.
-  - Awaits speech resolution at step boundaries without race conditions.
-  - Supports empty speech recovery: coughs or false VAD triggers release the hold and resume the loop with zero lost work.
+  - Serves as the step-boundary synchronization barrier (`wait_if_speech_held`) for both tool execution and token streaming.
+  - Buffers strictly external programmatic events (`QueuedMessageDelivery::{Immediate, TurnBoundary}`). Voice speech is never pushed to `StepInbox`.
 
 ---
 
@@ -95,20 +98,20 @@ It follows the `/trace` protocol to expose structural defects and ownership gaps
    **Owner:** Assistant pipeline lifecycle (`app/src-tauri/src/pipeline/assistant/interrupt.rs`).
 
 5. **What:** When speech occurs during `Working` (Scenario C), the current code unconditionally cancels `turn_token()`.
-   **Who:** `on_interrupt` in `interrupt.rs:32`.
+   **Who:** `on_interrupt` in `interrupt.rs`.
    **Trigger:** State evaluation of `prior_state`.
-   **Grounding:** Traced — [app/src-tauri/src/pipeline/assistant/interrupt.rs:32](file:///home/addy/projects/apps/vox/app/src-tauri/src/pipeline/assistant/interrupt.rs#L32).
+   **Grounding:** Traced — [app/src-tauri/src/pipeline/assistant/interrupt.rs](file:///home/addy/projects/apps/vox/app/src-tauri/src/pipeline/assistant/interrupt.rs).
    **Owner:** Assistant pipeline lifecycle (`app/src-tauri/src/pipeline/assistant/interrupt.rs`).
-   *Defect in current code (Scenario C Defect):* Cancelling `turn_token()` kills in-flight tools immediately. Mutating tools (`bash`, `write_file`) leave half-written files.
-   *Fix:* In Scenario C, do NOT cancel `turn_token()`. Mute playback, engage speech hold via `harness.inbox.engage_speech_hold()`, keep `turn_id` unchanged, and transition to `Listening`.
+   *Defect in legacy code (Scenario C Defect):* Cancelling `turn_token()` kills in-flight tools immediately. Mutating tools (`bash`, `write_file`) leave half-written files.
+   *Fix:* Stage 1 mutes playback, pauses active stream pass via `cancel_active_stream()`, allocates fresh `utterance_id` via `next_utterance_id()`, binds via `VadCommand::BindUtterance`, engages speech hold via `harness.inbox().engage_speech_hold()`, preserves `current_activity`, and transitions to `Listening`. `turn_cancel_token` and `hardware_cancel_flag` remain armed; background tools continue running to completion.
 
-6. **What:** When speech occurs during `Thinking`, the current code calls `stash_for_continuation()` unconditionally.
-   **Who:** `on_interrupt` in `interrupt.rs:83`.
-   **Trigger:** `is_mid_thought` matches `Thinking`.
-   **Grounding:** Traced — [app/src-tauri/src/pipeline/assistant/interrupt.rs:83](file:///home/addy/projects/apps/vox/app/src-tauri/src/pipeline/assistant/interrupt.rs#L83).
-   **Owner:** Assistant pipeline lifecycle (`app/src-tauri/src/pipeline/assistant/interrupt.rs`).
-   *Defect in current code (Scenario B Defect):* If Step 0 tools have already committed, `pipeline_accumulator.user_transcript` still holds `"Query 1"`. Calling `stash_for_continuation()` moves `"Query 1"` into `continuation_prefix`, merging the new utterance into `"Query 1 <new_speech>"` and corrupting history.
-   *Fix:* Check `harness.has_committed_steps_this_turn`. If `true` (Scenario B), call `acc.clear()`. Only if `false` (Scenario A) call `stash_for_continuation()`.
+6. **What:** When speech occurs during `Thinking`, the legacy code called `stash_for_continuation()` unconditionally.
+   **Who:** `on_interrupt` and `transcript.rs`.
+   **Trigger:** Speech interruption during cognitive generation.
+   **Grounding:** Traced — [app/src-tauri/src/pipeline/assistant/transcript.rs](file:///home/addy/projects/apps/vox/app/src-tauri/src/pipeline/assistant/transcript.rs).
+   **Owner:** Assistant pipeline lifecycle and transcription router.
+   *Defect in legacy code (Scenario B Defect):* If Step 0 tools have already committed, `pipeline_accumulator.user_transcript` still holds `"Query 1"`. Calling `stash_for_continuation()` moves `"Query 1"` into `continuation_prefix`, merging the new utterance into `"Query 1 <new_speech>"` and corrupting history.
+   *Fix:* In Stage 2 real barge-in, `harness.take_staged_query(turn_id)` extracts the staged query into continuation stash for Step 0 (Scenario A). If committed tool steps exist (Scenario B / Scenario C), preceding steps are preserved, accumulator is cleared, and new speech is committed as a standalone dialogue turn.
 
 ---
 
@@ -117,20 +120,19 @@ It follows the `/trace` protocol to expose structural defects and ownership gaps
 7. **What:** In-flight tools finish executing while the user is still speaking in `Listening`.
    **Who:** `step6_execute_tool_batch` in `steps.rs`.
    **Trigger:** Tool batch future completes.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:514-520](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L514-L520).
-   **Owner:** Step sequencing (`app/src-tauri/src/services/harness/steps.rs`).
-   *Defect in current code (P0 Defect 1):* Tools finish at $t = 400\text{ms}$. User speaks until $t = 2900\text{ms}$. Without a hold latch, `loop.rs` drains an empty inbox at $t = 401\text{ms}$, advances to Step $K+1$, and generates speech while the user is still talking.
-   *Fix:* `step6_await_and_drain_inbox` in `steps.rs` awaits `inbox.wait_if_speech_held(&ctx.req.cancel).await` before draining `Immediate` messages.
+   **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs).
+   **Owner:** Step sequencing (`app/src-tauri/src/harness/steps.rs`).
+   *Defect in legacy code (P0 Defect 1):* Tools finish at $t = 400\text{ms}$. User speaks until $t = 2900\text{ms}$. Without a hold latch, `loop.rs` drains an empty inbox at $t = 401\text{ms}$, advances to Step $K+1$, and generates speech while the user is still talking.
+   *Fix:* `steps.rs` awaits `inbox.wait_if_speech_held(&ctx.req.cancel).await` at the step boundary before proceeding.
 
 8. **What:** `TranscriptFinal` arrives from the STT worker for the steering utterance.
    **Who:** `on_transcript_final` in `transcript.rs`.
    **Trigger:** STT worker finishes audio transcription.
-   **Grounding:** Traced — [app/src-tauri/src/pipeline/assistant/transcript.rs:240-285](file:///home/addy/projects/apps/vox/app/src-tauri/src/pipeline/assistant/transcript.rs#L240-L285).
+   **Grounding:** Traced — [app/src-tauri/src/pipeline/assistant/transcript.rs](file:///home/addy/projects/apps/vox/app/src-tauri/src/pipeline/assistant/transcript.rs).
    **Owner:** Assistant transcription router (`app/src-tauri/src/pipeline/assistant/transcript.rs`).
-   *Defect in current code (P0 Defect 2):* If `turn_token` was kept open for Scenario C, `transcript.rs:287` naively calls `spawn_harness_turn_task`, creating two concurrent ReAct loops.
-   *Fix:* In `transcript.rs`, check if active turn is open and speech-held in `StepInbox`.
-   - If non-empty: emit `IpcEvent::TranscriptFinal`, call `inbox.push(Immediate)`, transition to `Working`, and return WITHOUT spawning a new task.
-   - If empty (cough / false VAD): call `inbox.release_speech_hold()`, transition to `Working`, and return WITHOUT aborting to `Ready`.
+   *Resolution (RULE-EVT-08 §2b & RULE-HARN-18)*:
+   - **Empty Transcript (False Barge-In / Cough / False VAD)**: Releases speech hold (`inbox.release_speech_hold()`), re-arms `hardware_cancel_flag`. If `llm_done` -> `Ready`; if `current_activity.is_some()` -> `Working`; else re-arms `stream_cancel_token`, transitions to `Thinking`, and cognitive loop resumes at Step 4 without aborting.
+   - **Non-Empty Transcript (Real Voice Barge-In)**: Releases speech hold, finalizes prior turn, aborts active turn via `cancel_active_turn()`, advances dialogue via `next_turn()`, transitions to `Thinking`, and dispatches a fresh turn. **Voice is never pushed into `StepInbox`**.
 
 ---
 
@@ -175,15 +177,15 @@ Every distinct domain condition is mapped bijectively to canonical state without
 
 | User Action | Boundary 1: UI $\to$ Backend (IPC) | Boundary 2: Internal Mutation | Boundary 3: Worker Channels | Boundary 4: Backend $\to$ UI (IPC Event) |
 | :--- | :--- | :--- | :--- | :--- |
-| **Stop Active Turn (Esc Step 1)** | `invoke("stop_turn")` | Cancel `turn_token`, mute audio, clear accumulator & `StepInbox` synchronously on router thread | `playback_engine.cancel()`, `ClearRenderQueue` | `state_changed { state: "Ready" }` |
+| **Stop Active Turn (Esc Step 1)** | `invoke("stop_turn")` | Cancel `turn_cancel_token`, set `hardware_cancel_flag`, mute audio, clear accumulator & `StepInbox` synchronously on router thread | `playback_engine.cancel()`, `ClearRenderQueue` | `state_changed { state: "Ready" }` |
 | **Disengage Session (Esc Step 2)** | `invoke("end_session")` | Tear down harness, purge session cache | `VadCommand::StopRealtime`, stop actors | `state_changed { state: "Idle" }` |
-| **Speech in Step 0 Thinking (Scenario A)** | Audio VAD `SpeechStart` | Abort stream, rollback Step 0 user turn synchronously, stash continuation prefix, mint turn ID | Abort stream reader future | `state_changed { state: "Listening" }` |
-| **Speech in Step K Thinking (Scenario B)** | Audio VAD `SpeechStart` | Abort stream, retain committed tool steps, clear accumulator, mint turn ID | Abort stream reader future | `state_changed { state: "Listening" }` |
-| **Speech in Working (Scenario C)** | Audio VAD `SpeechStart` | Mute audio, engage speech hold on `StepInbox`, keep `turn_token` open, keep `turn_id` unchanged | `ClearRenderQueue` (audio only; tools keep running!) | `state_changed { state: "Listening" }` |
+| **Speech in Step 0 Thinking (Scenario A)** | Audio VAD `SpeechStart` | Stage 1 pause stream (`stream_cancel_token`), bind `utterance_id`, engage speech hold; Stage 2 cancel active turn, `take_staged_query` into continuation stash, `next_turn()` | `VadCommand::BindUtterance` | `state_changed { state: "Listening" }` |
+| **Speech in Step K Thinking (Scenario B)** | Audio VAD `SpeechStart` | Stage 1 pause stream, bind `utterance_id`, engage speech hold; Stage 2 cancel active turn, keep committed steps, clear accumulator, `next_turn()` | `VadCommand::BindUtterance` | `state_changed { state: "Listening" }` |
+| **Speech in Working (Scenario C)** | Audio VAD `SpeechStart` | Stage 1 mute audio, pause stream, bind `utterance_id`, engage speech hold; in-flight tools keep running; Stage 2 resolve empty or real barge-in | `VadCommand::BindUtterance`, `ClearRenderQueue` | `state_changed { state: "Listening" }` |
 
 ### Gate 4: Asymmetry & Worst-Case Failure Matrix
-- **Fast-Tool Completion During Long Utterance**: Tools complete at $t=400\text{ms}$; user speaks until $t=2900\text{ms}$. `wait_if_speech_held` holds `loop.rs` at the step boundary until `TranscriptFinal` arrives, injects the steering message into history, and advances to Step $K+1$.
-- **Empty Speech / False VAD in Scenario C**: Cough or sigh during `Working` triggers VAD. `TranscriptFinal("")` lands. `transcript.rs` calls `inbox.release_speech_hold()`, transitions to `Working`, and returns. Held loop wakes and proceeds to Step $K+1$ with zero lost work and zero error toasts.
+- **Fast-Tool Completion During Long Utterance**: Tools complete at $t=400\text{ms}$; user speaks until $t=2900\text{ms}$. `wait_if_speech_held` holds at step boundary. On `TranscriptFinal`, real barge-in finalizes prior turn, advances `next_turn()`, and starts a fresh dialogue turn.
+- **Empty Speech / False VAD in Scenario C**: Cough or sigh during `Working` triggers VAD. `TranscriptFinal("")` lands. `transcript.rs` calls `inbox.release_speech_hold()`, re-arms `hardware_cancel_flag`, restores `Working` (or `Thinking`), and cognitive loop resumes Step 4 with zero lost work.
 - **Rapid Double-Esc**: First press aborts turn to `Ready`. Second press disengages session to `Idle`. Synchronous state cleanup on the `vox-router` thread prevents async task races.
 
 ### Gate 5: Spec-Wide Referential Integrity
@@ -291,7 +293,7 @@ Cognitive execution adheres strictly to four discrete tiers:
 
 ```mermaid
 flowchart TD
-    SS["SpeechStart Detected"] --> MUTE["1. Cancel Sound Card Playback Engine<br/>2. Clear AEC Render Queue"]
+    SS["SpeechStart Detected"] --> MUTE["1. Cancel Sound Card Playback Engine<br/>2. Clear AEC Render Queue<br/>3. Pause Stream Pass (stream_cancel_token)<br/>4. Allocate & Bind utterance_id"]
     MUTE --> CHECK{"Pipeline State & Step Provenance?"}
     
     CHECK -->|Step 0 Thinking| SCEN_A["Scenario A: Pre-Working Thinking"]
@@ -299,21 +301,23 @@ flowchart TD
     CHECK -->|Working Tools in Flight| SCEN_C["Scenario C: Active Working"]
     CHECK -->|Speaking| SCEN_SPK["Standard Barge-In: Abort & Clear"]
 
-    SCEN_A --> ACT_A["1. Abort LLM stream.<br/>2. Discard unexecuted tool calls.<br/>3. Stash user speech in continuation prefix.<br/>4. Roll back Step 0 user turn synchronously.<br/>5. On TranscriptFinal: Dispatch merged prompt in Thinking."]
+    SCEN_A --> ACT_A["1. Pause stream pass.<br/>2. Engage speech hold.<br/>3. On TranscriptFinal: cancel_active_turn(),<br/>take_staged_query() into continuation stash,<br/>next_turn(), dispatch merged prompt in Thinking."]
     
-    SCEN_B --> ACT_B["1. Abort LLM stream.<br/>2. Discard uncommitted Step K tool calls.<br/>3. RETAIN all committed tool steps in history.<br/>4. Clear accumulator (do NOT stash prefix!).<br/>5. On TranscriptFinal: Commit new speech as Role::User.<br/>6. Re-dispatch cognitive loop in Thinking."]
+    SCEN_B --> ACT_B["1. Pause stream pass.<br/>2. Engage speech hold.<br/>3. On TranscriptFinal: cancel_active_turn(),<br/>preserve committed steps, clear accumulator,<br/>next_turn(), commit standalone Role::User in Thinking."]
     
-    SCEN_C --> ACT_C["1. Keep in-flight tools running to step completion.<br/>2. Engage speech hold on StepInbox.<br/>3. Transition pipeline to Listening.<br/>4. If tools finish before speech ends: Await wait_if_speech_held.<br/>5. On TranscriptFinal: Buffer speech into StepInbox.<br/>6. Step boundary commits tool results + user message.<br/>7. Advance to Step K+1 in Thinking."]
+    SCEN_C --> ACT_C["1. Keep in-flight tools running.<br/>2. Engage speech hold on StepInbox.<br/>3. Transition to Listening (preserve activity).<br/>4. Stage 2 Empty: release hold, rearm flags, resume Step 4.<br/>5. Stage 2 Real: cancel_active_turn(), next_turn(), dispatch fresh turn."]
 ```
 
-### 6.1 `Harness` Provenance Flags & Idempotent Rollback Guard
-`Harness` carries:
+### 6.1 `Harness` Provenance Flags, Utterance Binding & Idempotent Rollback Guard
+`Harness` and `PipelineAtomics` carry:
 ```rust
 pub(crate) has_committed_steps_this_turn: bool,
 pub(crate) uncommitted_user_turn_id: Option<u32>,
 ```
 - `has_committed_steps_this_turn`: reset to `false` in `intake_recorded_turn`, set to `true` in `commit_tool_step`. Provides 100% deterministic knowledge of whether the active turn is in Step 0 (Scenario A) or Step $K \ge 1$ (Scenario B) without guessing.
 - `uncommitted_user_turn_id`: set to `Some(req.turn_id)` in `intake_recorded_turn`, cleared to `None` in `commit_tool_step`, `step7_commit_completed`, and `rollback_user_turn(turn_id)`.
+- **Utterance vs Turn Identity**:
+  `utterance_id` tracks discrete physical audio segments (VAD speech bursts). `turn_id` tracks monotonic conversational turns in the dialogue ledger. Late-final detection is keyed deterministically on `acc.bound_utterance_id.map(|bound| bound < state.pipeline.peek_utterance_id())` (`RULE-EVT-01A`), completely decoupling audio segment correlation from conversational turn adjacency (`turn_id + 1 == peek_turn_id()`).
 - **Idempotent Turn Rollback (`rollback_user_turn(turn_id)`)**:
   Both `on_interrupt` (Scenario A) / `on_stop_turn` (on the `vox-router` thread) and `step7_handle_cancelled` (on the async Tokio task) call `harness.rollback_user_turn(turn_id)`. Because the first caller clears `uncommitted_user_turn_id` to `None`, if Turn $N+1$ starts 2ms later and pushes a new `Role::User` before Turn $N$'s async task finishes cancelling, Turn $N$'s `step7_handle_cancelled` is guaranteed to be a no-op rather than popping Turn $N+1$'s user message.
 - **Single-Writer State Transitions (`RULE-EVT-01`)**:
@@ -322,34 +326,56 @@ pub(crate) uncommitted_user_turn_id: Option<u32>,
 ### 6.2 Scenario A: Pre-Working Thinking (Step 0 LLM Pass)
 - **Context**: Model is generating its initial response. Zero tools have executed (`has_committed_steps_this_turn == false`).
 - **Mechanics**:
-  1. Abort model stream immediately via `cancel_token`.
-  2. Discard any proposed tool call. Zero tools execute.
-  3. Synchronously roll back Step 0 user turn via `rollback_last_user_turn()`.
-  4. Stash previous transcript in `continuation_prefix`.
-  5. When user speech finishes, `TranscriptFinal` merges new speech with prefix and dispatches fresh `execute_turn`.
+  1. Stage 1 pauses token stream immediately via `stream_cancel_token`.
+  2. Speech segment is bound to a fresh `utterance_id` via `VadCommand::BindUtterance`.
+  3. Speech hold engages on `StepInbox` (`harness.inbox().engage_speech_hold()`).
+  4. Pipeline transitions to `Listening`.
+  5. Upon `TranscriptFinal` (Stage 2):
+     - Prior turn is cancelled via `cancel_active_turn()` (`turn_cancel_token.cancel()`, `hardware_cancel_flag = true`).
+     - Staged Step 0 query is extracted via `harness.take_staged_query(turn_id)` into `stash_for_continuation()`.
+     - Dialogue advances via `next_turn()`.
+     - New speech merges with stashed prefix and fresh `execute_turn` dispatches in `Thinking`.
 
 ### 6.3 Scenario B: Mid-Turn Thinking (Step $K \ge 1$ between tool steps)
 - **Context**: Prior tools have completed and committed to history: `[User, Assistant(calls), Tool(results)]`. Model is generating Step $K$ (`has_committed_steps_this_turn == true`).
 - **Mechanics**:
-  1. Abort model stream immediately via `cancel_token`.
-  2. Discard uncommitted Step $K$ tool calls.
-  3. Committed tool steps remain permanently in history (`RULE-HARN-12`).
-  4. Call `acc.clear()` (do NOT call `stash_for_continuation()`, preventing prompt duplication).
-  5. When user speech finishes, `TranscriptFinal` commits new speech as standalone `Role::User(new_speech)`.
-  6. Re-prompts the model in `Thinking` with updated history.
+  1. Stage 1 pauses token stream immediately via `stream_cancel_token`.
+  2. Speech segment is bound to fresh `utterance_id`.
+  3. Speech hold engages on `StepInbox`.
+  4. Pipeline transitions to `Listening`.
+  5. Upon `TranscriptFinal` (Stage 2):
+     - Prior turn is cancelled via `cancel_active_turn()`.
+     - Committed tool steps remain permanently in history (`RULE-HARN-12`).
+     - Accumulator is cleared (does NOT call `stash_for_continuation()`, preventing prompt duplication).
+     - Dialogue advances via `next_turn()`.
+     - New speech commits as standalone `Role::User(new_speech)` and re-prompts model in `Thinking`.
 
 ### 6.4 Scenario C: Active Working (Tools In Flight)
 - **Context**: Model invoked tools (`bash`, `web_search`). Tools are executing in background OS processes.
 - **Mechanics**:
-  1. Mute audio immediately and clear AEC render queue.
-  2. In-flight tools continue executing to complete the current step.
-  3. Do NOT cancel `turn_token`; keep `turn_open = true`; keep `turn_id` unchanged.
-  4. Engage speech hold: `harness.inbox.engage_speech_hold()`.
-  5. Pipeline enters `Listening` for user speech.
-  6. When tools finish executing, `step6_await_and_drain_inbox` awaits `inbox.wait_if_speech_held(&cancel)`.
-  7. When `TranscriptFinal` arrives:
-     - **Non-Empty Text**: Pushes message into `StepInbox` with `Immediate`. This releases the hold, wakes `wait_if_speech_held`, injects `Role::User(text)` into history, and advances to Step $K+1$ in `Thinking`. Spawning a second concurrent `execute_turn` task is strictly forbidden.
-     - **Empty Text (Cough / False VAD)**: Calls `inbox.release_speech_hold()`, transitions back to `Working`, and held ReAct loop resumes Step $K+1$ with zero lost work.
+  1. **Stage 1 (Acoustic Pause)**:
+     - Mute audio playback immediately and clear AEC render queue.
+     - Pause token stream pass via `cancel_active_stream()`.
+     - Allocate and bind `utterance_id` via `next_utterance_id()`.
+     - Engage speech hold: `harness.inbox().engage_speech_hold()`.
+     - Pipeline enters `Listening`, preserving `current_activity`.
+     - `turn_cancel_token` and `hardware_cancel_flag` remain armed; background tools continue running to step completion.
+  2. **Step Boundary Hold**:
+     - When tools finish executing, `steps.rs` awaits `inbox.wait_if_speech_held(&cancel)`.
+  3. **Stage 2 (`TranscriptFinal`)**:
+     - **False Barge-In (Empty Text / Cough / False VAD)**:
+       - Calls `inbox.release_speech_hold()`.
+       - Re-arms `hardware_cancel_flag = false` via `rearm_turn_cancel_token()`.
+       - If `llm_done == true` $\to$ `Ready`.
+       - Else if `current_activity.is_some()` $\to$ `Working` (tool envelope restored).
+       - Else $\to$ re-arms `stream_cancel_token`, transitions $\to$ `Thinking`, and cognitive loop resumes at Step 4 with zero lost work.
+     - **Real Voice Barge-In (Non-Empty Text)**:
+       - In-flight tools receive `cancel.cancelled()` in `tools/executor.rs` and record `"Tool execution cancelled due to turn interruption"` placeholders for unexecuted calls.
+       - Releases speech hold (`inbox.release_speech_hold()`).
+       - Cancels active turn via `cancel_active_turn()` (`turn_cancel_token.cancel()`, `hardware_cancel_flag = true`).
+       - Advances dialogue via `next_turn()`.
+       - Transitions $\to$ `Thinking` and dispatches new dialogue turn.
+       - **Voice barge-in is never pushed into `StepInbox`** (`StepInbox` is strictly for external programmatic events).
 
 ---
 
@@ -510,13 +536,17 @@ Cognitive execution adheres strictly to a 4-tier unidirectional boundary:
    - Step 1: Active turn (`Thinking`, `Working`, `Speaking`, `Listening`) aborts cleanly to `Ready` via `stop_turn`. Active work cancels; sound card playback mutes; session remains engaged; models stay warm in RAM.
    - Step 2: `Ready` state disengages cleanly to `Idle` via `end_session`. Audio hardware stops; models cool down.
 2. **Three-Scenario Steering Protocol**:
-   - Scenario A (Pre-Working Thinking): In-flight LLM stream cancels; proposed tool calls are discarded; Step 0 user turn rolls back synchronously; user speech merges into prompt; model re-prompts in `Thinking`.
-   - Scenario B (Mid-Turn Thinking): In-flight LLM stream cancels; uncommitted tool calls are discarded; committed tool steps remain in history; accumulator is cleared; new speech commits as `Role::User`; model re-prompts in `Thinking`.
-   - Scenario C (Active Working): Sound card mutes; in-flight tools complete current step; speech hold engages on `StepInbox`; step boundary holds via `wait_if_speech_held`; speech buffers into `StepInbox`; step boundary commits tool results and user message; loop advances to Step $K+1$.
+   - Scenario A (Pre-Working Thinking — Step 0): Stage 1 pauses stream pass; Stage 2 cancels prior turn via `cancel_active_turn()`; Step 0 query extracts via `take_staged_query` into continuation stash; dialogue advances via `next_turn()`; model prompts in `Thinking`.
+   - Scenario B (Mid-Turn Thinking — Step $K \ge 1$): Stage 1 pauses stream pass; Stage 2 cancels prior turn via `cancel_active_turn()`; committed tool steps remain in history; accumulator clears; dialogue advances via `next_turn()`; new speech commits as standalone `Role::User`; model prompts in `Thinking`.
+   - Scenario C (Active Working): Stage 1 mutes sound card, pauses stream pass, binds `utterance_id`, engages speech hold on `StepInbox`, transitions to `Listening` (preserving `current_activity`). In-flight tools continue to step completion.
+     - On empty transcript (false barge-in / cough): releases speech hold, re-arms `hardware_cancel_flag`, restores `Working` (or `Thinking`), and resumes Step 4 with zero lost work.
+     - On real voice barge-in (non-empty transcript): releases speech hold, cancels active turn via `cancel_active_turn()`, advances dialogue via `next_turn()`, and dispatches new turn in `Thinking`. Voice barge-in is never pushed to `StepInbox`.
 3. **`StepInbox` Delivery SSOT**:
-   - Messages buffer with `QueuedMessageDelivery::{Immediate, TurnBoundary}` in `stages/inbox.rs`.
-   - `Immediate` messages drain at step boundaries into `ConversationHistoryStage`.
-   - `TurnBoundary` messages drain upon terminal turn completion to trigger the next conversational turn.
+   - `StepInbox` holds the synchronization barrier (`wait_if_speech_held`) for in-flight tools and stream pauses.
+   - External programmatic events buffer with `QueuedMessageDelivery::{Immediate, TurnBoundary}` in `stages/inbox.rs`.
+   - `Immediate` programmatic messages drain at step boundaries into `ConversationHistoryStage`.
+   - `TurnBoundary` programmatic messages drain upon terminal turn completion to trigger the next conversational turn.
+   - Voice transcripts are strictly processed by the pipeline router and never enter `StepInbox`.
 
 ---
 
@@ -544,8 +574,10 @@ sequenceDiagram
     VAD->>Speech: SpeechStart
     Speech->>Router: on_speech_start (Working detected)
     Router->>Router: Mute audio playback engine
+    Router->>Router: cancel_active_stream()
+    Router->>Router: next_utterance_id() & BindUtterance
     Router->>Inbox: engage_speech_hold()
-    Router->>Router: Transition to Listening (turn_token kept open!)
+    Router->>Router: Transition to Listening (preserve activity)
     Note over User: User speaking for 2.0s...
     Exec-->>Steps: at t=400ms: Tool finishes
     Steps->>Hist: commit_tool_step(results)
@@ -553,15 +585,12 @@ sequenceDiagram
     Note over Steps: Held at step boundary waiting for user speech!
     User->>VAD: at t=2100ms: Speech ends
     VAD->>Router: TranscriptFinal("also check lockfile")
-    Router->>Inbox: push(InboxMessage { text, Immediate })
-    Note over Inbox: Releases hold and wakes notify!
-    Inbox-->>Steps: wait_if_speech_held wakes up!
-    Steps->>Inbox: drain_immediate()
-    Inbox-->>Steps: ["also check lockfile"]
-    Steps->>Hist: push_user_turn("also check lockfile")
-    Steps-->>Loop: Step boundary complete
-    Loop->>Router: Transition to Thinking
-    Loop->>LLM: Dispatch Step K+1 generation with tool results + steering
+    Router->>Inbox: release_speech_hold()
+    Router->>Router: cancel_active_turn() & next_turn()
+    Router->>Router: Transition to Thinking
+    Router->>LLM: Dispatch new turn task for Turn N+1
+    Inbox-->>Steps: wait_if_speech_held unblocks
+    Note over Steps: Prior turn cancelled; steps exit cleanly
 ```
 
 ### 9.2 Two-Step Disengage Sequence
@@ -607,6 +636,6 @@ sequenceDiagram
    - In `Ready`, pressing `Esc` transitions to `Idle`. Session ends; hardware releases.
 3. **Scenario A Verification**: User barge-in during Step 0 generation aborts LLM, rolls back Step 0 user turn synchronously, merges new speech into prompt, and re-prompts model.
 4. **Scenario B Verification**: User barge-in during Step $K \ge 1$ generation aborts LLM, preserves preceding tool steps, clears accumulator, pushes new speech as standalone `Role::User`, and re-prompts model without duplicating Step 0's prompt.
-5. **Scenario C Verification**: User speech during tool execution mutes audio, lets tools finish running, holds at step boundary via `wait_if_speech_held`, buffers speech in `StepInbox`, drains message at step boundary, and injects into Step $K+1$.
-6. **Empty Speech Recovery Verification**: False VAD or cough during `Working` releases the speech hold via `release_speech_hold()`, resumes Step $K+1$ seamlessly, and does NOT abort to `Ready`.
+5. **Scenario C Verification**: User speech during tool execution mutes audio, lets tools finish running, holds at step boundary via `wait_if_speech_held`, releases hold on `TranscriptFinal`, cancels active turn, advances `next_turn()`, and dispatches new dialogue turn.
+6. **Empty Speech Recovery Verification**: False VAD or cough during `Working` releases the speech hold via `release_speech_hold()`, re-arms `hardware_cancel_flag`, resumes Step 4 in `Working`/`Thinking`, and does NOT abort to `Ready`.
 7. **False-Green Mutation Proof**: All 10 deliberate mutants in the Phase 2b mutation table fail RED before being reverted to GREEN.

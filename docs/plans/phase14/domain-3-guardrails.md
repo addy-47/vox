@@ -20,7 +20,7 @@ Domain 3 introduces four core pillars:
 - **Two-Strike Monotonic Guardrail Engine**: In-memory sliding window ($\le 1\text{ KB}$) tracking call signatures. Detects identical calls ($\ge 3$), ping-pongs ($A \to B \to A \to B$), and step-boundary error cascades ($\ge 3$). Strike 1 injects a system steering warning. Strike 2 strips tools (`allow_tools = false`) and forces a spoken summary pass.
 - **Head/Tail Truncation with Tier 4 Disk Spillover**: Clamps oversized observations and writes unabridged outputs to `paths::session_tool_outputs_dir(session_id).join("<sanitized_call_id>.txt")`. Slicing is UTF-8 character-boundary safe and handles single-line payloads without panics.
 - **Dynamic Mid-Loop Budget & Turn-Preserving Compaction**: Triggers memory compaction mid-turn at $\ge 85\%$ context utilization. Preserves the active turn's in-flight tool steps intact while compacting prior history. Eliminates silent FIFO turn drops.
-- **Granular Step Provenance & Structured Auditing**: Schema v18 persists tokens, strikes, and spillover paths in Turso DB with structured audit logs (`[StepAudit]`, `[TruncationAudit]`, `[GuardrailAudit]`).
+- **Granular Step Provenance & Relational Compaction Ledger**: Persists tokens, strikes, and spillover paths in Turso DB with downward relational foreign keys in `session_compactions` (`RULE-HARN-17`) and structured audit logs (`[StepAudit]`, `[TruncationAudit]`, `[GuardrailAudit]`).
 
 ---
 
@@ -29,11 +29,11 @@ Domain 3 introduces four core pillars:
 This trace details the current execution path for tokens, tool outputs, and steps in the Harness runtime, identifying exact code locations and failure modes.
 
 ### 2.1 Trace Entry & Exit Points
-- **Entry Point 1 (Turn Intake)**: `step1_intake` in [app/src-tauri/src/services/harness/steps.rs:56](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L56).
-- **Entry Point 2 (Tool Output Ingress)**: `step6_execute_tool_batch` in [app/src-tauri/src/services/harness/steps.rs:432](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L432).
-- **Exit Point 1 (Terminal Completion)**: `step7_commit_completed` in [app/src-tauri/src/services/harness/steps.rs:676](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L676).
-- **Exit Point 2 (Turn Interruption)**: `step7_handle_cancelled` in [app/src-tauri/src/services/harness/steps.rs:599](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L599).
-- **Exit Point 3 (Fatal Turn Error)**: `step7_handle_error` in [app/src-tauri/src/services/harness/steps.rs:650](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L650).
+- **Entry Point 1 (Turn Intake & Staging)**: `step1_intake` in [app/src-tauri/src/harness/steps.rs:125](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L125).
+- **Entry Point 2 (Tool Output Ingress)**: `step6_execute_tool_batch` in [app/src-tauri/src/harness/steps.rs:662](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L662).
+- **Exit Point 1 (Terminal Completion)**: `step7_commit_completed` in [app/src-tauri/src/harness/steps.rs:969](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L969).
+- **Exit Point 2 (Turn Interruption)**: `step7_handle_cancelled` in [app/src-tauri/src/harness/steps.rs:895](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L895).
+- **Exit Point 3 (Fatal Turn Error)**: `step7_handle_error` in [app/src-tauri/src/harness/steps.rs:940](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L940).
 
 ---
 
@@ -75,54 +75,53 @@ sequenceDiagram
         Guard-->>Loop: Strip Tools (allow_tools = false) -> Force Summary Pass
     end
     Loop->>Hist: commit_tool_step(preamble, calls, results)
-    Loop->>Worker: try_send(StepCompleted with prompt_tokens, completion_tokens, strike, is_compacted)
+    Loop->>Worker: try_send(StepCompleted with prompt_tokens, completion_tokens, strike)
     Loop->>Worker: try_send(ToolCallExecuted with truncated, spillover_path)
 ```
 
 #### Step 1: Pre-Iteration Budget Check & Turn-Preserving Compaction
 1. **What:** The coordinator evaluates context utilization before request assembly.
-   **Who:** `check_loop_budget` in `services::harness::loop`.
+   **Who:** `step3_check_and_run_loop_budget` and `step3_execute_compaction` in `harness::steps` / `harness::loop`.
    **Trigger:** Start of each reentrant iteration.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/loop.rs:268-306](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/loop.rs#L268-L306).
-   **Defect in v1:** `check_loop_budget` only logs debug messages. If called naively, `step3_execute_compaction` calls `Harness::apply_session_context` which calls `self.history.clear(); self.history.reset(prompt); if !active_query.is_empty() { push_user_turn(query); }`. This wipes all completed tool steps of the current turn!
-   **Fix in v2:** When utilization reaches $\ge 85\%$, `check_loop_budget` triggers compaction while preserving the in-flight active turn's trailing slice (`[Role::User, Role::Assistant(tool_calls), Role::Tool, ...]`).
+   **Grounding:** Traced — [app/src-tauri/src/harness/loop.rs:150-170](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/loop.rs#L150-L170).
+   **Defect in v1:** Budget evaluation only logged debug messages or naively wiped active turn steps upon compaction.
+   **Fix in v2:** When utilization reaches $\ge 85\%$, compaction executes while preserving the active turn's in-flight steps (`pending_user_query` or trailing `[Role::User, Role::Assistant(tool_calls), Role::Tool, ...]`). Compaction events record downward foreign keys in `session_compactions` (`RULE-HARN-17`).
 
-#### Step 2: Generation Request Assembly & Dispatch
+#### Step 2: Generation Request Assembly & Duplex Pipe Dispatch
 2. **What:** The coordinator assembles `GenerationRequest` and sends it to the LLM worker.
-   **Who:** `step4_assemble_request` and `step5_dispatch_llm` in `services::harness::steps`.
+   **Who:** `step4_assemble_request` and `step5_dispatch_llm` in `harness::steps`.
    **Trigger:** Iteration loop continuation.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:314-409](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L314-L409).
-   **Owner:** `services::harness::steps`.
+   **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:360-450](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L360-L450).
+   **Cancellation:** Dispatched with `gen_cancel` bridged to `turn_cancel_token` and `stream_cancel_token`. Aborts instantly on user interruption.
 
 #### Step 3: Stream Demuxing & Tool Call Interception
 3. **What:** The stream router demuxes tokens into spoken clauses and tool calls.
    **Who:** `step6_run_stream_pass` calling `StreamRoutingStage::route_stream`.
    **Trigger:** LLM actor yields response tokens.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:416-429](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L416-L429).
-   **Owner:** `services::harness::stages::streaming`.
+   **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:470-520](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L470-L520).
+   **Owner:** `harness::stages::streaming`.
 
 #### Step 4: Batch Tool Execution & Observation Sizing
 4. **What:** The executor runs tool calls across parallel waves and exclusive barriers.
-   **Who:** `ToolExecutor::execute_batch` in `services::harness::stages::tools::executor`.
+   **Who:** `ToolExecutor::execute_batch` in `harness::tools::executor`.
    **Trigger:** `StreamPassOutcome::ToolCallsReceived`.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/stages/tools/executor.rs:111-217](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/stages/tools/executor.rs#L111-L217).
+   **Grounding:** Traced — [app/src-tauri/src/harness/tools/executor.rs:111-217](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/tools/executor.rs#L111-L217).
    **Defect in v1:** Tools return unbounded strings directly into `ToolResult::content`. Tools ignore `max_observation_tokens`.
    **Fix in v2:** `TruncationStage` slices oversized outputs based on `TruncationPolicy`. It snaps to UTF-8 character boundaries and nearby newlines, sanitizes `call_id`, and writes unabridged text to `paths::session_tool_outputs_dir(session_id)`.
 
 #### Step 5: Guardrail Evaluation & Loop Detection
 5. **What:** The coordinator evaluates the tool call sequence for repetitive loops.
-   **Who:** `GuardrailsStage` in `services::harness::stages::guardrails`.
+   **Who:** `GuardrailsStage` in `harness::stages::guardrails`.
    **Trigger:** Ingress of completed `ToolExecutionOutcome` batch.
    **Defect in v1:** No guardrails exist. Repetitive loops run until `MAX_TOOL_STEPS = 20`. False positive error cascades trigger on Step 0 parallel calls. Strikes reset on clean calls.
    **Fix in v2:** Monotonic per-turn strike counter (`strike_count: u8`). Identical calls check both `args_hash` and `result_hash`. Error cascades evaluate across step boundaries. Strike 1 injects a warning; Strike 2 strips tools and forces a spoken summary.
 
-#### Step 6: Step Commit & Relational Persistence Handoff
+#### Step 6: Step Commit, Staging Flush & Relational Persistence Handoff
 6. **What:** The coordinator commits step boundaries to history and queues database persistence events.
-   **Who:** `step6_execute_tool_batch` calling `ConversationHistoryStage::commit_tool_step`.
+   **Who:** `step6_execute_tool_batch` calling `Harness::commit_tool_step`.
    **Trigger:** Batch execution completion.
-   **Grounding:** Traced — [app/src-tauri/src/services/harness/steps.rs:514-565](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/steps.rs#L514-L565).
-   **Defect in v1:** `session_steps` lacks token counts, strike counts, and compaction indicators. `session_tool_calls` lacks spillover paths.
-   **Fix in v2:** `prompt_tokens` and `completion_tokens` are computed deterministically. Schema v18 fields are populated. `[StepAudit]`, `[TruncationAudit]`, and `[GuardrailAudit]` logs are emitted.
+   **Grounding:** Traced — [app/src-tauri/src/harness/steps.rs:662-780](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/steps.rs#L662-L780).
+   **Invariant Enforcement:** `commit_tool_step` flushes `pending_user_query` to history on the first tool commit. `prompt_tokens` and `completion_tokens` are computed deterministically. Relational Direction Invariant (`RULE-HARN-17`) ensures `session_steps` does not carry `is_compacted`. `[StepAudit]`, `[TruncationAudit]`, and `[GuardrailAudit]` logs are emitted. Persistence failures dispatch `VoxEvent::Error(PipelineError { impact: PipelineImpact::TurnAborted })`.
 
 ---
 
@@ -251,7 +250,7 @@ When Strike 1 triggers, the warning is appended directly to the tool observation
 Observation truncation prevents tool outputs from exhausting provider context limits, using character-safe slicing and centralized paths.
 
 #### 3.2.1 `TruncationPolicy` on `ToolDefinition`
-In [app/src-tauri/src/services/harness/stages/tools/mod.rs](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/stages/tools/mod.rs), the `ToolDefinition` trait declares:
+In [app/src-tauri/src/harness/tools/mod.rs](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/tools/mod.rs), the `ToolDefinition` trait declares:
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TruncationPolicy {
@@ -349,7 +348,7 @@ let (utilization, status) = budget.evaluate_utilization(total_tokens);
 
 #### 3.3.2 Turn-Preserving Compaction Algorithm (`apply_session_context`)
 When `status == ContextStatus::Critical` ($\ge 85\%$), inline compaction triggers.
-In [app/src-tauri/src/services/harness/chassis.rs](file:///home/addy/projects/apps/vox/app/src-tauri/src/services/harness/chassis.rs), `apply_session_context` is updated to preserve active turn steps:
+In [app/src-tauri/src/harness/chassis.rs](file:///home/addy/projects/apps/vox/app/src-tauri/src/harness/chassis.rs), `apply_session_context` is updated to preserve active turn steps and staged queries:
 ```rust
 pub fn apply_session_context(&mut self, session_context: &str, active_query: &str) {
     self.prompt
@@ -359,15 +358,18 @@ pub fn apply_session_context(&mut self, session_context: &str, active_query: &st
     }
     let assembled_prompt = self.prompt.assemble();
 
-    // 1. Extract the active turn's trailing slice (from the last Role::User message onward)
-    let active_turn_tail: Vec<ChatMessage> = {
-        let msgs = self.history.messages();
-        if let Some(last_user_idx) = msgs.iter().rposition(|m| m.role == Role::User) {
-            msgs[last_user_idx..].to_vec()
+    // 1. Extract the active turn's trailing slice. A staged query is not in
+    // canonical history yet, so it is the entire active tail before Step 0 commits.
+    let active_turn_tail: Vec<ChatMessage> =
+        if let Some((_, staged)) = self.pending_user_query.as_ref() {
+            vec![ChatMessage::new(Role::User, staged.clone())]
         } else {
-            Vec::new()
-        }
-    };
+            let msgs = self.history.messages();
+            msgs.iter()
+                .rposition(|m| m.role == Role::User)
+                .map(|idx| msgs[idx..].to_vec())
+                .unwrap_or_default()
+        };
 
     // 2. Reset conversation history with the newly compacted system prompt
     self.history.clear();
@@ -389,11 +391,12 @@ pub fn apply_session_context(&mut self, session_context: &str, active_query: &st
 }
 ```
 
-#### 3.3.3 Atomic-Turn-Unit FIFO Fallback
+#### 3.3.3 Atomic-Turn-Unit FIFO Fallback & Relational Compaction Ledger
 If compaction fails or `provider` is `None`, the degraded FIFO shift in `budget.rs` drops complete turn units from the start of history:
 - Identifies the boundaries of the oldest turn: starts at `Role::User`, includes subsequent `Role::Assistant` and all matching `Role::Tool` messages.
 - Drops the entire unit atomically. Never drops between an assistant tool call and its tool observation.
-- Never drops the active turn's messages (stops when reaching the last `Role::User`).
+- Never drops the active turn's messages (stops when reaching the last `Role::User` or staged query).
+- **Relational Ledger Invariant (`RULE-HARN-17`)**: `step3_execute_compaction` records the FIFO fallback compaction into `session_compactions` via `record_compaction_start` and `record_compaction_finish`, ensuring zero silent untracked drops.
 
 ---
 
@@ -431,23 +434,22 @@ In `step6_execute_tool_batch`, tokens are computed deterministically before disp
   };
   ```
 
-#### 3.4.2 Turso Database Schema v18 Migration
-Update `SCHEMA_VERSION = 18` in [app/src-tauri/src/persistence/schema.rs](file:///home/addy/projects/apps/vox/app/src-tauri/src/persistence/schema.rs).
+#### 3.4.2 Turso Database Schema & Relational Direction Invariant (`RULE-HARN-17`)
+In accordance with `RULE-HARN-17` (Relational Direction Invariant), child execution records (`session_steps`) must not store status booleans (`is_compacted`) tracking operations performed on them by parent lifecycle processes. Parent lifecycle ledger tables (`session_compactions`) reference child rows downward via foreign keys (`step_id`).
 
-`SCHEMA_TABLE_STATEMENTS` updates:
+Canonical Turso schema statements in [app/src-tauri/src/persistence/schema.rs](file:///home/addy/projects/apps/vox/app/src-tauri/src/persistence/schema.rs):
 ```sql
 CREATE TABLE IF NOT EXISTS session_steps (
     id TEXT PRIMARY KEY,
     session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     turn_id INTEGER NOT NULL,
     step_index INTEGER NOT NULL,
-    preamble_text TEXT,
+    content TEXT,
     tool_count INTEGER NOT NULL DEFAULT 0,
     duration_ms INTEGER,
     prompt_tokens INTEGER,
     completion_tokens INTEGER,
     guardrail_strike INTEGER NOT NULL DEFAULT 0,
-    is_compacted INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
 );
 
@@ -466,44 +468,28 @@ CREATE TABLE IF NOT EXISTS session_tool_calls (
     spillover_path TEXT,
     created_at INTEGER NOT NULL
 );
-```
 
-Migration block for `current_version < 18`:
-```rust
-if current_version > 0 && current_version < 18 {
-    log::info!("[Persistence::Schema] Migrating schema to v18: adding step provenance and truncation fields");
-    
-    // Check and add columns to session_steps
-    let step_cols = get_table_columns(conn, "session_steps").await?;
-    if !step_cols.contains("prompt_tokens") {
-        conn.execute("ALTER TABLE session_steps ADD COLUMN prompt_tokens INTEGER;", ()).await?;
-    }
-    if !step_cols.contains("completion_tokens") {
-        conn.execute("ALTER TABLE session_steps ADD COLUMN completion_tokens INTEGER;", ()).await?;
-    }
-    if !step_cols.contains("guardrail_strike") {
-        conn.execute("ALTER TABLE session_steps ADD COLUMN guardrail_strike INTEGER NOT NULL DEFAULT 0;", ()).await?;
-    }
-    if !step_cols.contains("is_compacted") {
-        conn.execute("ALTER TABLE session_steps ADD COLUMN is_compacted INTEGER NOT NULL DEFAULT 0;", ()).await?;
-    }
-
-    // Check and add columns to session_tool_calls
-    let tool_cols = get_table_columns(conn, "session_tool_calls").await?;
-    if !tool_cols.contains("truncated") {
-        conn.execute("ALTER TABLE session_tool_calls ADD COLUMN truncated INTEGER NOT NULL DEFAULT 0;", ()).await?;
-    }
-    if !tool_cols.contains("spillover_path") {
-        conn.execute("ALTER TABLE session_tool_calls ADD COLUMN spillover_path TEXT;", ()).await?;
-    }
-}
+CREATE TABLE IF NOT EXISTS session_compactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    turn_id INTEGER,
+    step_id TEXT REFERENCES session_steps(id) ON DELETE SET NULL,
+    trigger_kind TEXT NOT NULL,
+    from_turn_id INTEGER NOT NULL,
+    to_turn_id INTEGER NOT NULL,
+    compaction_output TEXT NOT NULL,
+    status TEXT NOT NULL,
+    error_msg TEXT,
+    created_at INTEGER NOT NULL,
+    finished_at INTEGER
+);
 ```
 
 #### 3.4.3 Structured Audit Log Formats
 Standardized logs use key-value format for log parsing:
 - **Step Audit**:
   ```text
-  [StepAudit] session_id={session_id} turn_id={turn_id} step_index={step_index} duration_ms={duration_ms} prompt_tokens={prompt_tokens} completion_tokens={completion_tokens} tool_count={tool_count} guardrail_strike={guardrail_strike} is_compacted={is_compacted}
+  [StepAudit] session_id={session_id} turn_id={turn_id} step_index={step_index} duration_ms={duration_ms} prompt_tokens={prompt_tokens} completion_tokens={completion_tokens} tool_count={tool_count} guardrail_strike={guardrail_strike}
   ```
 - **Truncation Audit**:
   ```text
@@ -544,24 +530,27 @@ Standardized logs use key-value format for log parsing:
 | **Tool returns 500KB single-line JSON** | Minified API dump with zero `\n` characters | `TruncationStage` slices by UTF-8 char boundary, spills raw to disk | Zero thread panics. History stays within budget. |
 | **Context reaches 88% mid-loop** | Multiple tool steps accumulate observations | Coordinator runs inline compaction preserving active turn steps | Zero silent drops. Completed steps of current turn preserved. |
 | **Spillover disk full / read-only** | Disk quota exhausted or permission denied | Catch error, log warning, return clamped output without path | Voice turn does not crash. System continues gracefully. |
-| **Turn cancelled during truncation** | User barge-in while writing cache file | Honor `CancellationToken`, drop writer future, finalize step | Audio cuts immediately. No stale disk corruption. |
+| **Turn cancelled during truncation** | User barge-in while writing cache file | Honor `turn_cancel_token`, abort disk writer task, finalize turn via `step7_handle_cancelled` | Audio cuts immediately. No stale disk corruption. Staged query dropped if no partial speech. |
+| **Voice barge-in during cognitive phase** | Acoustic onset / STT speech detected during Working or Thinking | Pipeline router invokes `cancel_active_turn()` and advances turn (`RULE-EVT-08 §2b`). Voice tokens never enter `StepInbox`. | Active turn terminates cleanly. Working envelope preserved on false barge-in. Zero token pollution. |
 
 ---
 
 ## 5. Formal Architectural Invariants for Domain 3
 
-These invariants extend `docs/specs/harness-spec.md` with rules `RULE-HARN-13` through `RULE-HARN-17`:
+These invariants extend `docs/specs/harness-spec.md` with rules `RULE-HARN-13` through `RULE-HARN-18`:
 
 - **RULE-HARN-13 (Zero Unbounded Observations & Safe Truncation)**:
   No tool execution outcome may inject content exceeding `max_observation_tokens` into conversation history. All oversized outputs must write full content to `paths::session_tool_outputs_dir(session_id).join(format!("{}.txt", sanitized_call_id))` and return a character-boundary-safe head/tail preview containing the spillover marker.
 - **RULE-HARN-14 (Two-Strike Monotonic Guardrail & Step-Boundary Error Cascades)**:
-  The coordinator must maintain a monotonic per-turn strike counter (`strike_count: u8`). Strike 1 never resets back to 0 within the same turn. Any subsequent violation in that turn advances to Strike 2, which strips tools (`allow_tools = false`) and forces a final spoken summary pass (`AudioIntent::TurnResponse`). Error cascades evaluate across step boundaries rather than intra-batch calls on Step 0.
+  The coordinator must maintain a monotonic per-turn strike counter (`strike_count: u8`). Strike 1 never resets back to 0 within the same turn. Any subsequent violation in that turn advances to Strike 2, which strips tools (`allow_tools = false`) and forces a final spoken summary pass without tools. Error cascades evaluate across step boundaries rather than intra-batch calls on Step 0.
 - **RULE-HARN-15 (Scoped Tier 4 Disk Cache Isolation & TTL)**:
   Tool spillover files must reside exclusively under `paths::session_tool_outputs_dir(session_id)`. Cache directories must be purged on session deletion. Startup sweeps must remove deleted session directories, purge files older than 7 days, and enforce a 100MB LRU directory ceiling.
 - **RULE-HARN-16 (Transparent Compaction Over Silent Drops)**:
   The coordinator must evaluate context budget before each reentrant pass. When utilization reaches $\ge 85\%$, inline compaction must trigger transparently with user-visible activity events while preserving the active turn's completed tool steps. Silent FIFO turn drops are forbidden while an LLM provider is available.
-- **RULE-HARN-17 (Granular Step Provenance SSOT)**:
-  Every ReAct step must persist its latency, `prompt_tokens`, `completion_tokens`, compaction status (`is_compacted`), and `guardrail_strike` to `session_steps` in Turso DB. Every tool invocation must record `truncated` and `spillover_path` in `session_tool_calls`.
+- **RULE-HARN-17 (Granular Step Provenance & Relational Direction Invariant)**:
+  Every ReAct step must persist its latency, `prompt_tokens`, `completion_tokens`, `content`, and `guardrail_strike` to `session_steps` in Turso DB. Compaction events must be recorded in the parent ledger `session_compactions` via downward foreign keys (`step_id`), never as child status flags (`is_compacted`). Every tool invocation must record `truncated` and `spillover_path` in `session_tool_calls`.
+- **RULE-HARN-18 (StepInbox Programmatic-Only Invariant)**:
+  `StepInbox` is reserved exclusively for external programmatic control events (`InboxMessage::Steer` from UI/remote IPC) and transient speech-hold synchronization (`wait_if_speech_held`). Voice barge-in must never enqueue voice tokens into `StepInbox`; acoustic onset and speech transcription during active cognitive phases trigger immediate turn cancellation (`turn_cancel_token`) and router turn advancement (`RULE-EVT-08 §2b`).
 
 ---
 
@@ -612,10 +601,10 @@ Per `testing-style-guide.md`, 8 new subtests are assigned across two existing se
 ### 6.2 Seam Binary 2: `app/src-tauri/tests/database_persistence_boundary_test.rs` (2 Subtests)
 
 7. **`schema_v18_persists_step_tokens_strikes_compaction_and_tool_spillover_metadata` (`VERIFY-D3-07`)**:
-   - *PURPOSE:* Catch dropped v18 provenance columns across the persistence worker boundary.
-   - *SCENARIO:* Execute a turn through `PersistenceWorker` with `StepCompleted` (`prompt_tokens = Some(420)`, `completion_tokens = Some(85)`, `guardrail_strike = 1`, `is_compacted = true`) and `ToolCallExecuted` (`truncated = true`, `spillover_path = Some("/tmp/spill.txt")`).
-   - *ASSERTS:* Querying `session_steps` returns `(420, 85, 1, 1)` for `(prompt_tokens, completion_tokens, guardrail_strike, is_compacted)`; querying `session_tool_calls` returns `(1, "/tmp/spill.txt")` for `(truncated, spillover_path)`.
-   - *MUTANT:* In `persistence/steps.rs` or `tool_calls.rs`, hardcode `0` or `NULL` for the v18 provenance columns.
+   - *PURPOSE:* Catch dropped provenance columns across the persistence worker boundary.
+   - *SCENARIO:* Execute a turn through `PersistenceWorker` with `StepCompleted` (`prompt_tokens = Some(420)`, `completion_tokens = Some(85)`, `guardrail_strike = 1`, `content = Some("Analyzing query".to_string())`) and `ToolCallExecuted` (`truncated = true`, `spillover_path = Some("/tmp/spill.txt")`).
+   - *ASSERTS:* Querying `session_steps` returns `(420, 85, 1, "Analyzing query")` for `(prompt_tokens, completion_tokens, guardrail_strike, content)`; querying `session_tool_calls` returns `(1, "/tmp/spill.txt")` for `(truncated, spillover_path)`. Relational Direction Invariant (`RULE-HARN-17`) verified (compactions link downward in `session_compactions(step_id)` rather than storing boolean flags on child step rows).
+   - *MUTANT:* In `persistence/steps.rs` or `tool_calls.rs`, hardcode `0` or `NULL` for the provenance columns.
 
 8. **`session_deletion_and_startup_sweep_purge_tier4_tool_output_cache_directories` (`VERIFY-D3-08`)**:
    - *PURPOSE:* Catch disk space leaks in tool output cache when sessions are deleted or orphaned on disk (`RULE-HARN-15`).
@@ -632,23 +621,23 @@ This ledger details every file modified, created, or audited for Domain 3:
 | File | Nature of Change | Purpose / Invariant Enforced |
 | :--- | :--- | :--- |
 | `app/src-tauri/src/utils/paths.rs` | Modification | Add `tool_outputs_dir()` and `session_tool_outputs_dir(session_id)`. Enforces `RULE-STORAGE-01`. |
-| `app/src-tauri/src/persistence/schema.rs` | Modification | Bump `SCHEMA_VERSION = 18`. Add provenance columns to `session_steps` and `session_tool_calls`. Add idempotent v18 migration. |
-| `app/src-tauri/src/persistence/mod.rs` | Modification | Add v18 fields to `StepCompleted` and `ToolCallExecuted` variants of `PersistenceEvent`. |
-| `app/src-tauri/src/persistence/steps.rs` | Modification | Insert `prompt_tokens`, `completion_tokens`, `guardrail_strike`, `is_compacted` in `persist_step`. |
+| `app/src-tauri/src/persistence/schema.rs` | Modification | Add provenance columns to `session_steps` (`prompt_tokens`, `completion_tokens`, `guardrail_strike`, `content`) and `session_tool_calls` (`truncated`, `spillover_path`). Link compactions downward in `session_compactions` (`step_id`). Enforces `RULE-HARN-17`. |
+| `app/src-tauri/src/persistence/mod.rs` | Modification | Add provenance fields to `StepCompleted` and `ToolCallExecuted` variants of `PersistenceEvent`. |
+| `app/src-tauri/src/persistence/steps.rs` | Modification | Insert `prompt_tokens`, `completion_tokens`, `guardrail_strike`, `content` in `persist_step`. Return `Result<()>`. |
 | `app/src-tauri/src/persistence/tool_calls.rs` | Modification | Insert `truncated` and `spillover_path` in `persist_tool_call`. |
 | `app/src-tauri/src/persistence/sessions.rs` | Modification | Purge `paths::session_tool_outputs_dir(session_id)` on `delete_session`. |
-| `app/src-tauri/src/persistence/worker.rs` | Modification | Forward v18 fields in `process_event`. Add startup sweep for orphaned tool output directories and 7-day TTL. |
-| `app/src-tauri/src/services/harness/stages/tools/mod.rs` | Modification | Define `TruncationPolicy` enum. Add `fn truncation_policy` to `ToolDefinition`. Add `truncated` and `spillover_path` to `ToolResult` and `ToolExecutionOutcome`. |
-| `app/src-tauri/src/services/harness/stages/tools/set_title.rs` | Modification | Set `truncation_policy` to `TruncationPolicy::None`. |
-| `app/src-tauri/src/services/harness/stages/tools/search_memory.rs` | Modification | Set `truncation_policy` to `TruncationPolicy::HeadTail { head_ratio: 0.8 }`. |
-| `app/src-tauri/src/services/harness/stages/tools/web_search.rs` | Modification | Set `truncation_policy` to `TruncationPolicy::HeadTail { head_ratio: 0.8 }`. |
-| `app/src-tauri/src/services/harness/stages/truncation.rs` | **New File** | Implement `TruncationStage`: UTF-8 char-boundary-safe head/tail slicing with newline snapping, `call_id` sanitization, and Tier 4 disk cache writer. |
-| `app/src-tauri/src/services/harness/stages/tools/executor.rs` | Modification | Invoke `TruncationStage` after tool completion. Populate `truncated` and `spillover_path`. |
-| `app/src-tauri/src/services/harness/stages/guardrails.rs` | **New File** | Implement `GuardrailsStage`, `ToolCallFingerprint`, monotonic `TurnGuardrailsState`, and loop detection algorithms. |
-| `app/src-tauri/src/services/harness/stages/mod.rs` | Modification | Export `guardrails` and `truncation` modules. |
-| `app/src-tauri/src/services/harness/chassis.rs` | Modification | Update `apply_session_context` to preserve active turn trailing slice (`[Role::User, ...]`). |
-| `app/src-tauri/src/services/harness/stages/budget.rs` | Modification | Update degraded FIFO shift to drop atomic turn units without separating `Role::Assistant(tool_calls)` and `Role::Tool`. |
-| `app/src-tauri/src/services/harness/steps.rs` | Modification | Compute `prompt_tokens` and `completion_tokens`. Append Strike 1 warning. Emit `[StepAudit]`, `[TruncationAudit]`, `[GuardrailAudit]`. Forward v18 fields to `persist_tx`. |
-| `app/src-tauri/src/services/harness/loop.rs` | Modification | Maintain `TurnGuardrailsState` across loop iterations. Trigger mid-loop compaction when $\ge 85\%$. Handle Strike 2 tool stripping (`allow_tools = false`). |
+| `app/src-tauri/src/persistence/worker.rs` | Modification | Forward provenance fields in `process_event`. Add startup sweep for orphaned tool output directories and 7-day TTL. |
+| `app/src-tauri/src/harness/tools/mod.rs` | Modification | Define `TruncationPolicy` enum. Add `fn truncation_policy` to `ToolDefinition`. Add `truncated` and `spillover_path` to `ToolResult` and `ToolExecutionOutcome`. |
+| `app/src-tauri/src/harness/tools/set_title.rs` | Modification | Set `truncation_policy` to `TruncationPolicy::None`. |
+| `app/src-tauri/src/harness/tools/search_memory.rs` | Modification | Set `truncation_policy` to `TruncationPolicy::HeadTail { head_ratio: 0.8 }`. |
+| `app/src-tauri/src/harness/tools/web_search.rs` | Modification | Set `truncation_policy` to `TruncationPolicy::HeadTail { head_ratio: 0.8 }`. |
+| `app/src-tauri/src/harness/stages/truncation.rs` | **New File** | Implement `TruncationStage`: UTF-8 char-boundary-safe head/tail slicing with newline snapping, `call_id` sanitization, and Tier 4 disk cache writer. |
+| `app/src-tauri/src/harness/tools/executor.rs` | Modification | Invoke `TruncationStage` after tool completion. Populate `truncated` and `spillover_path`. |
+| `app/src-tauri/src/harness/stages/guardrails.rs` | **New File** | Implement `GuardrailsStage`, `ToolCallFingerprint`, monotonic `TurnGuardrailsState`, and loop detection algorithms. |
+| `app/src-tauri/src/harness/stages/mod.rs` | Modification | Export `guardrails` and `truncation` modules. |
+| `app/src-tauri/src/harness/chassis.rs` | Modification | Add query staging (`stage_user_query`, `pending_user_query`), atomic flush on tool commit (`commit_tool_step`) and turn completion (`commit_completed_turn`), and turn discard (`discard_pending_turn`). Update `apply_session_context` to preserve active turn trailing slice. |
+| `app/src-tauri/src/harness/stages/budget.rs` | Modification | Update degraded FIFO shift to drop atomic turn units without separating `Role::Assistant(tool_calls)` and `Role::Tool`. Record into `session_compactions` ledger (`RULE-HARN-17`). |
+| `app/src-tauri/src/harness/steps.rs` | Modification | Compute `prompt_tokens` and `completion_tokens`. Append Strike 1 warning. Emit `[StepAudit]`, `[TruncationAudit]`, `[GuardrailAudit]`. Check `persist_step_and_tools` result and emit `VoxEvent::Error` on failure. Transition phases via `transition_harness_phase`. Enforce `StepInbox` programmatic-only invariant (`RULE-HARN-18`). |
+| `app/src-tauri/src/harness/loop.rs` | Modification | Maintain `TurnGuardrailsState` across loop iterations. Trigger mid-loop compaction when $\ge 85\%$. Handle Strike 2 tool stripping (`allow_tools = false`). Cancel bridge with `turn_cancel_token` and `stream_cancel_token`. Handle `StreamPassOutcome::PausedForSpeech` and `Superseded`. |
 | `app/src-tauri/tests/harness_loop_test.rs` | Extension | Implement Subtests 1–6. |
 | `app/src-tauri/tests/database_persistence_boundary_test.rs` | Extension | Implement Subtests 7–8. |

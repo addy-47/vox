@@ -18,6 +18,26 @@
 - **Final mutation state: 317 killed, 0 survivors, 22 documented skips → 100% of executable mutants (317/317). ACCEPTED.**
 - Final manifest dry-run PASS; no mutant markers in `src/`; full suite 566 passed / 0 failed / 2 skipped.
 - Rules pruned: `.agents/rules/` no longer names transient files or hard-coded phases; stable directories only and `docs/plans/<curr_phase>/`.
+## 2026-11-19 — Upstream Pipeline Refactor Audit & Domain Specification Harmonization
+
+- **Role:** Lead System Architect / Orchestrator.
+- **Scope:** Coordinated across Domains 1–5 System Architects to audit the upstream pipeline refactor diff (`d9ab714ba3b01cb83ffe7e61317c8b5338cac3c6` to `HEAD`) for functional logic regressions. Harmonized domain specification files under `docs/plans/phase14/` to align with the new canonical duplex state machine, atomic Step 0 intake, and cancellation tokens.
+- **Audit Findings:**
+  - **All 5 Domains Certified Clean:** Confirmed 0 functional regressions across Domains 1, 2, 3, 4, and 5.
+  - **Domain 1 (Stream Demuxing & Interim Speech):** 3-stream demuxing, thinking token quarantine, fallback `PlaybackFinished` emission, and late-final `peek_utterance_id()` correlation verified intact.
+  - **Domain 2 (ReAct Step Loop):** Multi-tool wave scheduling, atomic Step 0 staging (`pending_user_query`), deletion of `rollback_user_turn`, and `transition_harness_phase` duplex guards verified intact.
+  - **Domain 3 (Guardrails & Truncation):** Two-strike doom-loop detection, head/tail observation slicing, disk spillover, and programmatic-only `StepInbox` verified intact.
+  - **Domain 4 (Two-Stage Interruption & Steering):** Two-stage interruption lifecycle, `utterance_id` vs `turn_id` decoupling, `stream_cancel_token` pause on acoustic onset, continuation prefix stashing, and clean tool cancellation placeholders verified intact.
+  - **Domain 5 (Background Tasks):** 9-state Duplex State Machine interactions, `RULE-EVT-12` sleep standby inhibition, tool envelope activity preservation, and two-step confirm modal disengage flow verified intact.
+- **Specification Files Harmonized (Disk-only, uncommitted):**
+  - `docs/plans/phase14/domain-1-stream-demuxing.md`: Purged `AudioIntent` and `turn_open`; documented `stream_cancel_token`, `hardware_cancel_flag`, and `utterance_id`.
+  - `docs/plans/phase14/domain-2-react-loop.md`: Purged `TurnPhase` and `rollback_user_turn`; documented atomic Step 0 staging and `transition_harness_phase`.
+  - `docs/plans/phase14/domain-3-guardrails.md`: Purged legacy cancel flags; enforced Relational Direction Invariant for compactions and programmatic-only `StepInbox`.
+  - `docs/plans/phase14/domain-4-interruption.md`: Purged turn adjacency late-final logic; documented `utterance_id` binding, two-stage interruption, and continuation prefix stashing.
+  - `docs/plans/phase14/domain-5-background-tasks.md`: Purged 8-state terminology; updated to canonical 9-state Duplex State Machine and cancellation token hierarchy.
+- **Invariants Enforced:**
+  - Zero compiler commands executed (no cargo locks burned; remote mutation suite unaffected).
+  - Parallel git operations halted; all spec updates applied directly to working tree files without repo churn.
 
 ## 2026-11-19 — Pipeline Refactor Pre-Handoff Fixes (F-01, F-02, F-03, S-01, S-02)
 

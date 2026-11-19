@@ -13,7 +13,7 @@ Domain 5 establishes the background task execution architecture for Vox Harness 
 4. **Single-Spawn Lifecycle Contract**: Spawns the child process once and immediately hands the handle to a supervisor task in `BackgroundTaskManager`, avoiding future-drop cancellation bugs during auto-promotion.
 5. **OS Kernel Stream Redirection & Cross-Platform Shell**: Streams stdout and stderr directly to disk via kernel file descriptors (`Stdio::from(file)`) with `.stdin(Stdio::null())`. Resolves `/system/bin/sh` on Android and process group creation flags on Windows.
 6. **Process Group Isolation & Zombie Reaping**: Spawns processes in isolated process groups (`setpgid(0, 0)` on Unix, `CREATE_NEW_PROCESS_GROUP` on Windows) and guarantees full process tree teardown via `SIGKILL` to negative PGID (`-pid`), actively awaiting child exit to reap OS zombie processes.
-7. **Router Wake-Up & The 8-State Handling Matrix**: Serializes background task completion events through `vox-router` across all 8 interaction states, evaluating active conversational presence (<5m) in `Ready` with zero-latency immediate dispatch when single tasks complete, and buffering into `StepInbox` without clearing the speech-hold latch during `Listening`, `Thinking`, and `Working`.
+7. **Router Wake-Up & The 9-State Handling Matrix**: Serializes background task completion events through `vox-router` across all 9 canonical interaction states (`Idle`, `Ready`, `Listening`, `Thinking`, `Working`, `Speaking`, `Paused`, `Sleeping`, `Error`), evaluating active conversational presence (<5m) in `Ready` with zero-latency immediate dispatch when single tasks complete, and buffering into `StepInbox` without clearing the speech-hold latch during `Listening`, `Thinking`, and `Working`.
 8. **Sleep Standby Inhibition (`RULE-EVT-12`)**: Inhibits the 5-minute standby sleep transition in `spawn_idle_monitor` while background tasks remain active, re-arming the timer loop upon task completion.
 9. **Two-Step Disengage UX (`ConfirmModal`) & Backend Force Guard (`RULE-EVT-13`)**: Guards session termination with modal confirmation in UI and strict `force: bool` validation in the Rust backend before terminating active child process groups.
 10. **Built-in `bash` & `manage_task` Tools**: Minimal, robust execution primitives providing authentic agent capabilities and black-box verification.
@@ -96,7 +96,7 @@ This trace reconstructs the exact runtime control flow for tool execution, timeo
    **Owner:** Frontend Pipeline Service Bridge (`services/pipelineService.ts`).
    *Defect in current code:* The frontend issues `end_session` with zero validation of active background work, immediately tearing down state even if background processes are actively executing.
 
-8. **What:** The backend handles `end_session`, cancels active turn tokens, drops the session harness, and halts the audio engine.
+8. **What:** The backend handles `end_session`, cancels active turn tokens (`turn_cancel_token`), drops the session harness, and halts the audio engine.
    **Who:** `session.rs` inside `on_end`.
    **Trigger:** Router receives `VoxEvent::EndSession`.
    **Grounding:** Traced — [app/src-tauri/src/pipeline/assistant/session.rs:600-669](file:///home/addy/projects/apps/vox/app/src-tauri/src/pipeline/assistant/session.rs#L600-L669).
@@ -112,7 +112,7 @@ Domain 5 introduces cross-cutting modifications across data persistence, event r
 ```mermaid
 flowchart TD
     D5["Domain 5 Architecture"] --> DB["db-spec.md<br/>Schema v19 (session_tasks)"]
-    D5 --> EVT["events-spec.md<br/>TaskFinished & 8-State Matrix"]
+    D5 --> EVT["events-spec.md<br/>TaskFinished & 9-State Matrix"]
     D5 --> NOTIF["notifications-spec.md<br/>ToastAndNotification Delivery"]
     D5 --> HARN["harness-spec.md<br/>run_in_background & Promotion Engine"]
     D5 --> IPC["ipc-spec.md<br/>get_active_tasks_count & end_session(force)"]
@@ -127,7 +127,7 @@ flowchart TD
 | Specification | Section / Clause | Required Modification | Rationale |
 | :--- | :--- | :--- | :--- |
 | **`docs/specs/db-spec.md`** | Database Schemas & Migrations | Add **Migration v19**: create `session_tasks` table, add foreign key cascade to `sessions(id)`, and indices `idx_session_tasks_session_id`, `idx_session_tasks_status`. Update schema version constant to 19. | Authoritative relational persistence of background task lifecycle, exit codes, and log paths. |
-| **`docs/specs/events-spec.md`** | §4 Interaction State Machine & §5 Matrix | Add `VoxEvent::TaskFinished { task_id, session_id, status }`. Add the **Complete 8-State Handling Matrix** for task completions. Add **`RULE-EVT-12 (Sleep Standby Inhibition)`** and **`RULE-EVT-13 (Two-Step Disengage Protocol)`**. Add 2-second speech coalescing window. | Single-writer event router owns all task completion state transitions without race conditions. |
+| **`docs/specs/events-spec.md`** | §4 Interaction State Machine & §5 Matrix | Add `VoxEvent::TaskFinished { task_id, session_id, status }`. Add the **Complete 9-State Handling Matrix** for task completions. Add **`RULE-EVT-12 (Sleep Standby Inhibition)`** and **`RULE-EVT-13 (Two-Step Disengage Protocol)`**. Add 2-second speech coalescing window. | Single-writer event router owns all task completion state transitions without race conditions. |
 | **`docs/specs/notifications-spec.md`** | Alerting & Routing Matrix | Map background task completions to `DeliveryChannel::ToastAndNotification`. Define OS toast alert shape and Notification Drawer card payload (`category: "task"`, `group_key: "task:{task_id}"`). | Guarantees non-intrusive visual notification across all states, with or without audio synthesis. |
 | **`docs/specs/harness-spec.md`** | §4.5 Agentic Tool Execution Chassis | Replace 13-second constant with **Harness-Owned Timeout Promotion Engine**. Add `run_in_background: boolean` parameter to promotable tools (`bash`). Add `HARNESS_AUTO_PROMOTE_TIMEOUT` (5s) and `HARNESS_FOREGROUND_HARD_TIMEOUT` (120s). Add `StepInbox::push_task_notification` ingestion. | Protects conversational fluency while preventing false guardrail strikes on slow operations. |
 | **`docs/specs/ipc-spec.md`** | §4.5 Pipeline & Audio Domain | Add commands `get_active_tasks_count(sessionId?: number) -> number` and `list_tasks(sessionId?: number) -> Array<TaskRecord>`. Update `end_session` to accept `force?: boolean`. | Allows UI to check active tasks and issue confirmed force-teardown. |
@@ -156,7 +156,7 @@ app/src-tauri/src/
 │       ├── mod.rs                  # Dispatch VoxEvent::TaskFinished
 │       ├── session.rs              # on_end: enforce force check & kill_all running tasks
 │       ├── llm.rs                  # evaluate_synthesis_latch: check undrained inbox tasks
-│       └── tasks.rs (NEW)          # 8-state handling implementation & proactive turn
+│       └── tasks.rs (NEW)          # 9-state handling implementation & proactive turn
 ├── services/
 │   └── tasks/ (NEW)
 │       ├── mod.rs                  # Module exports
@@ -353,7 +353,7 @@ The frontend NEVER queries SQLite or joins local arrays to determine if tasks ar
 ### 4.5 Gate 5: Spec-Wide Referential Integrity Sweep
 - No legacy 13-second constants in harness loop for promotable tools.
 - Non-promotable tools retain 13-second timeout and do not expose `run_in_background`.
-- State machine aligns with `events-spec.md` 8-state model.
+- State machine aligns with `events-spec.md` 9-state Duplex State Machine model.
 - Tool schemas conform to `harness-spec.md §4.5`.
 - Database schema matches `db-spec.md` conventions.
 
@@ -445,6 +445,13 @@ tokio::select! {
     }
 }
 ```
+
+#### Cancellation Token Hierarchy & Stage 1 Interruption Invariant
+- `ctx.cancel` is cloned from `state.pipeline.turn_cancel_token()`.
+- **Stage 1 Interruption (`SpeechStart`)**: When the user speaks or coughs while a tool executes, `on_interrupt` invokes `state.pipeline.cancel_active_stream()`. This trips `stream_cancel_token` to pause token generation, parks the cognitive loop at `StepInbox::wait_if_speech_held()`, and preserves `current_activity`. Crucially, `turn_cancel_token` remains **armed**, and `hardware_cancel_flag` remains **false**. The tool continues running undisturbed.
+- **Stage 2 Interruption (`TranscriptFinal`)**:
+  - *False barge-in (empty transcript)*: Speech hold releases. State resumes `Working` (restoring `current_activity`), with tool execution having progressed uninterrupted.
+  - *Real barge-in (non-empty transcript)*: `cancel_active_turn()` trips `turn_cancel_token` and sets `hardware_cancel_flag = true`. `ctx.cancel.cancelled()` fires in `BashTool::execute`, killing the foreground process group and recording a cancelled placeholder before `next_turn()` rotates `turn_id` and binds the new `utterance_id`.
 
 ---
 
@@ -635,7 +642,7 @@ Sweep `paths::tasks_dir()` for orphaned session folders and enforce the 100MB di
 
 ---
 
-## 9. Part V: Event Router & The Complete 8-State Matrix
+## 9. Part V: Event Router & The Complete 9-State Matrix
 
 ### 9.1 `VoxEvent::TaskFinished`
 ```rust
@@ -649,7 +656,7 @@ pub enum VoxEvent {
 }
 ```
 
-### 9.2 The 8-State Handling Matrix
+### 9.2 The 9-State Handling Matrix
 All events pass through the single-writer `vox-router` channel.
 
 | State | Router Action on `TaskFinished` | Audio / Voice Action | Alerts (`ToastAndNotification`) |
@@ -658,10 +665,11 @@ All events pass through the single-writer `vox-router` channel.
 | **`Ready`** | Evaluates active window (`now - last_user_activity_ms < 5m`). | If active (<5m): transitions `Ready` $\to$ `Thinking` $\to$ `Speaking` to speak status. If quiet (>5m): audio suppressed. | Emits OS toast and Notification Drawer card. |
 | **`Listening`** | Calls `inbox.push_task_notification()` as `Immediate`. | Zero audio interruption. Does NOT clear `speech_hold_active`. | Emits OS toast and Notification Drawer card. |
 | **`Thinking`** | Calls `inbox.push_task_notification()` as `Immediate`. | Zero audio interruption. Does not abort in-flight model stream. | Emits OS toast and Notification Drawer card. |
-| **`Working`** | Calls `inbox.push_task_notification()` as `Immediate`. | Active tools continue running. Injected into context at step boundary. | Emits OS toast and Notification Drawer card. |
-| **`Speaking`** | Calls `inbox.push_task_notification()`. | Zero audio interruption. Evaluated when playback completes and state enters `Ready`. | Emits OS toast and Notification Drawer card. |
+| **`Working`** | Calls `inbox.push_task_notification()` as `Immediate`. | Active tools continue running. Injected into context at step boundary without clobbering speech hold. | Emits OS toast and Notification Drawer card. |
+| **`Speaking`** | Calls `inbox.push_task_notification()`. | Zero audio interruption. Evaluated when playback completes and state returns to `Ready` or `Working`. | Emits OS toast and Notification Drawer card. |
 | **`Paused`** | Updates Turso DB record. | Zero audio. Never speaks while session is paused by user. | Emits OS toast and Notification Drawer card. |
 | **`Sleeping`** | State invalid under `RULE-EVT-12`. Fallback: updates DB. | Zero audio. | Emits OS toast and Notification Drawer card. |
+| **`Error`** | Updates Turso DB record. | Zero audio. Assistant remains in `Error`. | Emits OS toast and Notification Drawer card. |
 
 ### 9.3 Smart Coalescing in `Ready`
 When `TaskFinished` arrives in `Ready`:
