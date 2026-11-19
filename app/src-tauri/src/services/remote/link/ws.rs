@@ -129,15 +129,23 @@ impl RemoteLink for WsLink {
                             bytes.to_vec()
                         };
 
-                        if let Err(err) = check_control_message_size(decrypted.len(), MAX_CONTROL_MESSAGE_BYTES) {
-                            return Err(self.terminate_on_protocol_violation(err, &mut reader_guard).await);
+                        if let Err(err) =
+                            check_control_message_size(decrypted.len(), MAX_CONTROL_MESSAGE_BYTES)
+                        {
+                            return Err(self
+                                .terminate_on_protocol_violation(err, &mut reader_guard)
+                                .await);
                         }
 
                         if is_control_bytes(&decrypted) {
                             match self.decode_incoming(&decrypted) {
                                 Ok(Some(msg)) => return Ok(msg),
                                 Ok(None) => {}
-                                Err(err) => return Err(self.terminate_on_protocol_violation(err, &mut reader_guard).await),
+                                Err(err) => {
+                                    return Err(self
+                                        .terminate_on_protocol_violation(err, &mut reader_guard)
+                                        .await)
+                                }
                             }
                         } else {
                             // Demux: audio payload buffered for recv_audio.
@@ -150,10 +158,14 @@ impl RemoteLink for WsLink {
                                 }
                                 Err(err) => match classify_protocol_error(&err) {
                                     ProtocolResponse::Skippable => {
-                                        log::warn!("[WsLink] Skipping survivable audio error: {err}");
+                                        log::warn!(
+                                            "[WsLink] Skipping survivable audio error: {err}"
+                                        );
                                     }
                                     ProtocolResponse::Fatal => {
-                                        return Err(self.terminate_on_protocol_violation(err, &mut reader_guard).await);
+                                        return Err(self
+                                            .terminate_on_protocol_violation(err, &mut reader_guard)
+                                            .await);
                                     }
                                 },
                             }
@@ -170,15 +182,23 @@ impl RemoteLink for WsLink {
                             text.as_bytes().to_vec()
                         };
 
-                        if let Err(err) = check_control_message_size(decrypted.len(), MAX_CONTROL_MESSAGE_BYTES) {
-                            return Err(self.terminate_on_protocol_violation(err, &mut reader_guard).await);
+                        if let Err(err) =
+                            check_control_message_size(decrypted.len(), MAX_CONTROL_MESSAGE_BYTES)
+                        {
+                            return Err(self
+                                .terminate_on_protocol_violation(err, &mut reader_guard)
+                                .await);
                         }
 
                         if is_control_bytes(&decrypted) {
                             match self.decode_incoming(&decrypted) {
                                 Ok(Some(msg)) => return Ok(msg),
                                 Ok(None) => {}
-                                Err(err) => return Err(self.terminate_on_protocol_violation(err, &mut reader_guard).await),
+                                Err(err) => {
+                                    return Err(self
+                                        .terminate_on_protocol_violation(err, &mut reader_guard)
+                                        .await)
+                                }
                             }
                         } else {
                             match decode_audio_payload(&decrypted) {
@@ -190,10 +210,14 @@ impl RemoteLink for WsLink {
                                 }
                                 Err(err) => match classify_protocol_error(&err) {
                                     ProtocolResponse::Skippable => {
-                                        log::warn!("[WsLink] Skipping survivable audio error: {err}");
+                                        log::warn!(
+                                            "[WsLink] Skipping survivable audio error: {err}"
+                                        );
                                     }
                                     ProtocolResponse::Fatal => {
-                                        return Err(self.terminate_on_protocol_violation(err, &mut reader_guard).await);
+                                        return Err(self
+                                            .terminate_on_protocol_violation(err, &mut reader_guard)
+                                            .await);
                                     }
                                 },
                             }
@@ -288,8 +312,12 @@ impl RemoteLink for WsLink {
                             bytes.to_vec()
                         };
 
-                        if let Err(err) = check_control_message_size(decrypted.len(), MAX_CONTROL_MESSAGE_BYTES) {
-                            return Err(self.terminate_on_protocol_violation(err, &mut reader_guard).await);
+                        if let Err(err) =
+                            check_control_message_size(decrypted.len(), MAX_CONTROL_MESSAGE_BYTES)
+                        {
+                            return Err(self
+                                .terminate_on_protocol_violation(err, &mut reader_guard)
+                                .await);
                         }
 
                         if is_control_bytes(&decrypted) {
@@ -299,7 +327,11 @@ impl RemoteLink for WsLink {
                                     self.buffered_control.lock().await.push_back(msg);
                                 }
                                 Ok(None) => {}
-                                Err(err) => return Err(self.terminate_on_protocol_violation(err, &mut reader_guard).await),
+                                Err(err) => {
+                                    return Err(self
+                                        .terminate_on_protocol_violation(err, &mut reader_guard)
+                                        .await)
+                                }
                             }
                         } else {
                             match decode_audio_payload(&decrypted) {
@@ -310,11 +342,15 @@ impl RemoteLink for WsLink {
                                 }
                                 Err(err) => match classify_protocol_error(&err) {
                                     ProtocolResponse::Skippable => {
-                                        log::warn!("[WsLink] Skipping survivable audio error: {err}");
+                                        log::warn!(
+                                            "[WsLink] Skipping survivable audio error: {err}"
+                                        );
                                         continue;
                                     }
                                     ProtocolResponse::Fatal => {
-                                        return Err(self.terminate_on_protocol_violation(err, &mut reader_guard).await);
+                                        return Err(self
+                                            .terminate_on_protocol_violation(err, &mut reader_guard)
+                                            .await);
                                     }
                                 },
                             }
@@ -331,8 +367,12 @@ impl RemoteLink for WsLink {
                             text.as_bytes().to_vec()
                         };
 
-                        if let Err(err) = check_control_message_size(decrypted.len(), MAX_CONTROL_MESSAGE_BYTES) {
-                            return Err(self.terminate_on_protocol_violation(err, &mut reader_guard).await);
+                        if let Err(err) =
+                            check_control_message_size(decrypted.len(), MAX_CONTROL_MESSAGE_BYTES)
+                        {
+                            return Err(self
+                                .terminate_on_protocol_violation(err, &mut reader_guard)
+                                .await);
                         }
 
                         if is_control_bytes(&decrypted) {
@@ -341,7 +381,11 @@ impl RemoteLink for WsLink {
                                     self.buffered_control.lock().await.push_back(msg);
                                 }
                                 Ok(None) => {}
-                                Err(err) => return Err(self.terminate_on_protocol_violation(err, &mut reader_guard).await),
+                                Err(err) => {
+                                    return Err(self
+                                        .terminate_on_protocol_violation(err, &mut reader_guard)
+                                        .await)
+                                }
                             }
                         } else {
                             match decode_audio_payload(&decrypted) {
@@ -352,11 +396,15 @@ impl RemoteLink for WsLink {
                                 }
                                 Err(err) => match classify_protocol_error(&err) {
                                     ProtocolResponse::Skippable => {
-                                        log::warn!("[WsLink] Skipping survivable audio error: {err}");
+                                        log::warn!(
+                                            "[WsLink] Skipping survivable audio error: {err}"
+                                        );
                                         continue;
                                     }
                                     ProtocolResponse::Fatal => {
-                                        return Err(self.terminate_on_protocol_violation(err, &mut reader_guard).await);
+                                        return Err(self
+                                            .terminate_on_protocol_violation(err, &mut reader_guard)
+                                            .await);
                                     }
                                 },
                             }
@@ -576,26 +624,38 @@ impl WsLink {
                             return Err(LinkError::Closed(LinkCloseReason::Peer));
                         }
                         Some(Ok(Message::Binary(bytes))) => {
-                            let decrypted = if let Some(cipher) = self.cipher.lock().await.as_mut() {
+                            let decrypted = if let Some(cipher) = self.cipher.lock().await.as_mut()
+                            {
                                 cipher.decrypt(&bytes).unwrap_or_else(|_| bytes.to_vec())
                             } else {
                                 bytes.to_vec()
                             };
-                            if let Err(err) = check_control_message_size(decrypted.len(), MAX_CONTROL_MESSAGE_BYTES) {
-                                return Err(self.terminate_on_protocol_violation(err, &mut guard).await);
+                            if let Err(err) = check_control_message_size(
+                                decrypted.len(),
+                                MAX_CONTROL_MESSAGE_BYTES,
+                            ) {
+                                return Err(self
+                                    .terminate_on_protocol_violation(err, &mut guard)
+                                    .await);
                             }
                             if is_control_bytes(&decrypted) {
                                 if let Ok(Some(m)) = self.decode_incoming(&decrypted) {
                                     self.buffered_control.lock().await.push_back(m);
                                 }
-                            } else if let Ok(DecodeOutcome::Known(p)) = decode_audio_payload(&decrypted) {
+                            } else if let Ok(DecodeOutcome::Known(p)) =
+                                decode_audio_payload(&decrypted)
+                            {
                                 self.buffered_audio.lock().await.push_back(p);
                             }
                         }
                         Some(Ok(Message::Text(text))) => {
                             let bytes = text.as_bytes();
-                            if let Err(err) = check_control_message_size(bytes.len(), MAX_CONTROL_MESSAGE_BYTES) {
-                                return Err(self.terminate_on_protocol_violation(err, &mut guard).await);
+                            if let Err(err) =
+                                check_control_message_size(bytes.len(), MAX_CONTROL_MESSAGE_BYTES)
+                            {
+                                return Err(self
+                                    .terminate_on_protocol_violation(err, &mut guard)
+                                    .await);
                             }
                             if is_control_bytes(bytes) {
                                 if let Ok(Some(m)) = self.decode_incoming(bytes) {

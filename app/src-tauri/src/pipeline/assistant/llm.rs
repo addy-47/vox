@@ -113,8 +113,8 @@ fn evaluate_synthesis_latch<R: tauri::Runtime>(
 ) {
     state.pipeline.mark_llm_finished(turn_id);
 
-    let pending_jobs = state.pipeline.pending_tts_jobs.load(Ordering::Relaxed);
-    let sink_active = state.pipeline.sink_occupied.load(Ordering::Relaxed);
+    let pending_jobs = state.pipeline.pending_tts_jobs.load(Ordering::Acquire);
+    let sink_active = state.pipeline.sink_occupied.load(Ordering::Acquire);
     if pending_jobs > 0 || sink_active {
         // RULE-EVT-09 §3: keep the current state until the sound card drains.
         log::info!(

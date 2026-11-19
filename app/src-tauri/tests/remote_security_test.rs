@@ -785,16 +785,15 @@ fn registered_commands_from_source() -> Vec<String> {
         }
         if let Some(name) = code.strip_suffix(',') {
             let name = name.trim();
-            if !name.is_empty()
-                && name
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
-            {
+            if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
                 names.push(name.to_string());
             }
         }
     }
-    assert!(!names.is_empty(), "generate_handler![] must register commands");
+    assert!(
+        !names.is_empty(),
+        "generate_handler![] must register commands"
+    );
     names
 }
 

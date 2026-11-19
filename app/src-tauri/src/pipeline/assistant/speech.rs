@@ -41,12 +41,13 @@ pub fn on_speech_start<R: tauri::Runtime>(
         if let Ok(guard) = state.engine.try_lock() {
             if let Some(ref engine) = *guard {
                 engine.playback_engine.cancel();
-                if let Err(e) = engine
-                    .vad_tx
-                    .send(crate::services::vad::VadCommand::BindUtterance {
-                        turn_id: new_turn_id,
-                        utterance_id,
-                    })
+                if let Err(e) =
+                    engine
+                        .vad_tx
+                        .send(crate::services::vad::VadCommand::BindUtterance {
+                            turn_id: new_turn_id,
+                            utterance_id,
+                        })
                 {
                     log::warn!("[Pipeline::Speech] Failed to bind utterance: {}", e);
                 }

@@ -19,15 +19,9 @@ use std::{
 
 use ringbuf::traits::Consumer;
 use vox_lib::{
-    core::{
-        events::VoxEvent,
-        state::InteractionState,
-    },
+    core::{events::VoxEvent, state::InteractionState},
     harness::{Harness, TRANSITION_MESSAGES_EN},
-    pipeline::{
-        assistant::transcript::on_transcript_final,
-        RoutingContext,
-    },
+    pipeline::{assistant::transcript::on_transcript_final, RoutingContext},
     services::tts::{
         actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
         providers::{supertonic::TtsEngine as SupertonicEngine, SynthesisContext, TtsProvider},

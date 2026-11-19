@@ -444,7 +444,8 @@ fn partial_command_recycles_its_buffer() {
     let h = Harness::new();
     let (recycle_tx, recycle_rx) = mpsc::sync_channel(1);
     h.send(SttCommand::Partial {
-        turn_id: 1, utterance_id: 0,
+        turn_id: 1,
+        utterance_id: 0,
         audio: vec![0.1; 4],
         recycle_tx,
     });

@@ -255,9 +255,7 @@ async fn playback_finished_is_deferred_while_a_job_is_pending() {
         // Even if a PlaybackFinished event arrives at router while pending_jobs == 1,
         // router must defer and remain in Speaking.
         event_tx
-            .send(VoxEvent::PlaybackFinished {
-                turn_id,
-            })
+            .send(VoxEvent::PlaybackFinished { turn_id })
             .expect("Failed to send PlaybackFinished");
 
         // Router must defer while pending_jobs == 1: watch for stability, not a single sample.
@@ -273,9 +271,7 @@ async fn playback_finished_is_deferred_while_a_job_is_pending() {
         pending_jobs.store(0, Ordering::Relaxed);
         let _ = event_tx.send(VoxEvent::LlmFinished { turn_id });
         event_tx
-            .send(VoxEvent::PlaybackFinished {
-                turn_id,
-            })
+            .send(VoxEvent::PlaybackFinished { turn_id })
             .expect("Failed to send PlaybackFinished");
 
         let deadline = Instant::now() + Duration::from_secs(5);

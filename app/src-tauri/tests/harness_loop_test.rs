@@ -273,11 +273,7 @@ async fn critical_threshold_plays_the_compaction_filler() {
         "state must transition to Working when critical compaction filler is dispatched"
     );
     assert!(
-        rig.state
-            .pipeline
-            .pending_tts_jobs
-            .load(Ordering::Relaxed)
-            >= 1,
+        rig.state.pipeline.pending_tts_jobs.load(Ordering::Relaxed) >= 1,
         "pending_synthesis_jobs must be incremented when filler is dispatched"
     );
 
@@ -542,16 +538,16 @@ async fn preamble_audio_playback_retains_working_state_during_tool_execution() {
 
         rig.state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
         rig.state.pipeline.set_state(InteractionState::Working);
-        rig.state.pipeline.set_current_activity(Some(&vox_lib::core::events::ActivityEnvelope {
-            kind: vox_lib::core::events::ActivityKind::Tool,
-            name: "test_tool".to_string(),
-            call_id: Some("call-1".to_string()),
-        }));
+        rig.state
+            .pipeline
+            .set_current_activity(Some(&vox_lib::core::events::ActivityEnvelope {
+                kind: vox_lib::core::events::ActivityKind::Tool,
+                name: "test_tool".to_string(),
+                call_id: Some("call-1".to_string()),
+            }));
 
         // Onset of interim filler audio must transition state to Speaking (RULE-EVT-09 §1)
-        rig.send_event(VoxEvent::PlaybackStarted {
-            turn_id,
-        });
+        rig.send_event(VoxEvent::PlaybackStarted { turn_id });
         assert!(
             rig.wait_for_state(InteractionState::Speaking, Duration::from_secs(5))
                 .await,
@@ -559,9 +555,7 @@ async fn preamble_audio_playback_retains_working_state_during_tool_execution() {
         );
 
         // Completion of interim filler audio while llm_done == false must return to Working (RULE-EVT-09 §2)
-        rig.send_event(VoxEvent::PlaybackFinished {
-            turn_id,
-        });
+        rig.send_event(VoxEvent::PlaybackFinished { turn_id });
         assert!(
             rig.wait_for_state(InteractionState::Working, Duration::from_secs(5))
                 .await,
@@ -2630,7 +2624,14 @@ async fn pre_working_thinking_barge_in_aborts_stream_and_merges_prompt() {
 
         // Verify Step 0 uncommitted provenance (staged query has not committed to messages)
         assert!(
-            !rig.state.harness.lock().as_ref().unwrap().messages().iter().any(|m| m.role == Role::User),
+            !rig.state
+                .harness
+                .lock()
+                .as_ref()
+                .unwrap()
+                .messages()
+                .iter()
+                .any(|m| m.role == Role::User),
             "user query must remain staged and uncommitted to history at turn onset"
         );
 
@@ -2798,7 +2799,10 @@ async fn mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standal
             let guard = rig.state.harness.lock();
             let harness = guard.as_ref().unwrap();
             assert!(
-                harness.messages().iter().any(|m| matches!(m.role, Role::Tool)),
+                harness
+                    .messages()
+                    .iter()
+                    .any(|m| matches!(m.role, Role::Tool)),
                 "tool steps must be committed to history after Step 0 commits tool"
             );
         }
@@ -3447,10 +3451,16 @@ async fn stale_playback_finished_is_dropped_and_active_turn_is_resolved() {
         let stale_turn_id = 1402;
         let active_turn_id = 1403;
 
-        rig.state.pipeline.turn_id.store(active_turn_id, Ordering::Relaxed);
+        rig.state
+            .pipeline
+            .turn_id
+            .store(active_turn_id, Ordering::Relaxed);
         rig.state.pipeline.set_state(InteractionState::Speaking);
         // Keep audio outstanding so the LlmFinished sentinel cannot itself close the turn.
-        rig.state.pipeline.pending_tts_jobs.store(1, Ordering::Relaxed);
+        rig.state
+            .pipeline
+            .pending_tts_jobs
+            .store(1, Ordering::Relaxed);
 
         rig.send_event(VoxEvent::PlaybackFinished {
             turn_id: stale_turn_id,
@@ -3475,7 +3485,10 @@ async fn stale_playback_finished_is_dropped_and_active_turn_is_resolved() {
         );
 
         // Positive control: the same event with the active turn_id must be accepted.
-        rig.state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
+        rig.state
+            .pipeline
+            .pending_tts_jobs
+            .store(0, Ordering::Relaxed);
         rig.send_event(VoxEvent::PlaybackFinished {
             turn_id: active_turn_id,
         });

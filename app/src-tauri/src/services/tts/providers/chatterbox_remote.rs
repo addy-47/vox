@@ -10,13 +10,11 @@ use std::{
 use anyhow::{anyhow, Result};
 
 use super::{speed_range, SynthesisContext, TtsProvider};
-use crate::{
-    services::{
-        audio::PlaybackEngine,
-        tts::{
-            ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED, MIN_SPEED, TTS_CHUNK_SIZE,
-            TTS_SAMPLE_RATE,
-        },
+use crate::services::{
+    audio::PlaybackEngine,
+    tts::{
+        ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED, MIN_SPEED, TTS_CHUNK_SIZE,
+        TTS_SAMPLE_RATE,
     },
 };
 
@@ -286,13 +284,8 @@ impl TtsProvider for ChatterboxRemoteProvider {
         }
 
         let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
-        let total_samples = stream_pcm_response(
-            response,
-            speed,
-            ctx.turn_id,
-            &ctx.cancel,
-            ctx.playback,
-        )?;
+        let total_samples =
+            stream_pcm_response(response, speed, ctx.turn_id, &ctx.cancel, ctx.playback)?;
 
         let elapsed = start.elapsed().as_secs_f32();
         let audio_duration = total_samples as f32 / TTS_SAMPLE_RATE as f32;

@@ -155,7 +155,7 @@ pub fn transition_harness_phase(
     state: &AppState,
 ) {
     if turn_id != state.pipeline.peek_turn_id()
-        || state.pipeline.turn_cancel_token().is_cancelled()
+        || state.pipeline.is_turn_cancelled()
         || state.pipeline.state() == InteractionState::Listening
     {
         return;

@@ -396,10 +396,7 @@ fn main() {
             }
         }
 
-        let pending = state
-            .pipeline
-            .pending_tts_jobs
-            .load(Ordering::Relaxed);
+        let pending = state.pipeline.pending_tts_jobs.load(Ordering::Relaxed);
         let pump_drained = captured_audio_buf.lock().is_empty();
         let sink_draining = pump_drained;
         if (llm_finished && pending == 0 && sink_draining && playback_start_time.is_some())

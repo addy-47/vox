@@ -514,8 +514,7 @@ impl TtsProvider for EdgeTtsProvider {
             )
             .await?;
 
-            let total_samples =
-                stream_mp3_payload(&mut ws_stream, &cancel, &playback).await?;
+            let total_samples = stream_mp3_payload(&mut ws_stream, &cancel, &playback).await?;
 
             if total_samples > 0 && !cancel.load(Ordering::Relaxed) {
                 let total_dur = total_samples as f32 / TTS_SAMPLE_RATE as f32;

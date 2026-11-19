@@ -465,7 +465,10 @@ async fn continuation_prefix_is_merged_into_the_next_query() {
         rig.wait_state(InteractionState::Listening, DEADLINE),
         "SpeechStart must switch Thinking -> Listening"
     );
-    rig.state.pipeline_accumulator.lock().stash_for_continuation();
+    rig.state
+        .pipeline_accumulator
+        .lock()
+        .stash_for_continuation();
     let second_turn = rig.state.pipeline.peek_turn_id();
 
     // Transcript arrives while Listening, rotating a fresh dialogue turn with the merged query

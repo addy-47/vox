@@ -425,7 +425,13 @@ where
                 return Ok(());
             }
 
-            if process_vad_commands(&channels.vad_rx, &mut vad, &mut state, &handles, &channels.stt_tx) {
+            if process_vad_commands(
+                &channels.vad_rx,
+                &mut vad,
+                &mut state,
+                &handles,
+                &channels.stt_tx,
+            ) {
                 return Ok(());
             }
 

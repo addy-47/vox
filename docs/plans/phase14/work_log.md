@@ -1,5 +1,21 @@
 # Phase 14 Work Log
 
+## 2026-11-19 — Pipeline Refactor Pre-Handoff Fixes (F-01, F-02, F-03, S-01, S-02)
+
+- **Role:** Senior System Architect (pre-handoff self-review pass).
+- **Scope:** Five targeted correctness and hygiene fixes identified during the pipeline refactor adversarial review, applied before tech-lead handoff. No spec changes, no test changes, no scope expansion.
+- **Files Changed:**
+  - `app/src-tauri/src/pipeline/atomics.rs` — **F-01:** Rewrote `next_turn()` to assign fresh `CancellationToken::new()` values directly instead of calling `rearm_*` helpers (which redundantly cancelled already-dead tokens — double-cancel). Added `is_turn_cancelled()` lock-free proxy (`hardware_cancel_flag.load(Acquire)`) to avoid Mutex acquisition on the Tokio router thread.
+  - `app/src-tauri/src/pipeline/router.rs` — **F-03:** Replaced `turn_cancel_token().is_cancelled()` (Mutex acquisition on async router thread) with `is_turn_cancelled()` (lock-free atomic read). Eliminates the hidden `parking_lot::Mutex` contention point in `transition_harness_phase`.
+  - `app/src-tauri/src/pipeline/assistant/playback.rs` — **F-02 + S-01:** Upgraded quiescence latch reads (`pending_tts_jobs`, `sink_occupied`) from `Ordering::Relaxed` → `Ordering::Acquire` for correct cross-thread visibility on aarch64. Added ordering comment before `pipeline_accumulator.lock().clear()` to document the implicit Release/Acquire chain assumption.
+  - `app/src-tauri/src/pipeline/assistant/llm.rs` — **F-02:** Upgraded quiescence latch reads (`pending_tts_jobs`, `sink_occupied`) from `Ordering::Relaxed` → `Ordering::Acquire`.
+  - `app/src-tauri/src/services/audio/sink.rs` — **F-02:** Upgraded `sink_occupied.store(...)` on the CPAL audio callback thread from `Ordering::Relaxed` → `Ordering::Release` to form a correct Release/Acquire pair with the reader threads.
+  - `app/src-tauri/src/services/tts/actor.rs` — **F-02:** Upgraded both `pending_synthesis_jobs.fetch_update(Relaxed, Relaxed, ...)` decrements to `fetch_update(AcqRel, Acquire, ...)` on the TTS worker OS thread for correct cross-thread visibility.
+  - `app/src-tauri/src/services/remote/session/dialer.rs` — **S-02:** Renamed unused `db: &VoxDb` → `_db: &VoxDb` and `device_id: &str` → `_device_id: &str` in `handle_dial_peer_rejection` signature; removed the two `let _ = db; let _ = device_id;` body suppressors. CSG-01 hygiene.
+- **Compile Gate:**
+  - `./scripts/verify-targets.sh` passed with **0 warnings / 0 errors** across all three stages: architectural invariant lint, desktop clippy (`-D warnings -D clippy::disallowed_methods`), desktop release build, and Android cross-clippy (`aarch64-linux-android`).
+  - Binary: `Vox v0.8.92`
+
 ## 2026-11-18 — Checkpoint 4.6: 100% Green Certified Test Baseline & Resolution of TF-03 / TF-04
 
 - **Role:** Senior System Architect.

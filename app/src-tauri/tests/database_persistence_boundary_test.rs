@@ -526,8 +526,7 @@ async fn second_in_progress_compaction_is_rejected_by_partial_index() {
         create_session_with_id(&conn, other_session, Some("default"))
             .await
             .expect("Failed to create second session");
-        let cross_session_res =
-            record_compaction_start(&conn, other_session, "soft", 1, 10).await;
+        let cross_session_res = record_compaction_start(&conn, other_session, "soft", 1, 10).await;
         assert!(
             cross_session_res.is_err(),
             "db-spec §5.4: only one in_progress compaction may exist across all sessions"

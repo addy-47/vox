@@ -243,7 +243,8 @@ pub fn handle_speech_end(
 
     if voiced_samples >= VAD_MIN_UTTERANCE_SAMPLES && state.realtime_tx.is_none() {
         if let Err(e) = stt_tx.send(SttCommand::Final {
-            turn_id: state.current_turn_id, utterance_id: state.bound_utterance_id.unwrap_or(0),
+            turn_id: state.current_turn_id,
+            utterance_id: state.bound_utterance_id.unwrap_or(0),
             audio: state.utterance_buffer.clone(),
             owner,
         }) {
@@ -446,7 +447,8 @@ pub fn process_windowed_validation(
     state.pre_roll_buffer.push(chunk);
     if state.window_stream_partials {
         if let Err(e) = channels.stt_tx.send(SttCommand::StreamChunk {
-            turn_id: state.current_turn_id, utterance_id: state.bound_utterance_id.unwrap_or(0),
+            turn_id: state.current_turn_id,
+            utterance_id: state.bound_utterance_id.unwrap_or(0),
             audio: chunk.to_vec(),
         }) {
             log::warn!("[VAD Actor] Failed to send windowed chunk to STT: {}", e);
@@ -593,7 +595,9 @@ mod tests {
             self.state.current_turn_id = turn_id;
             self.state.bound_utterance_id = Some(1);
             self.state.awaiting_utterance_binding = false;
-            self.handles.turn_id_atomic.store(turn_id, Ordering::Relaxed);
+            self.handles
+                .turn_id_atomic
+                .store(turn_id, Ordering::Relaxed);
             if self.state.realtime_tx.is_none() && !self.state.utterance_buffer.is_empty() {
                 let _ = self.stt_tx.send(SttCommand::StreamChunk {
                     turn_id,
