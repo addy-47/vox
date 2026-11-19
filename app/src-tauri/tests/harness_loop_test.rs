@@ -608,6 +608,16 @@ async fn universal_tool_execution_succeeds_without_synthetic_speech_parameters()
 
         let dispatches = rig.requests();
         assert_eq!(dispatches.len(), 2, "Pass 1 tool call, Pass 2 response");
+
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("harness stays mounted");
+        assert!(
+            harness
+                .messages()
+                .iter()
+                .any(|m| m.role == Role::Tool && !m.content.trim().is_empty()),
+            "the tool observation content must be committed to history"
+        );
     })
     .await
     .expect("test timed out");
@@ -3484,11 +3494,22 @@ async fn stale_playback_finished_is_dropped_and_active_turn_is_resolved() {
             "a stale-turn PlaybackFinished must NOT transition the active Speaking turn"
         );
 
+        // With audio drained, the epoch guard is the only remaining barrier. A stale
+        // PlaybackFinished must still leave the active turn in Speaking.
+        // The positive control below then accepts the same event for the active turn.
+        rig.state.pipeline.pending_tts_jobs.store(0, Ordering::Relaxed);
+        rig.send_event(VoxEvent::PlaybackFinished {
+            turn_id: stale_turn_id,
+        });
+        common::harness::assert_pipeline_state_stable(
+            || rig.state.pipeline.state(),
+            InteractionState::Speaking,
+            Duration::from_millis(300),
+            "a stale PlaybackFinished with drained audio must not transition the active turn"
+        )
+        .await;
+
         // Positive control: the same event with the active turn_id must be accepted.
-        rig.state
-            .pipeline
-            .pending_tts_jobs
-            .store(0, Ordering::Relaxed);
         rig.send_event(VoxEvent::PlaybackFinished {
             turn_id: active_turn_id,
         });

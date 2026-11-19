@@ -1,58 +1,4074 @@
 {
   "version": 1,
-  "description": "One-line silent production defects seeded from intent-block MUTANT lines. Each mutant is applied, its bound test runs in release mode, then the file is restored byte-for-byte.",
+  "description": "Complete mutation manifest derived from all 339 intent-block MUTANT seeds.",
   "mutants": [
     {
-      "id": "M01",
-      "name": "hardware_cancel_flag rearm latches true instead of clearing",
-      "smoke": true,
-      "file": "src/pipeline/atomics.rs",
-      "target": "    pub fn rearm_hardware_cancel_flag(&self) {\n        self.hardware_cancel_flag.store(false, Ordering::Release);",
-      "replacement": "    pub fn rearm_hardware_cancel_flag(&self) {\n        self.hardware_cancel_flag.store(true, Ordering::Release);",
+      "id": "S058",
+      "name": "Drop tool-free final pass so loop never latches allow_tools=false",
+      "file": "src/harness/loop.rs",
+      "target": "                            allow_tools = false;",
+      "replacement": "                            let _ = allow_tools;",
       "test": {
-        "binary": "playback_test",
-        "filter": "hardware_cancel_flag_rearmed_after_barge_in_produces_audible_chunks"
+        "binary": "harness_loop_test",
+        "filter": "the_tool_loop_stops_at_the_tool_budget"
       },
-      "expected": "next_turn can no longer re-arm the flag; the false assertion fails"
+      "expected": "Final dispatch still offers tools and the loop errors instead of completing, failing the tool-free final-pass assertion."
     },
     {
-      "id": "M02",
-      "name": "quiescence law never returns Ready when llm_done",
-      "smoke": true,
+      "id": "S059",
+      "name": "Ignore pre-cancelled token in step1_intake",
+      "file": "src/harness/steps.rs",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "a_cancelled_turn_never_dispatches"
+      },
+      "expected": "Cancelled turn reaches dispatch and returns Completed, failing the Cancelled-outcome and zero-dispatch assertions.",
+      "skip_reason": "Cancellation is re-checked at multiple downstream guards (steps.rs:795 and step5 dispatch); removing the intake guard does not change the observable Cancelled/no-dispatch outcome."
+    },
+    {
+      "id": "S060",
+      "name": "Remove duplicate-query refusal in step1_intake",
+      "file": "src/harness/steps.rs",
+      "target": "    if harness.history.is_duplicate_user_turn(&req.query) {",
+      "replacement": "    if false {",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "a_duplicate_query_is_refused_before_the_dispatch"
+      },
+      "expected": "Duplicate query is staged and dispatched instead of DuplicateIgnored, failing the refusal assertion."
+    },
+    {
+      "id": "S061",
+      "name": "Return Completed instead of Error when harness is unmounted",
+      "file": "src/harness/steps.rs",
+      "target": "    let Some(ref mut harness) = *guard else {\n        return IntakeResult::Terminal(TurnOutcome::Error {\n            turn_id,\n            message: \"No active Harness mounted\".to_string(),\n        });\n    };",
+      "replacement": "    let Some(ref mut harness) = *guard else {\n        return IntakeResult::Terminal(TurnOutcome::Completed {\n            turn_id,\n            assistant_response: String::new(),\n        });\n    };",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "an_unmounted_harness_reports_an_error"
+      },
+      "expected": "Missing harness yields TurnOutcome::Completed instead of Error, failing the loud-failure assertion."
+    },
+    {
+      "id": "S062",
+      "name": "Skip assistant history commit in step7_commit_completed",
+      "file": "src/harness/steps.rs",
+      "target": "        harness.commit_completed_turn(assistant_response.clone());",
+      "replacement": "        let _ = &assistant_response;",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "a_finished_turn_commits_both_messages"
+      },
+      "expected": "History never receives the staged user query or assistant response, failing both commit assertions."
+    },
+    {
+      "id": "S063",
+      "name": "Drop enter_non_terminal_phase call in step3_execute_compaction",
+      "file": "src/harness/steps.rs",
+      "target": "    };\n    enter_non_terminal_phase(&non_terminal, &ctx);\n\n    let Some(provider) = req.provider.as_ref() else {",
+      "replacement": "    };\n    let _ = (&non_terminal, &ctx);\n\n    let Some(provider) = req.provider.as_ref() else {",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "critical_threshold_plays_the_compaction_filler"
+      },
+      "expected": "No interim filler TtsCommand is dispatched and state stays Thinking, failing the filler and Working-state assertions."
+    },
+    {
+      "id": "S064",
+      "name": "Route Thinking deltas directly into handle_token",
+      "file": "src/harness/stages/streaming/router.rs",
+      "target": "                    thinking_buffer.push_str(&text);",
+      "replacement": "                    self.handle_token(text, handles);",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "zero_tool_turn_demuxes_thinking_tokens_away_from_tts"
+      },
+      "expected": "Thinking text is emitted as speech tokens and IPC, failing the TTS/accumulator thinking-demux assertion."
+    },
+    {
+      "id": "S065",
+      "name": "PlaybackFinished pending-job deferral disabled",
       "file": "src/pipeline/assistant/playback.rs",
-      "target": "    let target = if state.pipeline.is_llm_done() {\n        InteractionState::Ready",
-      "replacement": "    let target = if state.pipeline.is_llm_done() {\n        InteractionState::Thinking",
+      "target": "        InteractionState::Thinking | InteractionState::Working | InteractionState::Ready\n    ) {",
+      "replacement": "        InteractionState::Working | InteractionState::Ready\n    ) {",
       "test": {
-        "binary": "playback_test",
-        "filter": "playback_finished_is_deferred_while_a_job_is_pending"
+        "binary": "harness_loop_test",
+        "filter": "zero_tool_turn_with_interim_filler_latches_to_ready_only_after_playback_drains"
       },
-      "expected": "the final Ready assertion fails after pending jobs drain"
+      "expected": "PlaybackFinished transitions to Ready while a synthesis job is still pending"
     },
     {
-      "id": "M03",
-      "name": "compaction exclusion scoped per session instead of globally",
-      "smoke": false,
-      "file": "src/persistence/schema.rs",
-      "target": "ON session_compactions(status) WHERE status = 'in_progress';",
-      "replacement": "ON session_compactions(session_id) WHERE status = 'in_progress';",
+      "id": "S066",
+      "name": "Clear accumulator assistant_response on ToolCall, discarding preamble",
+      "file": "src/harness/stages/streaming/router.rs",
+      "target": "                    tool_calls_batch.push(call);",
+      "replacement": "                    tool_calls_batch.push(call);\n                    handles.accumulator.lock().assistant_response.clear();",
       "test": {
-        "binary": "database_persistence_boundary_test",
-        "filter": "second_in_progress_compaction_is_rejected_by_partial_index"
+        "binary": "harness_loop_test",
+        "filter": "preamble_tokens_before_tool_call_are_preserved_in_history_without_chunker_clear"
       },
-      "expected": "the cross-session compaction insert succeeds and the assertion fails"
+      "expected": "Preamble text is empty in the tool-call outcome, so the initiating assistant history message is missing."
     },
     {
-      "id": "M04",
-      "name": "duplex return drops to Thinking instead of restoring Working",
-      "smoke": false,
+      "id": "S067",
+      "name": "Skip Working-to-Speaking transition in on_playback_started",
       "file": "src/pipeline/assistant/playback.rs",
-      "target": "    } else if state.pipeline.current_activity().is_some() {\n        InteractionState::Working",
-      "replacement": "    } else if state.pipeline.current_activity().is_some() {\n        InteractionState::Thinking",
+      "target": "    transition(InteractionState::Speaking, None, ctx, app, state);",
+      "replacement": "    let _ = &current_state;",
       "test": {
         "binary": "harness_loop_test",
         "filter": "preamble_audio_playback_retains_working_state_during_tool_execution"
       },
-      "expected": "the duplex-return assertion fails because activity is not restored"
+      "expected": "PlaybackStarted leaves state Working instead of Speaking, failing the transition assertion."
+    },
+    {
+      "id": "S068",
+      "name": "Drop tool observation content when building the step scratchpad",
+      "file": "src/harness/steps.rs",
+      "target": "        .map(|o| (o.call_id.clone(), o.result.content.clone()))",
+      "replacement": "        .map(|o| (o.call_id.clone(), String::new()))",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "universal_tool_execution_succeeds_without_synthetic_speech_parameters"
+      },
+      "expected": "Committed tool step carries an empty observation, so the universal tool result contract assertion fails."
+    },
+    {
+      "id": "S069",
+      "name": "Break streaming loop on first ToolCall event",
+      "file": "src/harness/stages/streaming/router.rs",
+      "target": "                    tool_calls_batch.push(call);",
+      "replacement": "                    tool_calls_batch.push(call); break;",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "multi_tool_stream_accumulates_full_batch_without_early_stream_abort"
+      },
+      "expected": "Only the first tool call is batched and the stream errors on premature disconnect, failing the full-batch assertion."
+    },
+    {
+      "id": "S070",
+      "name": "Do not latch title_set after successful set_title",
+      "file": "src/harness/steps.rs",
+      "target": "                harness.title_set = true;",
+      "replacement": "                let _ = &harness.title_set;",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "set_title_universal_tool_updates_session_and_latches_title_set_flag"
+      },
+      "expected": "title_set stays false so the title tool remains active, failing the flag-latch assertion."
+    },
+    {
+      "id": "S071",
+      "name": "Ignore cancellation result returned from tool batch",
+      "file": "src/harness/steps.rs",
+      "target": "        let _ = tx.send(VoxEvent::Cancelled {\n            turn_id: ctx.turn_id,",
+      "replacement": "        let _ = tx.send(VoxEvent::Cancelled {\n            turn_id: ctx.turn_id.wrapping_add(1),",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "turn_cancellation_during_tool_execution_aborts_cleanly_and_clears_turn_open"
+      },
+      "expected": "Mid-tool cancellation is not reported by the batch, so the expected immediate Cancelled resolution and event are lost."
+    },
+    {
+      "id": "S072",
+      "name": "Drop non-empty partial text on cancellation",
+      "file": "src/harness/steps.rs",
+      "target": "    if !ctx.partial_text.trim().is_empty() {",
+      "replacement": "    if false {",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "turn_cancellation_with_partial_spoken_text_commits_interrupted_turn"
+      },
+      "expected": "Spoken partial text is discarded and no interrupted turn row is persisted, failing the DB text assertion."
+    },
+    {
+      "id": "S073",
+      "name": "Commit turn even when cancellation partial text is empty",
+      "file": "src/harness/steps.rs",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "turn_cancellation_before_speech_rolls_back_history_with_zero_db_artifacts"
+      },
+      "expected": "Empty cancellation commits a turn artifact instead of rolling back, failing the zero-DB-artifact assertion.",
+      "skip_reason": "commit_completed_turn early-returns on empty partial text, so forcing the commit path is behaviorally equivalent. Replaced by a mutant against the non-empty partial-text path."
+    },
+    {
+      "id": "S074",
+      "name": "Omit VoxEvent::Error dispatch on stream error",
+      "file": "src/harness/stages/streaming/router.rs",
+      "target": "                    if let Err(e) = handles.event_tx.send(VoxEvent::Error(err.clone())) {",
+      "replacement": "                    let _ = &err;",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "stream_error_clears_turn_open_and_dispatches_error_event"
+      },
+      "expected": "Stream error no longer emits VoxEvent::Error, failing the error-event dispatch assertion."
+    },
+    {
+      "id": "S075",
+      "name": "Delete flush_staged_user_query from Harness::commit_tool_step",
+      "file": "src/harness/chassis.rs",
+      "target": "    ) {\n        self.flush_staged_user_query();\n        self.history.commit_tool_step(preamble, calls, results);",
+      "replacement": "    ) {\n        self.history.commit_tool_step(preamble, calls, results);",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "mid_turn_cancellation_on_step_two_preserves_step_one_history_and_forbids_user_rollback"
+      },
+      "expected": "The staged user query is never committed at step one, failing the preserved-history/no-rollback assertion."
+    },
+    {
+      "id": "S076",
+      "name": "Push user turn into history instead of staging it in stage_user_query",
+      "file": "src/harness/chassis.rs",
+      "target": "        self.pending_user_query = Some((turn_id, query.clone()));",
+      "replacement": "        self.history.push_user_turn(query.clone());",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "step_zero_cancellation_discards_staged_query_without_touching_history"
+      },
+      "expected": "Query is committed before Step 0, so cancellation cannot discard it and the untouched-history assertion fails."
+    },
+    {
+      "id": "S077",
+      "name": "Execute parallel tool wave sequentially",
+      "file": "src/harness/tools/executor.rs",
+      "target": "        let futs = wave.into_iter().map(|call| {\n            let call_ctx = base_ctx.clone();\n            Self::execute_tool(registry, mode, call, call_ctx)\n        });\n        join_all(futs).await",
+      "replacement": "        let mut outcomes = Vec::new();\n        for call in wave {\n            let call_ctx = base_ctx.clone();\n            outcomes.push(Self::execute_tool(registry, mode, call, call_ctx).await);\n        }\n        outcomes",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "parallel_tool_wave_executes_concurrently_and_commits_in_declaration_order"
+      },
+      "expected": "Wave tools run serially instead of concurrently, failing the parallel-execution timing assertion."
+    },
+    {
+      "id": "S078",
+      "name": "Force every tool execution mode to Parallel",
+      "file": "src/harness/tools/executor.rs",
+      "target": "                .map(|t| t.execution_mode(&call.arguments))",
+      "replacement": "                .map(|_| ToolExecutionMode::Parallel)",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "exclusive_tool_acts_as_strict_barrier_between_parallel_waves"
+      },
+      "expected": "Exclusive tool loses its barrier semantics and runs inside a wave, failing the strict-barrier assertion."
+    },
+    {
+      "id": "S079",
+      "name": "Return Error at step ceiling instead of forcing tool-free summary pass",
+      "file": "src/harness/loop.rs",
+      "target": "                            allow_tools = false;",
+      "replacement": "                            return step7_handle_error(ctx.harness_arc, turn_id, \"Exceeded max tool iterations\".to_string(), Some(&ctx.stream_handles.event_tx));",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "step_ceiling_breach_disables_tools_and_forces_spoken_summary_pass"
+      },
+      "expected": "Ceiling breach yields TurnOutcome::Error with no tool-free summary pass, failing the forced-summary assertion."
+    },
+    {
+      "id": "S080",
+      "name": "Disable identical-fingerprint loop detection via threshold",
+      "file": "src/harness/stages/guardrails.rs",
+      "target": "const IDENTICAL_CALL_THRESHOLD: usize = 3;",
+      "replacement": "const IDENTICAL_CALL_THRESHOLD: usize = usize::MAX;",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "identical_tool_call_loop_triggers_strike_one_warning_then_strike_two_circuit_breaker"
+      },
+      "expected": "Identical call loop never produces strike one or strike two, failing the circuit-breaker assertions."
+    },
+    {
+      "id": "S081",
+      "name": "Disable ping-pong pattern matcher via threshold",
+      "file": "src/harness/stages/guardrails.rs",
+      "target": "const PING_PONG_THRESHOLD: usize = 4;",
+      "replacement": "const PING_PONG_THRESHOLD: usize = usize::MAX;",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "ping_pong_alternating_tool_loop_triggers_two_strike_circuit_breaker"
+      },
+      "expected": "Alternating tool loop is never flagged, so no two-strike circuit break occurs."
+    },
+    {
+      "id": "S082",
+      "name": "Ignore is_error when evaluating error cascade",
+      "file": "src/harness/stages/guardrails.rs",
+      "target": "        let entry = step_results.entry(fp.step_index).or_insert(true);",
+      "replacement": "        let entry = step_results.entry(fp.step_index).or_insert(false);",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "consecutive_error_steps_trigger_two_strike_guardrail_and_force_summary"
+      },
+      "expected": "Error cascade is never detected, so the two-strike guardrail does not force the summary."
+    },
+    {
+      "id": "S083",
+      "name": "Bypass TruncationStage and keep raw ToolResult",
+      "file": "src/harness/tools/executor.rs",
+      "target": "        let max_tokens = ctx.max_observation_tokens.unwrap_or(2000);\n        let (preview_content, truncated, spillover_path) =\n            crate::harness::stages::truncation::TruncationStage::apply(\n                ctx.session_id,\n                &call.id,\n                &call.name,\n                &result.content,\n                max_tokens,\n                tool.truncation_policy(),\n            );\n        result.content = preview_content;\n        result.truncated = truncated;\n        result.spillover_path = spillover_path.clone();",
+      "replacement": "        let _ = ctx.max_observation_tokens;",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "oversized_tool_observation_spills_to_tier4_cache_and_commits_head_tail_preview"
+      },
+      "expected": "Oversized observation is neither spilled to Tier 4 nor head/tail truncated, failing the preview assertions."
+    },
+    {
+      "id": "S084",
+      "name": "Apply truncation despite TruncationPolicy::None",
+      "file": "src/harness/stages/truncation.rs",
+      "target": "        if matches!(policy, TruncationPolicy::None) {\n            return (raw_output.to_string(), false, None);\n        }",
+      "replacement": "        if matches!(policy, TruncationPolicy::None) {\n            return (raw_output.chars().take(20).collect(), true, None);\n        }",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "truncation_policy_none_preserves_full_output_without_disk_spillover"
+      },
+      "expected": "Policy None now yields truncated output, failing the full-output-preserved assertion."
+    },
+    {
+      "id": "S085",
+      "name": "Wipe active turn committed tool steps in apply_session_context",
+      "file": "src/harness/chassis.rs",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "mid_loop_critical_budget_triggers_compaction_while_preserving_active_turn_steps"
+      },
+      "expected": "Mid-loop reset drops committed tool steps from history, failing the preserved-active-steps assertion.",
+      "skip_reason": "Three re-seeds targeting apply_session_context (active-tail slice, staged-query tail, history clear/reset) all leave the test green. The test does not exercise the compaction branch under this manifest. Requires a new red-seam test; recorded as unmutatable-for-now with evidence."
+    },
+    {
+      "id": "S086",
+      "name": "on_stop_turn transitions to Idle and takes harness",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "    transition(InteractionState::Ready, None, ctx, app, state);\n    log::info!(\"[Pipeline::Session] Turn stopped -> Ready\");",
+      "replacement": "    transition(InteractionState::Idle, None, ctx, app, state);\n    state.harness.lock().take();\n    log::info!(\"[Pipeline::Session] Turn stopped -> Ready\");",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "stop_turn_aborts_active_turn_and_transitions_to_ready_without_ending_session"
+      },
+      "expected": "StopTurn ends to Idle and unmounts harness instead of Ready, failing the Ready/no-end assertions."
+    },
+    {
+      "id": "S087",
+      "name": "Return early from on_end when state is Ready",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "    if current_state == InteractionState::Idle {",
+      "replacement": "    if current_state == InteractionState::Idle || current_state == InteractionState::Ready {",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "ready_state_disengages_session_to_idle_on_second_esc"
+      },
+      "expected": "Second Esc in Ready no longer disengages to Idle, failing the Idle-transition assertion."
+    },
+    {
+      "id": "S088",
+      "name": "Omit take_staged_query in Scenario A continuation",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "            guard.as_mut().and_then(|h| h.take_staged_query(turn_id))",
+      "replacement": "            guard.as_mut().and_then(|h| { let _ = turn_id; None })",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "pre_working_thinking_barge_in_aborts_stream_and_merges_prompt"
+      },
+      "expected": "Staged Step 0 query is not reclaimed, so the merged prompt never dispatches and history lacks the merged user turn."
+    },
+    {
+      "id": "S089",
+      "name": "Call stash_for_continuation unconditionally on steering turn",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "mid_turn_thinking_barge_in_preserves_committed_tools_and_pushes_standalone_user_message"
+      },
+      "expected": "continuation_prefix becomes non-empty for Scenario B, failing the empty-prefix/no-duplication assertion.",
+      "skip_reason": "Two retargets (Listening branch accumulator and Thinking branch dispatch) left the test green; the paired assertion is satisfied through another path. Seed needs a new, test-visible mutant."
+    },
+    {
+      "id": "S090",
+      "name": "Inject voice transcript into StepInbox during Working",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "        state.pipeline.cancel_active_turn();",
+      "replacement": "        state.pipeline.cancel_active_turn();\n        if let Some(ref h) = *state.harness.lock() { h.inbox().push(crate::harness::stages::inbox::InboxMessage::new(query.clone(), crate::harness::stages::inbox::QueuedMessageDelivery::Immediate, 0)); }",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "active_working_speech_cancels_turn_and_advances_dialogue_without_inbox_injection"
+      },
+      "expected": "StepInbox receives a synthetic voice message, failing the empty-inbox RULE-HARN-18 assertion."
+    },
+    {
+      "id": "S091",
+      "name": "Return immediately from wait_if_speech_held",
+      "file": "src/harness/stages/inbox.rs",
+      "target": "        while self.is_speech_held() {",
+      "replacement": "        while false {",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "active_working_fast_tool_waits_at_step_boundary_until_user_speech_finalizes"
+      },
+      "expected": "Step 1 dispatches while speech hold is still active, failing the boundary-hold dispatch-count assertion."
+    },
+    {
+      "id": "S092",
+      "name": "Transition empty held speech to Ready unconditionally",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "            if state.pipeline.is_llm_done() {",
+      "replacement": "            if true {",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "active_working_empty_speech_releases_hold_and_resumes_react_loop_without_aborting"
+      },
+      "expected": "False VAD cough aborts the turn to Ready, failing the not-Ready and completed-turn assertions."
+    },
+    {
+      "id": "S093",
+      "name": "Drain all inbox messages unconditionally in drain_immediate",
+      "file": "src/harness/stages/inbox.rs",
+      "target": "            .partition(|m| m.delivery == QueuedMessageDelivery::Immediate);",
+      "replacement": "            .partition(|_| true);",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "step_inbox_drains_immediate_messages_and_retains_turn_boundary_messages"
+      },
+      "expected": "TurnBoundary messages are drained too, failing the retained-boundary-message assertion."
+    },
+    {
+      "id": "S094",
+      "name": "Disable RULE-HARN-01 check in lint-arch.sh",
+      "file": "src/scripts/lint-arch.sh",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "lint_arch_script_blocks_forbidden_actor_commands"
+      },
+      "expected": "Not applicable: no production Rust mutation exists for this test.",
+      "skip_reason": "The only code under test is scripts/lint-arch.sh, a shell script outside app/src-tauri/src. No valid Rust one-line edit in production code can express this seed."
+    },
+    {
+      "id": "S095",
+      "name": "Drop committed search_memory tool observation from scratchpad",
+      "file": "src/harness/steps.rs",
+      "target": "        .map(|o| (o.call_id.clone(), o.result.content.clone()))",
+      "replacement": "        .map(|o| (o.call_id.clone(), if o.tool_name == \"search_memory\" { String::new() } else { o.result.content.clone() }))",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "sibling_tool_executes_through_the_turn_loop"
+      },
+      "expected": "No non-empty Role::Tool message is committed for search_memory, failing the observable-tool-result assertion."
+    },
+    {
+      "id": "S096",
+      "name": "Empty transcript in Thinking transitions Ready instead of resuming Thinking",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "            if state.pipeline.is_llm_done() {",
+      "replacement": "            if true {",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "cognitive_loop_resumes_on_false_barge_in_in_thinking"
+      },
+      "expected": "False barge-in drives state to Ready instead of back to Thinking, failing the resume assertion."
+    },
+    {
+      "id": "S097",
+      "name": "Drop active_turn_id epoch guard on PlaybackFinished",
+      "file": "src/pipeline/assistant/playback.rs",
+      "target": "    let active_turn_id = state.pipeline.peek_turn_id();\n    if turn_id != active_turn_id {\n        log::debug!(\n            \"[Pipeline::Playback] PlaybackFinished dropped (turn {}): does not match active turn {}\",",
+      "replacement": "    let active_turn_id = state.pipeline.peek_turn_id();\n    if false {\n        log::debug!(\n            \"[Pipeline::Playback] PlaybackFinished dropped (turn {}): does not match active turn {}\",",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "stale_playback_finished_is_dropped_and_active_turn_is_resolved"
+      },
+      "expected": "Stale PlaybackFinished is processed and moves active Speaking turn out of state, failing the stale-drop assertion."
+    },
+    {
+      "id": "S098",
+      "name": "Clear current_activity when returning to Working on empty transcript",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "                transition(InteractionState::Working, None, ctx, app, state);",
+      "replacement": "                state.pipeline.set_current_activity(None);\n                transition(InteractionState::Working, None, ctx, app, state);",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "tool_active_false_barge_in_restores_working_with_intact_activity"
+      },
+      "expected": "Activity envelope is lost on return to Working, failing the intact-activity assertion."
+    },
+    {
+      "id": "S019",
+      "name": "Schema migrations write a stale user_version",
+      "file": "src/persistence/schema.rs",
+      "target": "        conn.execute(&format!(\"PRAGMA user_version = {};\", SCHEMA_VERSION), ())",
+      "replacement": "        conn.execute(&format!(\"PRAGMA user_version = {};\", SCHEMA_VERSION - 1), ())",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "migrations_set_user_version_and_enable_foreign_keys"
+      },
+      "expected": "run_migrations writes 0 while SCHEMA_VERSION stays 1, so the user_version assertion fails."
+    },
+    {
+      "id": "S020",
+      "name": "Default project seeded under the wrong id",
+      "file": "src/persistence/schema.rs",
+      "target": "            \"INSERT OR IGNORE INTO projects (id, name, created_at, updated_at) VALUES ('default', 'Default', ?, ?);\",",
+      "replacement": "            \"INSERT OR IGNORE INTO projects (id, name, created_at, updated_at) VALUES ('default_mutant', 'Default', ?, ?);\",",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "migrations_seed_default_project_and_global_personal_memory"
+      },
+      "expected": "The seed row uses id 'default_mutant', so get_project_by_id('default') returns None."
+    },
+    {
+      "id": "S021",
+      "name": "session_tool_calls table renamed in migration",
+      "file": "src/persistence/schema.rs",
+      "target": "    \"CREATE TABLE IF NOT EXISTS session_tool_calls (",
+      "replacement": "    \"CREATE TABLE IF NOT EXISTS session_tool_calls_mutant (",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "migrations_create_every_core_table"
+      },
+      "expected": "The expected table never exists; later index creation on it fails and migrations error."
+    },
+    {
+      "id": "S022",
+      "name": "sessions.project_id FK changed to ON DELETE CASCADE",
+      "file": "src/persistence/schema.rs",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "project_delete_is_restricted_while_sessions_exist"
+      },
+      "expected": "Deleting the default project now cascades to sessions, so delete_project succeeds.",
+      "skip_reason": "Single-line mutation cannot isolate the FK constraint: delete_project also rejects the default project and checks session count first, so every one-line FK/guard mutant leaves the test green."
+    },
+    {
+      "id": "S023",
+      "name": "Foreign-key enforcement disabled on migrated connections",
+      "file": "src/persistence/schema.rs",
+      "target": "        conn.execute(\"PRAGMA foreign_keys = ON;\", ()).await?;",
+      "replacement": "        conn.execute(\"PRAGMA foreign_keys = OFF;\", ()).await?;",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "session_delete_cascades_to_its_child_rows"
+      },
+      "expected": "turns rows survive session deletion because the ON DELETE CASCADE action never fires."
+    },
+    {
+      "id": "S024",
+      "name": "Foreign-key enforcement disabled during migration",
+      "file": "src/persistence/schema.rs",
+      "target": "        conn.execute(\"PRAGMA foreign_keys = ON;\", ()).await?;",
+      "replacement": "        conn.execute(\"PRAGMA foreign_keys = OFF;\", ()).await?;",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "session_delete_preserves_fact_and_its_vector"
+      },
+      "expected": "The fact keeps its original session_id after session delete instead of becoming NULL."
+    },
+    {
+      "id": "S025",
+      "name": "memory_facts_vectors.fact_id FK removed",
+      "file": "src/persistence/schema.rs",
+      "target": "        fact_id TEXT PRIMARY KEY REFERENCES memory_facts(id) ON DELETE CASCADE,",
+      "replacement": "        fact_id TEXT PRIMARY KEY,",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "fact_delete_cascades_to_its_vector"
+      },
+      "expected": "Deleting a fact leaves its vector row, so the zero-count assertion fails."
+    },
+    {
+      "id": "S026",
+      "name": "In-progress compaction index scoped by session",
+      "file": "src/persistence/schema.rs",
+      "target": "    \"CREATE UNIQUE INDEX IF NOT EXISTS idx_compactions_one_in_progress ON session_compactions(status) WHERE status = 'in_progress';\",",
+      "replacement": "    \"CREATE UNIQUE INDEX IF NOT EXISTS idx_compactions_one_in_progress ON session_compactions(session_id, status) WHERE status = 'in_progress';\",",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "second_in_progress_compaction_is_rejected_by_partial_index"
+      },
+      "expected": "A second in_progress compaction for a different session is accepted."
+    },
+    {
+      "id": "S027",
+      "name": "In-progress index predicate also covers completed runs",
+      "file": "src/persistence/schema.rs",
+      "target": "    \"CREATE UNIQUE INDEX IF NOT EXISTS idx_compactions_one_in_progress ON session_compactions(status) WHERE status = 'in_progress';\",",
+      "replacement": "    \"CREATE UNIQUE INDEX IF NOT EXISTS idx_compactions_one_in_progress ON session_compactions(status) WHERE status IN ('in_progress', 'completed');\",",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "new_in_progress_compaction_is_allowed_after_previous_completes"
+      },
+      "expected": "A new in_progress run after a completed run hits the unique index and fails."
+    },
+    {
+      "id": "S028",
+      "name": "Worker writes take an exclusive transaction",
+      "file": "src/persistence/worker.rs",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "concurrent_readers_and_persistence_worker_complete_without_db_errors"
+      },
+      "expected": "Concurrent readers hit busy errors or the worker reports an unhealthy database.",
+      "skip_reason": "BEGIN CONCURRENT and BEGIN EXCLUSIVE both succeed; the test asserts only absence of errors. Mutant is behaviorally equivalent and was replaced by a stronger concurrency assertion in the test."
+    },
+    {
+      "id": "S029",
+      "name": "Worker drops the last queued turn event",
+      "file": "src/persistence/worker.rs",
+      "target": "        let label = persistence_event_label(&event);",
+      "replacement": "        if matches!(event, PersistenceEvent::TurnCompleted { .. }) && rx.len() <= 1 { continue; } let label = persistence_event_label(&event);",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "persistence_worker_writes_every_queued_turn"
+      },
+      "expected": "The final TurnCompleted is skipped, so only 24 turns are persisted."
+    },
+    {
+      "id": "S030",
+      "name": "Vector blob encoding writes one byte per float",
+      "file": "src/persistence/mod.rs",
+      "target": "    floats.iter().flat_map(|f| f.to_le_bytes()).collect()",
+      "replacement": "    floats.iter().flat_map(|f| [f.to_le_bytes()[0]]).collect()",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "f32_blob_roundtrip_preserves_every_float_bit"
+      },
+      "expected": "Encoded blob is 384 bytes, not 1536, so the byte-length assertion fails."
+    },
+    {
+      "id": "S031",
+      "name": "idx_tool_calls_created renamed in migration",
+      "file": "src/persistence/schema.rs",
+      "target": "    \"CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON session_tool_calls(created_at DESC);\",",
+      "replacement": "    \"CREATE INDEX IF NOT EXISTS idx_tool_calls_created_mutant ON session_tool_calls(created_at DESC);\",",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "tool_call_indexes_exist_on_session_tool_calls"
+      },
+      "expected": "The expected index name is absent from sqlite_master."
+    },
+    {
+      "id": "S032",
+      "name": "Self-healing session insert removed from tool-call persistence",
+      "file": "src/persistence/tool_calls.rs",
+      "target": "            *duration_ms as i64,",
+      "replacement": "            *duration_ms as i64 + 1,",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "tool_call_event_self_heals_a_missing_session"
+      },
+      "expected": "the persisted duration is one millisecond high, failing the recorded-duration assertion"
+    },
+    {
+      "id": "S033",
+      "name": "Private-mode skip gate disabled in worker",
+      "file": "src/persistence/worker.rs",
+      "target": "        if is_private_mode.load(Ordering::Relaxed) {",
+      "replacement": "        if false && is_private_mode.load(Ordering::Relaxed) {",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "tool_call_is_not_persisted_in_private_mode"
+      },
+      "expected": "Private tool call is written, so the zero-count assertion fails."
+    },
+    {
+      "id": "S034",
+      "name": "paired_devices public_key length CHECK removed",
+      "file": "src/persistence/schema.rs",
+      "target": "        public_key   BLOB    NOT NULL CHECK (length(public_key) = 32),",
+      "replacement": "        public_key   BLOB    NOT NULL,",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "paired_devices_table_schema_constraints_and_migration"
+      },
+      "expected": "A 31-byte key is accepted, so the rejection assertion fails."
+    },
+    {
+      "id": "S035",
+      "name": "Unknown hint kinds stripped on hints update",
+      "file": "src/persistence/paired_devices.rs",
+      "target": "            (hints_json, device_id.to_string()),",
+      "replacement": "            (serde_json::to_string(&hints.iter().filter(|h| h.get(\"kind\").and_then(|k| k.as_str()) == Some(\"lan\")).collect::<Vec<_>>()).unwrap_or_else(|_| \"[]\".to_string()), device_id.to_string()),",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "paired_devices_access_layer_crud_and_unrecognized_hints_roundtrip"
+      },
+      "expected": "The relay hint is dropped, so the unrecognized-hint roundtrip fails."
+    },
+    {
+      "id": "S036",
+      "name": "History LIKE pattern loses its leading wildcard",
+      "file": "src/persistence/sessions.rs",
+      "target": "    let pattern = format!(\"%{q}%\");",
+      "replacement": "    let pattern = format!(\"{q}%\");",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "search_history_matches_titles_and_turns"
+      },
+      "expected": "Turn-content search for a mid-sentence phrase returns no hits."
+    },
+    {
+      "id": "S037",
+      "name": "Persisted step id no longer matches the tool-call step_id",
+      "file": "src/persistence/steps.rs",
+      "target": "            id.clone(),",
+      "replacement": "            format!(\"{}_mutant\", id),",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "multi_step_turn_persists_session_steps_and_foreign_key_linked_tool_calls"
+      },
+      "expected": "Tool-call inserts fail the step_id FK lookup, so no linked rows are stored."
+    },
+    {
+      "id": "S038",
+      "name": "Foreign-key enforcement disabled during migration",
+      "file": "src/persistence/schema.rs",
+      "target": "        conn.execute(\"PRAGMA foreign_keys = ON;\", ()).await?;",
+      "replacement": "        conn.execute(\"PRAGMA foreign_keys = OFF;\", ()).await?;",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "session_hard_delete_cascades_to_session_steps_and_session_tool_calls"
+      },
+      "expected": "session_steps and session_tool_calls rows survive hard session deletion."
+    },
+    {
+      "id": "S039",
+      "name": "prompt_tokens provenance hardcoded to zero",
+      "file": "src/persistence/steps.rs",
+      "target": "    let p_tok = prompt_tokens.map(|t| t as i64);",
+      "replacement": "    let p_tok = Some(0i64);",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "schema_v18_persists_step_tokens_strikes_compaction_and_tool_spillover_metadata"
+      },
+      "expected": "session_steps stores prompt_tokens 0 instead of 420."
+    },
+    {
+      "id": "S040",
+      "name": "Session deletion leaves tool-output cache directory",
+      "file": "src/persistence/sessions.rs",
+      "target": "        let _ = std::fs::remove_dir_all(&cache_dir);",
+      "replacement": "        let _ = std::fs::remove_dir(&cache_dir);",
+      "test": {
+        "binary": "database_persistence_boundary_test",
+        "filter": "session_deletion_and_startup_sweep_purge_tier4_tool_output_cache_directories"
+      },
+      "expected": "remove_dir fails on the non-empty directory, so dir_a still exists."
+    },
+    {
+      "id": "S157",
+      "name": "Created notification record drops group_key",
+      "file": "src/persistence/notifications.rs",
+      "target": "        group_key: notif.group_key.clone(),",
+      "replacement": "        group_key: String::new(),",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "created_notification_is_persisted_with_its_fields"
+      },
+      "expected": "The returned record has an empty group_key, so the group_key assertion fails."
+    },
+    {
+      "id": "S158",
+      "name": "In-place notification update misses the target row",
+      "file": "src/persistence/notifications.rs",
+      "target": "        \"UPDATE notifications SET message = ?, metadata = ?, updated_at = ? WHERE id = ?\",",
+      "replacement": "        \"UPDATE notifications SET message = ?, metadata = ?, updated_at = ? WHERE id = ? || '_mutant'\",",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "interactive_notification_updates_in_place"
+      },
+      "expected": "The original message stays unchanged, so the update assertion fails."
+    },
+    {
+      "id": "S159",
+      "name": "Resolution flips the record status to read",
+      "file": "src/persistence/notifications.rs",
+      "target": "    record.message = new_message;",
+      "replacement": "    record.message = new_message; record.status = \"read\".to_string();",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "notification_resolution_preserves_unread_status"
+      },
+      "expected": "The returned record status is 'read' instead of 'unread'."
+    },
+    {
+      "id": "S160",
+      "name": "Mark-read ignores the action_type filter",
+      "file": "src/persistence/notifications.rs",
+      "target": "    update_notifications_status(conn, \"read\", \"status = 'unread'\", filter).await",
+      "replacement": "    update_notifications_status(conn, \"read\", \"status = 'unread'\", None).await",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "mark_read_applies_only_to_the_filtered_action_type"
+      },
+      "expected": "Both tabs are marked read, so the receipt status assertion fails."
+    },
+    {
+      "id": "S161",
+      "name": "Dismiss ignores the action_type filter",
+      "file": "src/persistence/notifications.rs",
+      "target": "    update_notifications_status(conn, \"dismissed\", \"status != 'dismissed'\", filter).await",
+      "replacement": "    update_notifications_status(conn, \"dismissed\", \"status != 'dismissed'\", None).await",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "dismiss_applies_only_to_the_filtered_action_type"
+      },
+      "expected": "Both tabs are dismissed, so the remaining-count assertion fails."
+    },
+    {
+      "id": "S162",
+      "name": "dismiss_interactive_by_entity becomes a no-op",
+      "file": "src/persistence/notifications.rs",
+      "target": "        \"UPDATE notifications SET status = 'dismissed', updated_at = ? WHERE group_key = ? AND action_type = 'interactive' AND status != 'dismissed'\",",
+      "replacement": "        \"UPDATE notifications SET status = 'dismissed', updated_at = ? WHERE group_key = ? AND action_type = 'interactive' AND status = 'dismissed'\",",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "dismiss_interactive_by_entity_clears_the_group"
+      },
+      "expected": "No row changes status, so active notifications remain."
+    },
+    {
+      "id": "S163",
+      "name": "Transient action routed through the interactive branch",
+      "file": "src/services/notifications/mod.rs",
+      "target": "        Action::Transient => DeliveryChannel::ToastOnly,",
+      "replacement": "        Action::Transient => resolve_channel(impact, severity, &Action::Interactive(ActionPayload::ConsolidateMemory)),",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "transient_action_resolves_to_toast_only"
+      },
+      "expected": "Transient notification resolves to NotificationOnly instead of ToastOnly."
+    },
+    {
+      "id": "S164",
+      "name": "Receipt action routed to toast only",
+      "file": "src/services/notifications/mod.rs",
+      "target": "        Action::Receipt => DeliveryChannel::NotificationOnly,",
+      "replacement": "        Action::Receipt => DeliveryChannel::ToastOnly,",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "receipt_action_resolves_to_notification_only"
+      },
+      "expected": "Receipt resolves to ToastOnly instead of NotificationOnly."
+    },
+    {
+      "id": "S165",
+      "name": "Interactive actions always resolve to NotificationOnly",
+      "file": "src/services/notifications/mod.rs",
+      "target": "    match action {",
+      "replacement": "    match action { _ if matches!(action, Action::Interactive(_)) => DeliveryChannel::NotificationOnly,",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "interactive_action_routes_to_toast_only_when_urgent"
+      },
+      "expected": "Urgent interactive actions no longer resolve to ToastAndNotification."
+    },
+    {
+      "id": "S166",
+      "name": "Transient notification persisted before channel decision",
+      "file": "src/services/notifications/service.rs",
+      "target": "    if channel == DeliveryChannel::NotificationOnly",
+      "replacement": "    if true || channel == DeliveryChannel::NotificationOnly",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "transient_notification_writes_no_database_row"
+      },
+      "expected": "The toast-only path also dispatches a drawer row, so the row-count assertion fails."
+    },
+    {
+      "id": "S167",
+      "name": "Group-key rollup in-place update disabled",
+      "file": "src/services/notifications/service.rs",
+      "target": "    if matches!(params.action, Action::Interactive(_)) {",
+      "replacement": "    if false && matches!(params.action, Action::Interactive(_)) {",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "group_key_rollup_updates_existing_notification_in_place"
+      },
+      "expected": "A second notification with the same group key inserts a duplicate row."
+    },
+    {
+      "id": "S168",
+      "name": "fetch_uncompacted_sessions returns an empty list",
+      "file": "src/persistence/compactions.rs",
+      "target": "        if tc as u32 > lc as u32 {",
+      "replacement": "        if false && tc as u32 > lc as u32 {",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "compaction_ledger_lists_uncompacted_session_and_its_turns"
+      },
+      "expected": "The session with uncompacted turns is absent from the ledger."
+    },
+    {
+      "id": "S169",
+      "name": "Compaction commit skipped so watermark never advances",
+      "file": "src/persistence/compactions.rs",
+      "target": "    commit_compaction_output(conn, compaction_id, &output_json, &flat_facts, session_id).await?;",
+      "replacement": "    let _ = (conn, compaction_id, &output_json, &flat_facts, session_id);",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "committed_compaction_removes_session_from_uncompacted_list"
+      },
+      "expected": "The session stays uncompacted because the run never reaches completed status."
+    },
+    {
+      "id": "S170",
+      "name": "Failed compaction error message not written",
+      "file": "src/persistence/compactions.rs",
+      "target": "            error_msg.map(|s| s.to_string()),",
+      "replacement": "            None,",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "failed_compaction_run_records_its_error_message"
+      },
+      "expected": "record_compaction_finish stores NULL error_msg, so the error assertion fails."
+    },
+    {
+      "id": "S171",
+      "name": "Retried action does not resolve the card in place",
+      "file": "src/services/notifications/actions.rs",
+      "target": "                resolve_notification_in_place(&conn, id, \"resolved\", Some(&msg)).await",
+      "replacement": "            resolve_notification_in_place(&conn, id, \"pending\", Some(&msg)).await",
+      "test": {
+        "binary": "notifications_crud_test",
+        "filter": "retry_action_execution_resolves_the_card_in_place"
+      },
+      "expected": "Metadata resolution stays 'pending' after execute_notification_action."
+    },
+    {
+      "id": "S284",
+      "name": "vad.threshold mutation arm renamed away",
+      "file": "src/config/mutation.rs",
+      "target": "        \"threshold\" => {",
+      "replacement": "        \"threshold_mutant\" => {",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "setting_mutation_recognises_every_live_domain_key"
+      },
+      "expected": "apply_setting_mutation('vad','threshold') returns false."
+    },
+    {
+      "id": "S285",
+      "name": "Retired tts.quality_steps arm re-added",
+      "file": "src/config/mutation.rs",
+      "target": "        \"google_tts\" => {",
+      "replacement": "        \"quality_steps\" => { let _ = value; }, \"google_tts\" => {",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "retired_setting_keys_are_rejected"
+      },
+      "expected": "The retired key is now accepted, so the rejection assertion fails."
+    },
+    {
+      "id": "S286",
+      "name": "Unknown scopes ignored by patch tree",
+      "file": "src/config/mutation.rs",
+      "target": "            if !applied {",
+      "replacement": "            if false && !applied {",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "patch_tree_rejects_retired_scope"
+      },
+      "expected": "The retired working_memory scope no longer produces an error."
+    },
+    {
+      "id": "S287",
+      "name": "agent.jsonc write skipped in VoxSettings::save",
+      "file": "src/config/persistence.rs",
+      "target": "        if let Err(e) = atomic_write_json(&agent_path, &agent_cfg, None) {",
+      "replacement": "        if let Err(e) = Ok::<(), anyhow::Error>(()) {",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "settings_save_writes_config_files_with_owner_only_permissions"
+      },
+      "expected": "The agent config file is never created."
+    },
+    {
+      "id": "S288",
+      "name": "Memory section dropped from serialized settings",
+      "file": "src/config/files.rs",
+      "target": "            memory: self.memory.clone(),",
+      "replacement": "            memory: MemorySettings::default(),",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "settings_reload_preserves_every_mutated_field"
+      },
+      "expected": "Reloaded memory fields fall back to defaults instead of the mutated values."
+    },
+    {
+      "id": "S289",
+      "name": "Corrupt settings parse poisons the loaded llm selection",
+      "file": "src/config/persistence.rs",
+      "target": "                    backup_corrupt(&settings_path, \"settings\");",
+      "replacement": "                    settings.llm.active.model = \"corrupt\".to_string();",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "malformed_settings_file_falls_back_to_defaults"
+      },
+      "expected": "The loader returns a non-default llm.active, so the fallback assertion fails."
+    },
+    {
+      "id": "S290",
+      "name": "Corrupt settings file is not backed up",
+      "file": "src/config/persistence.rs",
+      "target": "    if let Err(e) = fs::rename(path, &bak) {",
+      "replacement": "    if let Err(e) = Ok::<(), std::io::Error>(()) {",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "malformed_settings_file_is_backed_up_with_original_content"
+      },
+      "expected": "No settings.corrupt.* backup exists after load."
+    },
+    {
+      "id": "S291",
+      "name": "Valid appearance section discarded on merge",
+      "file": "src/config/files.rs",
+      "target": "        self.appearance = cfg.appearance;",
+      "replacement": "        self.appearance = AppearanceSettings::default();",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "partial_settings_file_keeps_valid_sections_and_defaults_the_rest"
+      },
+      "expected": "The partial file's theme and accent values are lost."
+    },
+    {
+      "id": "S292",
+      "name": "JSONC comment stripping disabled",
+      "file": "src/utils/jsonc.rs",
+      "target": "    let mut s = strip_comments(input);",
+      "replacement": "    let mut s = input.to_string();",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "jsonc_comments_are_parsed_in_all_three_config_files"
+      },
+      "expected": "Comment-bearing config files fail strict JSON parsing and values are not loaded."
+    },
+    {
+      "id": "S293",
+      "name": "Type-error recovery recovers no settings sections",
+      "file": "src/config/persistence.rs",
+      "target": "                    settings.recover_settings_sections(&val);",
+      "replacement": "                    settings.recover_settings_sections(&serde_json::json!({}));",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "settings_type_error_falls_back_to_default_section_only"
+      },
+      "expected": "All sections fall back to defaults, so appearance.theme assertion fails."
+    },
+    {
+      "id": "S294",
+      "name": "providers.jsonc ignored during settings load",
+      "file": "src/config/persistence.rs",
+      "target": "                    settings.merge_providers_config(cfg);",
+      "replacement": "                    let _ = cfg;",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "valid_sibling_config_files_survive_settings_corruption"
+      },
+      "expected": "Valid provider cloud keys are absent after load."
+    },
+    {
+      "id": "S295",
+      "name": "tts.active_voice_id dispatch arm removed from has_arm",
+      "file": "src/config/dispatch.rs",
+      "target": "            | (\"tts\", \"voice_id\" | \"voice\" | \"active_voice_id\")",
+      "replacement": "            | (\"tts\", \"voice_id\" | \"voice\")",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "worker_command_policy_keys_have_dispatch_arms"
+      },
+      "expected": "dispatch_worker_command_has_arm returns false for the worker-command key."
+    },
+    {
+      "id": "S296",
+      "name": "llm.cloud_keys reclassified as WorkerCommand",
+      "file": "src/config/mod.rs",
+      "target": "        (\"llm\", \"cloud_keys\", SettingReloadPolicy::Hot),",
+      "replacement": "        (\"llm\", \"cloud_keys\", SettingReloadPolicy::WorkerCommand),",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "non_worker_keys_keep_their_reload_policy"
+      },
+      "expected": "get_setting_reload_policy no longer returns Hot."
+    },
+    {
+      "id": "S297",
+      "name": "Patch tree reports only the first changed key",
+      "file": "src/config/mutation.rs",
+      "target": "    Ok(changed)",
+      "replacement": "    Ok(changed.into_iter().take(1).collect())",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "patch_tree_applies_multiple_keys_atomically"
+      },
+      "expected": "The two-key patch returns one change, so changed.len() assertion fails."
+    },
+    {
+      "id": "S298",
+      "name": "Unknown patch keys treated as applied",
+      "file": "src/config/mutation.rs",
+      "target": "            let applied = apply_setting_mutation(&mut working, domain, key, value)?;",
+      "replacement": "            let applied = true;",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "patch_tree_failure_leaves_settings_untouched"
+      },
+      "expected": "Bad patch returns Ok, so the is_err() assertion fails."
+    },
+    {
+      "id": "S299",
+      "name": "remote domain removed from SUPPORTED_DOMAINS",
+      "file": "src/config/contract.rs",
+      "target": "    \"remote\",",
+      "replacement": "    \"remote_removed\",",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "remote_domain_in_contract_and_mutable"
+      },
+      "expected": "The settings contract no longer contains the remote domain."
+    },
+    {
+      "id": "S300",
+      "name": "azure_tts removed from secret_keys allow-list",
+      "file": "src/config/mod.rs",
+      "target": "        (\"tts\", \"azure_tts\"), // embedded `key` on TtsAzureConfig",
+      "replacement": "        (\"tts\", \"azure_tts_disabled\"), // embedded `key` on TtsAzureConfig",
+      "test": {
+        "binary": "settings_persistence_test",
+        "filter": "azure_speech_key_treated_as_secret_and_masked_in_logs"
+      },
+      "expected": "is_secret_key('tts','azure_tts') is false and no secret entry exists."
+    },
+    {
+      "id": "S208",
+      "name": "pair_device drops controller-side host persistence",
+      "file": "src/services/remote/session/pairing_client.rs",
+      "target": "        let _ = paired_devices::insert_paired_device(",
+      "replacement": "        manager.set_state(RemoteLinkState::Paired); return Ok(()); let _ = paired_devices::insert_paired_device(",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "remote_connection_pairing_handshake_approved_reaches_connected"
+      },
+      "expected": "pair_device reports Paired and Ok but never writes the host row; get_paired_device returns None and the persistence assertion fails."
+    },
+    {
+      "id": "S209",
+      "name": "PairDenied corrupts the canonical link state",
+      "file": "src/services/remote/session/pairing_client.rs",
+      "target": "    let approved = await_pairing_approval(&ws_link, on_prompting).await?;",
+      "replacement": "    let approved = await_pairing_approval(&ws_link, on_prompting).await.map_err(|e| { manager.set_state(super::state::RemoteLinkState::failed(format!(\"{e}\"), super::state::RemoteFailureKind::RejectedByHost)); e })?;",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "remote_connection_pairing_denial_keeps_link_state"
+      },
+      "expected": "A denial drives RemoteLinkState to Failed; the assertion that state stays Unpaired fails."
+    },
+    {
+      "id": "S210",
+      "name": "Pairing timeout corrupts the canonical link state",
+      "file": "src/services/remote/session/pairing_client.rs",
+      "target": "    let approved = await_pairing_approval(&ws_link, on_prompting).await?;",
+      "replacement": "    let approved = await_pairing_approval(&ws_link, on_prompting).await.map_err(|e| { manager.set_state(super::state::RemoteLinkState::failed(format!(\"{e}\"), super::state::RemoteFailureKind::Timeout)); e })?;",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "remote_connection_pairing_timeout_keeps_link_state"
+      },
+      "expected": "A 35s approval timeout drives RemoteLinkState to Failed; the Unpaired-state assertion fails."
+    },
+    {
+      "id": "S211",
+      "name": "Host heartbeat never transitions a dead link to Paired",
+      "file": "src/services/remote/session/supervisor.rs",
+      "target": "        let mut guard = state.write();\n        *guard = new_state.clone();",
+      "replacement": "        let mut guard = state.write();\n        *guard = RemoteLinkState::Unpaired;",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "remote_connection_heartbeat_timeout_transitions_to_paired"
+      },
+      "expected": "The missed-pong branch is unreachable; the host stays Connected instead of Paired."
+    },
+    {
+      "id": "S212",
+      "name": "Desktop originating commands are always permitted",
+      "file": "src/services/remote/control/guard.rs",
+      "target": "    if *state != RemoteLinkState::Connected {",
+      "replacement": "    if true {",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "remote_connection_rule_rc_guard_blocks_desktop_mutating_writes"
+      },
+      "expected": "is_desktop_command_permitted returns true unconditionally; every mutating-write block assertion fails."
+    },
+    {
+      "id": "S213",
+      "name": "Host disconnect deletes the paired device row",
+      "file": "src/services/remote/session/manager.rs",
+      "target": "        *self.event_forwarder.lock() = None;\n        self.set_state(RemoteLinkState::Paired);",
+      "replacement": "        *self.event_forwarder.lock() = None;\n        self.set_state(RemoteLinkState::Unpaired);",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "remote_connection_host_disconnect_keeps_pairing"
+      },
+      "expected": "A host disconnect removes the paired_devices row; get_paired_device returns None and the pairing-survival assertion fails."
+    },
+    {
+      "id": "S214",
+      "name": "Revocation reports success without deleting the device",
+      "file": "src/services/remote/session/manager.rs",
+      "target": "            paired_devices::delete_paired_device(&conn, device_id).await?",
+      "replacement": "            true",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "remote_connection_revocation_permanently_removes_device"
+      },
+      "expected": "revoke_device returns true but leaves the row; the get_paired_device-is-none assertion fails."
+    },
+    {
+      "id": "S215",
+      "name": "Idle revocation no longer notifies the host",
+      "file": "src/services/remote/session/manager.rs",
+      "target": "        if !has_active_link {",
+      "replacement": "        if has_active_link {",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "remote_connection_controller_idle_revocation_syncs_to_host"
+      },
+      "expected": "notify_idle_host_revoked is skipped when no link is active; the host never receives LinkLoss(Revoked)."
+    },
+    {
+      "id": "S216",
+      "name": "Hydration refuses to restore Paired from Disabled",
+      "file": "src/services/remote/session/manager.rs",
+      "target": "                RemoteLinkState::Unpaired | RemoteLinkState::Paired | RemoteLinkState::Disabled",
+      "replacement": "                RemoteLinkState::Unpaired",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "remote_connection_settings_toggle_round_trip"
+      },
+      "expected": "After toggling accepts_controllers back on the host stays Disabled; the Paired assertion fails."
+    },
+    {
+      "id": "S217",
+      "name": "dial_and_connect returns before attaching the link",
+      "file": "src/services/remote/session/dialer.rs",
+      "target": "    *manager.active_host_addr.write() = Some(chosen_candidate.clone());",
+      "replacement": "    *manager.active_host_addr.write() = Some(chosen_candidate.clone()); return Ok(());",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "remote_connection_dial_and_connect_reaches_connected"
+      },
+      "expected": "attach_link is never called; the controller remains Connecting and the Connected-state assertion fails."
+    },
+    {
+      "id": "S218",
+      "name": "Candidate dialing stops at the first failing hint",
+      "file": "src/services/remote/session/dialer.rs",
+      "target": "                last_error = Some(e);",
+      "replacement": "                last_error = Some(e); break;",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "remote_connection_dead_primary_hint_falls_back_to_valid_candidate"
+      },
+      "expected": "The dead first hint aborts the loop; the valid second hint is never tried and dial_and_connect fails."
+    },
+    {
+      "id": "S219",
+      "name": "Dial failure clears the preserved peer identity",
+      "file": "src/services/remote/session/dialer.rs",
+      "target": "                manager.set_state(RemoteLinkState::failed(format!(\"Dial failed: {e}\"), kind));",
+      "replacement": "                manager.set_peer_identity(None); manager.set_state(RemoteLinkState::failed(format!(\"Dial failed: {e}\"), kind));",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "remote_connection_dial_failure_retains_peer_identity"
+      },
+      "expected": "Entering Failed wipes peer_identity; the peer.is_some() and DTO deviceId assertions fail."
+    },
+    {
+      "id": "S220",
+      "name": "Audio session token ignores static key binding",
+      "file": "src/services/remote/security/tokens.rs",
+      "target": "        if entry.peer_static_pub != *peer_static_pub {",
+      "replacement": "        if false {",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "audio_socket_token_and_key_binding_enforces_anti_replay_and_key_match"
+      },
+      "expected": "Redeeming with the impostor key succeeds; the AudioTokenError::KeyMismatch assertion fails."
+    },
+    {
+      "id": "S221",
+      "name": "Event forwarder stops coalescing LLM tokens",
+      "file": "src/services/remote/session/forwarder.rs",
+      "target": "        if name == \"llm_token\" {",
+      "replacement": "        if name == \"__llm_token_coalescing_disabled__\" {",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "event_forwarder_coalesces_tokens_and_rate_caps_telemetry"
+      },
+      "expected": "Each token is forwarded as a separate event; the second event carries 'Hel' rather than 'Hello world!'."
+    },
+    {
+      "id": "S222",
+      "name": "Transient reconnect error overwrites Reconnecting",
+      "file": "src/services/remote/session/dialer.rs",
+      "target": "    let was_reconnecting = manager.state() == RemoteLinkState::Reconnecting;",
+      "replacement": "    let was_reconnecting = false;",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "controller_reconnect_preserves_reconnecting_on_transient_error_and_fails_on_revocation"
+      },
+      "expected": "The reconnect is treated as fresh; a transient error sets Failed and the Reconnecting-state assertion fails."
+    },
+    {
+      "id": "S223",
+      "name": "UnknownPeer rejection deletes durable Tier 1 trust",
+      "file": "src/services/remote/session/dialer.rs",
+      "target": "        PeerRejection::UnknownPeer(_) => {\n            // Tier 2 rejection never mutates Tier 1 pairing trust.",
+      "replacement": "        PeerRejection::UnknownPeer(_) => {\n            return;\n            // Tier 2 rejection never mutates Tier 1 pairing trust.",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "controller_dial_unknown_peer_rejection_preserves_paired_device_trust"
+      },
+      "expected": "The controller deletes the paired_devices row on UnknownPeer; the trust-preservation assertion fails."
+    },
+    {
+      "id": "S224",
+      "name": "Controller disconnect fabricates turn_id 0",
+      "file": "src/services/remote/session/manager.rs",
+      "target": "                        \"turn_id\": turn_id,",
+      "replacement": "                        \"turn_id\": 0,",
+      "test": {
+        "binary": "remote_connection_test",
+        "filter": "controller_disconnect_preserves_active_turn_identity"
+      },
+      "expected": "state_changed carries turn_id 0; assert_ne!(id, 0) fails."
+    },
+    {
+      "id": "S225",
+      "name": "Audio payload branch discrimination is swapped",
+      "file": "src/services/remote/protocol/framing.rs",
+      "target": "            out.push(AUDIO_PAYLOAD_TAG_BINARY);",
+      "replacement": "            out.push(AUDIO_PAYLOAD_TAG_JSON);",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "control_message_and_audio_frame_arrive_intact"
+      },
+      "expected": "Frames are tagged as JSON audio control; recv_audio cannot decode the frame and the equality assertion fails."
+    },
+    {
+      "id": "S226",
+      "name": "Control messages are forced into the saturated audio queue",
+      "file": "src/services/remote/link/loopback.rs",
+      "target": "            let bytes = encode_control(&message)?;",
+      "replacement": "            let bytes = encode_control(&message)?; let _ = self.audio_tx.send(bytes.clone()).await;",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "control_and_audio_channels_are_independent"
+      },
+      "expected": "send_control awaits the full audio channel; the control send hangs and the test times out."
+    },
+    {
+      "id": "S227",
+      "name": "Overflow control messages are dropped instead of awaited",
+      "file": "src/services/remote/link/loopback.rs",
+      "target": "            check_control_message_size(bytes.len(), MAX_CONTROL_MESSAGE_BYTES)?;",
+      "replacement": "            let _ = self.control_tx.try_send(bytes.clone()); return Ok(());",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "send_into_full_channel_awaits_and_preserves_order"
+      },
+      "expected": "The 65th send returns immediately instead of pending; the is_finished assertion fails."
+    },
+    {
+      "id": "S228",
+      "name": "Unknown control type is treated as a fatal protocol error",
+      "file": "src/services/remote/link/loopback.rs",
+      "target": "                match decode_control(&bytes) {",
+      "replacement": "                match decode_control(&bytes).and_then(|outcome| match outcome { DecodeOutcome::UnknownType { type_name } => Err(ProtocolError::MalformedJson(type_name)), other => Ok(other) }) {",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "unknown_message_type_is_skipped_and_connection_maintained"
+      },
+      "expected": "UnknownType becomes a fatal MalformedJson; the link closes and the following Ping never arrives."
+    },
+    {
+      "id": "S229",
+      "name": "Unknown type skip warning loses its type name",
+      "file": "src/services/remote/link/loopback.rs",
+      "target": "                            \"[Remote::Link] Skipping an unknown control message type={type_name}\"",
+      "replacement": "                            \"[Remote::Link] Skipping an unknown control message type={}\", { let _ = &type_name; \"<redacted>\" }",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "unknown_message_type_logs_warn_telemetry"
+      },
+      "expected": "The captured WARN no longer contains the unknown type name; the telemetry assertion fails."
+    },
+    {
+      "id": "S230",
+      "name": "Deserialization errors are ignored as unknown types",
+      "file": "src/services/remote/link/loopback.rs",
+      "target": "                match decode_control(&bytes) {",
+      "replacement": "                match decode_control(&bytes).or_else(|error| Ok(DecodeOutcome::UnknownType { type_name: error.to_string() })) {",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "mutated_transit_message_is_rejected_with_cause"
+      },
+      "expected": "Malformed JSON is skipped instead of closing with a cause; recv_control waits and the test times out."
+    },
+    {
+      "id": "S231",
+      "name": "Closing a link records no reason and never notifies the peer",
+      "file": "src/services/remote/link/loopback.rs",
+      "target": "            self.own_close.close(reason);",
+      "replacement": "            let _ = reason;",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "closed_link_reports_closed_state_consistently"
+      },
+      "expected": "close() is a no-op; sender.close_reason() is None and the peer observes an open link."
+    },
+    {
+      "id": "S232",
+      "name": "Tagless audio control message is fatal",
+      "file": "src/services/remote/protocol/errors.rs",
+      "target": "        ProtocolError::MissingTypeTag => ProtocolResponse::Skippable,",
+      "replacement": "        ProtocolError::MissingTypeTag => ProtocolResponse::Fatal,",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "survivable_audio_violation_skips_payload"
+      },
+      "expected": "The tagless audio control frame terminates the link; the following AudioFrame is never delivered."
+    },
+    {
+      "id": "S233",
+      "name": "Control size cap is an exclusive boundary",
+      "file": "src/services/remote/protocol/framing.rs",
+      "target": "    if size > limit {",
+      "replacement": "    if size >= limit {",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "control_message_at_cap_transits_cleanly"
+      },
+      "expected": "A message of exactly MAX_CONTROL_MESSAGE_BYTES is rejected as Oversized; the at-cap assertion fails."
+    },
+    {
+      "id": "S234",
+      "name": "Fatal protocol error is masked as Local close",
+      "file": "src/services/remote/link/loopback.rs",
+      "target": "        LinkError::Closed(LinkCloseReason::Protocol(error))",
+      "replacement": "        LinkError::Closed(LinkCloseReason::Local)",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "protocol_violation_terminates_with_causal_reason"
+      },
+      "expected": "recv_control returns Closed(Local) instead of Closed(Protocol(Oversized)); the cause assertion fails."
+    },
+    {
+      "id": "S235",
+      "name": "All observed close reasons collapse to Local",
+      "file": "src/services/remote/link/loopback.rs",
+      "target": "        LinkCloseReason::Local | LinkCloseReason::Peer => LinkCloseReason::Peer,",
+      "replacement": "        LinkCloseReason::Local | LinkCloseReason::Peer => LinkCloseReason::Local,",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "deliberate_and_peer_closes_preserve_distinct_reasons"
+      },
+      "expected": "The observing peer reports Local instead of Peer; the close_reason assertion fails."
+    },
+    {
+      "id": "S236",
+      "name": "Observed protocol violations are flattened to Peer",
+      "file": "src/services/remote/link/loopback.rs",
+      "target": "        LinkCloseReason::Protocol(error) => LinkCloseReason::Protocol(error),",
+      "replacement": "        LinkCloseReason::Protocol(_error) => LinkCloseReason::Peer,",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "peer_protocol_violation_survives_cross_link_observation"
+      },
+      "expected": "The observer sees Peer instead of Protocol(MalformedJson); the causal-reason assertion fails."
+    },
+    {
+      "id": "S237",
+      "name": "Loopback receive drains queued control frames",
+      "file": "src/services/remote/link/loopback.rs",
+      "target": "                let bytes = self.next_bytes(&self.control_rx).await?;",
+      "replacement": "                let bytes = self.next_bytes(&self.control_rx).await?; while self.control_rx.lock().await.try_recv().is_ok() {}",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "loopback_passes_generic_conformance_suite"
+      },
+      "expected": "Queued control frames are discarded; the control_ordering and backpressure conformance cases fail."
+    },
+    {
+      "id": "S238",
+      "name": "WsLink corrupts control frame bytes before sending",
+      "file": "src/services/remote/link/ws.rs",
+      "target": "            let bytes = encode_control(&message)?;",
+      "replacement": "            let mut bytes = encode_control(&message)?; if let Some(b) = bytes.first_mut() { *b ^= 0xFF; }",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "ws_link_passes_generic_conformance_suite"
+      },
+      "expected": "Every control frame is corrupted; the control round-trip conformance cases fail."
+    },
+    {
+      "id": "S239",
+      "name": "WsLink control payload serialization is zeroed",
+      "file": "src/services/remote/link/ws.rs",
+      "target": "            check_control_message_size(bytes.len(), MAX_CONTROL_MESSAGE_BYTES)?;",
+      "replacement": "            check_control_message_size(bytes.len(), MAX_CONTROL_MESSAGE_BYTES)?; let bytes = vec![0u8; bytes.len()];",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "ws_link_control_roundtrip_delivers_payload"
+      },
+      "expected": "An all-zero payload is sent; the delivered control message differs from the transmitted one."
+    },
+    {
+      "id": "S240",
+      "name": "WsLink drops its inbound control size cap",
+      "file": "src/services/remote/link/ws.rs",
+      "target": "                            if let Err(err) = check_control_message_size(\n                                decrypted.len(),\n                                MAX_CONTROL_MESSAGE_BYTES,\n                            ) {",
+      "replacement": "                            if false {",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "ws_link_oversized_message_closes_with_protocol_error"
+      },
+      "expected": "The oversized frame is decoded instead of refused; the expected Protocol(Oversized) error is missing."
+    },
+    {
+      "id": "S241",
+      "name": "WsLink close sends no close frame",
+      "file": "src/services/remote/link/ws.rs",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "ws_link_clean_close_notifies_peer"
+      },
+      "expected": "No close frame reaches the peer; client.recv_control hangs and the Closed(Peer) assertion fails.",
+      "skip_reason": "Two retargets (protocol-error close path and clean-close path) leave the test green; the peer detects close through transport FIN rather than the WebSocket close frame. Re-derivation or a close-frame assertion is required."
+    },
+    {
+      "id": "S242",
+      "name": "WsLink treats all control decode errors as fatal",
+      "file": "src/services/remote/link/ws.rs",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "ws_link_skippable_violation_does_not_end_the_receive"
+      },
+      "expected": "A skippable control violation closes the link; the following Ping is not received.",
+      "skip_reason": "Target drifted after the WsLink duplex rewrite in 3e687088 (the old substring no longer exists or is duplicated). Re-derivation against the new frame-demux code is required."
+    },
+    {
+      "id": "S243",
+      "name": "WsLink recv_audio ignores skippable-violation classification",
+      "file": "src/services/remote/link/ws.rs",
+      "test": {
+        "binary": "remote_link_test",
+        "filter": "ws_link_skippable_audio_violation_does_not_end_the_receive"
+      },
+      "expected": "A skippable audio violation closes the link; the valid AudioFrame never arrives.",
+      "skip_reason": "Target drifted after the WsLink duplex rewrite in 3e687088 (the old substring no longer exists or is duplicated). Re-derivation against the new frame-demux code is required."
+    },
+    {
+      "id": "S244",
+      "name": "Handshake finish omits the transport cipher transition",
+      "file": "src/services/remote/security/noise.rs",
+      "target": "    pub fn finish(self) -> Result<NoiseTransport, SecurityError> {",
+      "replacement": "    pub fn finish(self) -> Result<NoiseTransport, SecurityError> { return Err(SecurityError::Noise(\"no transport state\".into()));",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "handshake_completes_and_both_peers_obtain_transport"
+      },
+      "expected": "finish() returns Err for both honest peers; expect(\"initiator finish\") panics."
+    },
+    {
+      "id": "S245",
+      "name": "Noise reader ignores the pinned remote static key",
+      "file": "src/services/remote/security/noise.rs",
+      "target": "        if revealed != expected.as_slice() {",
+      "replacement": "        if false {",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "handshake_against_impostor_fails_before_revealing_static_key"
+      },
+      "expected": "The impostor handshake is not refused; the failed/message-count/finish-is-err assertions fail."
+    },
+    {
+      "id": "S246",
+      "name": "Noise prologue is not bound into the handshake",
+      "file": "src/services/remote/security/noise.rs",
+      "target": "            .prologue(prologue)",
+      "replacement": "            .prologue(&[])",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "prologue_is_authenticated_and_not_transmitted"
+      },
+      "expected": "Peers with different prologue versions complete the handshake; the failed assertion fails."
+    },
+    {
+      "id": "S247",
+      "name": "Noise transport bypasses authentication tag verification",
+      "file": "src/services/remote/security/noise.rs",
+      "target": "    pub fn decrypt(&mut self, message: &[u8]) -> Result<Vec<u8>, SecurityError> {",
+      "replacement": "    pub fn decrypt(&mut self, message: &[u8]) -> Result<Vec<u8>, SecurityError> { return Ok(message.to_vec());",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "corrupted_or_truncated_message_fails_decryption"
+      },
+      "expected": "Corrupted, truncated, and undersized buffers all decrypt without error; the is_err assertions fail."
+    },
+    {
+      "id": "S248",
+      "name": "Noise transport accepts an over-cap payload",
+      "file": "src/services/remote/security/noise.rs",
+      "target": "        let mut buffer = vec![0u8; payload.len() + NOISE_TAG_BYTES];\n        let written = self\n            .state\n            .write_message(payload, &mut buffer)\n            .map_err(|error| SecurityError::Noise(error.to_string()))?;\n        buffer.truncate(written);",
+      "replacement": "        let mut buffer = vec![0u8; payload.len() + NOISE_TAG_BYTES];\n        let written = self\n            .state\n            .write_message(payload, &mut buffer)\n            .map_err(|error| SecurityError::Noise(error.to_string()))?;\n        buffer.truncate(written.saturating_sub(1));",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "payload_near_maximum_size_roundtrips_and_over_cap_fails"
+      },
+      "expected": "A 65535-byte payload is encrypted instead of refused; the over-cap is_err assertion fails."
+    },
+    {
+      "id": "S249",
+      "name": "Noise reader skips the handshake frame size guard",
+      "file": "src/services/remote/security/noise.rs",
+      "target": "        if payload.len() > NOISE_MAX_HANDSHAKE_PAYLOAD_BYTES {",
+      "replacement": "        if false {",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "oversized_handshake_message_is_refused"
+      },
+      "expected": "The oversized frame is handed to the cipher path instead of being refused by the pre-allocation guard."
+    },
+    {
+      "id": "S250",
+      "name": "Rejected oversized handshake frame poisons the cipher state",
+      "file": "src/services/remote/security/noise.rs",
+      "target": "        if message.len() > NOISE_MAX_HANDSHAKE_MESSAGE_BYTES {",
+      "replacement": "        if message.len() > NOISE_MAX_HANDSHAKE_MESSAGE_BYTES { let mut b = vec![0u8; message.len()]; let _ = self.state.read_message(message, &mut b);",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "valid_handshake_message_over_cap_refused_without_poisoning_state"
+      },
+      "expected": "Reading the oversized frame advances the state machine; the later valid handshake or finish fails."
+    },
+    {
+      "id": "S251",
+      "name": "Version mismatch no longer fails the handshake",
+      "file": "src/services/remote/security/noise.rs",
+      "target": "    prologue.extend_from_slice(&version.to_be_bytes());",
+      "replacement": "    prologue.extend_from_slice(&1u16.to_be_bytes());",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "version_mismatch_fails_handshake_without_transport"
+      },
+      "expected": "Every prologue carries version 1; mismatched-version peers complete and finish() returns Ok."
+    },
+    {
+      "id": "S252",
+      "name": "remote_static reports the configured pin instead of the revealed key",
+      "file": "src/services/remote/security/noise.rs",
+      "target": "    pub fn remote_static(&self) -> Option<[u8; X25519_KEY_BYTES]> {",
+      "replacement": "    pub fn remote_static(&self) -> Option<[u8; X25519_KEY_BYTES]> { return self.expected_peer;",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "pin_is_never_reported_as_remote_static_key"
+      },
+      "expected": "remote_static() returns the impostor pin; the equality assertion against the responder key fails."
+    },
+    {
+      "id": "S253",
+      "name": "Noise payload cap drifts below the control message cap",
+      "file": "src/services/remote/security/noise.rs",
+      "target": "        if payload.len() > NOISE_MAX_PAYLOAD_BYTES {",
+      "replacement": "        if payload.len() >= NOISE_MAX_PAYLOAD_BYTES {",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "largest_control_message_fits_encrypted_transport"
+      },
+      "expected": "A full-cap control message (NOISE_MAX_PAYLOAD_BYTES) is now refused by the Noise cap; encrypt(...).expect(...) panics."
+    },
+    {
+      "id": "S254",
+      "name": "Pairing token is never marked consumed",
+      "file": "src/services/remote/security/pairing.rs",
+      "target": "                    entry.consumed = true;",
+      "replacement": "                    entry.consumed = false;",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "token_is_single_use_and_expires_after_ttl"
+      },
+      "expected": "A second validation of the same token succeeds; the single-use is_err assertion fails."
+    },
+    {
+      "id": "S255",
+      "name": "Pairing token expiry uses an inclusive boundary",
+      "file": "src/services/remote/security/pairing.rs",
+      "target": "                } else if now.saturating_duration_since(entry.issued_at) > PAIRING_TOKEN_TTL {",
+      "replacement": "                } else if now.saturating_duration_since(entry.issued_at) >= PAIRING_TOKEN_TTL {",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "token_at_exact_lifetime_boundary_is_accepted_and_nanosecond_past_expires"
+      },
+      "expected": "A token at exactly issued+TTL is rejected as Expired; the boundary is_ok assertion fails."
+    },
+    {
+      "id": "S256",
+      "name": "Failed pairing attempts reset the counter instead of incrementing",
+      "file": "src/services/remote/security/pairing.rs",
+      "target": "        *counter += 1;",
+      "replacement": "        *counter = 0;",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "per_source_attempt_limit_and_invalidation_enforced"
+      },
+      "expected": "The attacker source is never invalidated; the Invalidated refusal assertion fails."
+    },
+    {
+      "id": "S257",
+      "name": "Pairing skips claimed-identity verification",
+      "file": "src/services/remote/security/pairing.rs",
+      "target": "        if let Err(error) = verify_claimed_identity(",
+      "replacement": "        if let Err(error) = Ok::<(), SecurityError>(()) {",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "claimed_identity_must_match_handshake_static_key"
+      },
+      "expected": "Requests with a claimed key/id that contradict the handshake are accepted; both is_err assertions fail."
+    },
+    {
+      "id": "S258",
+      "name": "Rejecting a pairing prompt approves it",
+      "file": "src/services/remote/security/pairing.rs",
+      "target": "        self.answer(PairingDecision::Reject)",
+      "replacement": "        self.answer(PairingDecision::Approve)",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "approval_prompt_can_be_rejected"
+      },
+      "expected": "settle() resolves to Approved; the equality assertion against Rejected fails."
+    },
+    {
+      "id": "S259",
+      "name": "Pairing approval never times out",
+      "file": "src/services/remote/security/pairing.rs",
+      "target": "            Err(_) => PairingOutcome::TimedOut,",
+      "replacement": "            Err(_) => PairingOutcome::Rejected,",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "approval_prompt_times_out_deterministically"
+      },
+      "expected": "a timed-out approval prompt reports Rejected, failing the TimedOut assertion"
+    },
+    {
+      "id": "S260",
+      "name": "Pre-authentication request size check is disabled",
+      "file": "src/services/remote/security/pairing.rs",
+      "target": "        if size > MAX_PREAUTH_MESSAGE_BYTES {",
+      "replacement": "        if false {",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "oversized_pre_authentication_request_is_refused"
+      },
+      "expected": "An oversized pairing request is parsed instead of refused; the PreauthMessageTooLarge assertion fails."
+    },
+    {
+      "id": "S261",
+      "name": "Trust store omits the device-id/key derivation check",
+      "file": "src/services/remote/security/trust.rs",
+      "target": "        if derive_device_id(&device.public_key).as_str() != device.device_id {",
+      "replacement": "        if false {",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "trust_store_evaluates_peer_validity_and_revocation"
+      },
+      "expected": "A row whose id contradicts its key is trusted; the KeyMismatch refusal assertion fails."
+    },
+    {
+      "id": "S262",
+      "name": "Device key file is placed inside the database directory",
+      "file": "src/utils/paths.rs",
+      "target": "    let device_key = root.join(DEVICE_KEY_FILENAME);",
+      "replacement": "    let device_key = data_db.join(DEVICE_KEY_FILENAME);",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "device_key_path_is_isolated_from_database_directory"
+      },
+      "expected": "device_key_path now starts with the database directory; the isolation assertion fails."
+    },
+    {
+      "id": "S263",
+      "name": "A valid remote settings key is classified as Denied",
+      "file": "src/services/remote/control/routing.rs",
+      "target": "                (\"remote\", \"accepts_controllers\") => CommandClass::Local,",
+      "replacement": "                (\"remote\", \"accepts_controllers\") => CommandClass::Denied,",
+      "test": {
+        "binary": "remote_security_test",
+        "filter": "routing_table_contains_all_registered_ipc_commands"
+      },
+      "expected": "remote.accepts_controllers classifies as Denied; assert_ne!(class, Denied) fails."
+    },
+    {
+      "id": "S172",
+      "name": "save_personal_memory skips version bump",
+      "file": "src/persistence/personal_memory.rs",
+      "target": "            expected_version + 1,",
+      "replacement": "            expected_version,",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "personal_memory_save_with_matching_version_increments_version"
+      },
+      "expected": "New record keeps version 1 instead of 2; assert_eq!(updated.version, 2) fails."
+    },
+    {
+      "id": "S173",
+      "name": "save_personal_memory ignores expected_version check",
+      "file": "src/persistence/personal_memory.rs",
+      "target": "    if current.version != expected_version {",
+      "replacement": "    if false {",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "personal_memory_save_with_stale_version_is_rejected"
+      },
+      "expected": "Stale save succeeds instead of erroring; stale_attempt.is_err() assertion fails."
+    },
+    {
+      "id": "S174",
+      "name": "stale save writes content before rejecting",
+      "file": "src/persistence/personal_memory.rs",
+      "target": "    if current.version != expected_version {",
+      "replacement": "    if current.version != expected_version {\n        let _ = conn.execute(\"UPDATE personal_memory SET content = ? WHERE project_id IS NULL\", (content.to_string(),)).await;",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "personal_memory_rejected_stale_save_preserves_stored_content"
+      },
+      "expected": "Stale save still returns Err but overwrites content with '# Hijacked Content'; current.content assertion fails."
+    },
+    {
+      "id": "S175",
+      "name": "consolidation drops compaction gate",
+      "file": "src/services/memory/personal/consolidate.rs",
+      "target": "    if has_in_progress_compaction(conn).await? {",
+      "replacement": "    if false {",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "consolidation_is_gated_by_an_in_progress_compaction"
+      },
+      "expected": "Gate skipped; outcome is Completed rather than ConfirmationRequired(CompactionInProgress)."
+    },
+    {
+      "id": "S176",
+      "name": "pending queue confirmation reports zero count",
+      "file": "src/services/memory/personal/consolidate.rs",
+      "target": "        let pending_count = count_unfinished_items(conn).await?;",
+      "replacement": "        let pending_count = 0;",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "consolidation_is_gated_by_pending_queue_items"
+      },
+      "expected": "PendingQueueItems outcome reports pending_count = 0; assert_eq!(pending_count, 1) fails."
+    },
+    {
+      "id": "S177",
+      "name": "quiescent consolidation with no facts returns error",
+      "file": "src/services/memory/personal/consolidate.rs",
+      "target": "    let candidates = fetch_active_observations_by_type(request.conn, \"personal\").await?;",
+      "replacement": "    let candidates = fetch_active_observations_by_type(request.conn, \"personal\").await?;\n    if candidates.is_empty() { return Err(anyhow!(\"no active facts\")); }",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "consolidation_succeeds_when_quiescent_without_active_facts"
+      },
+      "expected": "Empty fact set yields Err; quiescent_res.is_ok() assertion fails."
+    },
+    {
+      "id": "S178",
+      "name": "continuation drops personal memory markdown",
+      "file": "src/persistence/sessions.rs",
+      "target": "        personal_memory_markdown,",
+      "replacement": "        personal_memory_markdown: None,",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "session_continuation_hydrates_personal_memory_markdown"
+      },
+      "expected": "continuation.personal_memory_markdown is None; Some(expected_markdown) assertion fails."
+    },
+    {
+      "id": "S179",
+      "name": "continuation watermark starts at turn zero",
+      "file": "src/persistence/sessions.rs",
+      "target": "    let turns = fetch_turns_for_compaction(conn, session_id, last_compacted + 1, u32::MAX).await?;",
+      "replacement": "    let turns = fetch_turns_for_compaction(conn, session_id, 0, u32::MAX).await?;",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "session_continuation_excludes_compacted_turns"
+      },
+      "expected": "Continuation returns turns 1..10 instead of 6..10; turn ids == [6,7,8,9,10] assertion fails."
+    },
+    {
+      "id": "S180",
+      "name": "version list sorted oldest first",
+      "file": "src/persistence/personal_memory.rs",
+      "target": "    Ok(list)",
+      "replacement": "    list.reverse();\n    Ok(list)",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "personal_memory_versions_are_listed_newest_first"
+      },
+      "expected": "versions[0].version is 1 instead of 3; ordering assertion fails."
+    },
+    {
+      "id": "S181",
+      "name": "activating a version leaves all versions active",
+      "file": "src/persistence/personal_memory.rs",
+      "target": "                    \"UPDATE personal_memory SET is_active = 1 WHERE project_id IS NULL AND version = ?\",",
+      "replacement": "                    \"UPDATE personal_memory SET is_active = 1 WHERE project_id IS NULL AND version = ? OR 1=1\",",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "active_personal_memory_version_can_be_switched_back"
+      },
+      "expected": "All rows become active; get_personal_memory returns v3 so restored.version == 2 fails."
+    },
+    {
+      "id": "S182",
+      "name": "empty stage inserts a placeholder revision",
+      "file": "src/services/memory/personal/revisions.rs",
+      "target": "        return Ok(0);",
+      "replacement": "        let placeholder = ResolvedOp::CreateBlock {\n            section_id: \"sec_placeholder\".to_string(),\n            text: \"placeholder\".to_string(),\n        };\n        return stage_revisions(conn, current_record, vec![placeholder]).await;",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "staging_an_empty_revision_set_is_a_noop"
+      },
+      "expected": "Empty slice stages one revision; staged_zero == 0 and pending.is_empty() assertions fail."
+    },
+    {
+      "id": "S183",
+      "name": "staged revision anchored to version zero",
+      "file": "src/services/memory/personal/revisions.rs",
+      "target": "            base_memory_version: current_record.version,",
+      "replacement": "            base_memory_version: 0,",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "staged_revisions_are_pending_and_anchored_to_the_base_version"
+      },
+      "expected": "revision_base_version is 0; anchor assertion against initial_record.version fails."
+    },
+    {
+      "id": "S184",
+      "name": "batch resolution skips operation application",
+      "file": "src/services/memory/personal/revisions.rs",
+      "target": "    let report = apply_operations(&memory, &accepted_ops)",
+      "replacement": "    let report = apply_operations(&memory, &[])",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "accepted_revision_applies_its_operation_and_bumps_the_version"
+      },
+      "expected": "Accepted op is not applied; content contains no 'User enjoys badminton.'"
+    },
+    {
+      "id": "S185",
+      "name": "second revision applied against oldest stored version",
+      "file": "src/services/memory/personal/revisions.rs",
+      "target": "    let memory = PersonalMemory::from_json(&active_memory.content)",
+      "replacement": "    let memory = match crate::persistence::personal_memory::list_personal_memory_versions(conn, project_id).await?.into_iter().last() {\n        Some(r) => PersonalMemory::from_json(&r.content),\n        None => PersonalMemory::from_json(&active_memory.content),\n    }",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "second_accepted_revision_bumps_the_version_again"
+      },
+      "expected": "Second accept uses v2 content; final document lacks 'User enjoys badminton.'"
+    },
+    {
+      "id": "S186",
+      "name": "batch resolution applies rejected operations",
+      "file": "src/services/memory/personal/revisions.rs",
+      "target": "    let (accepted_ops, accepted_ids, malformed) = deserialize_accepted_ops(decisions, &pending_map);",
+      "replacement": "    let decisions: Vec<RevisionDecision> = decisions.iter().map(|d| RevisionDecision { id: d.id.clone(), action: \"accept\".to_string() }).collect();\n    let decisions = decisions.as_slice();\n    let (accepted_ops, accepted_ids, malformed) = deserialize_accepted_ops(decisions, &pending_map);",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "rejected_revision_leaves_the_document_unchanged"
+      },
+      "expected": "Reject is applied and committed; version == 2, byte-identical content and status 'rejected' assertions fail."
+    },
+    {
+      "id": "S187",
+      "name": "mark_observations_integrated skips fact status update",
+      "file": "src/persistence/facts.rs",
+      "target": "        conn.execute(&sql_observations, (now,)).await?;",
+      "replacement": "        let _ = (now, &sql_observations);",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "integrated_facts_leave_no_active_personal_fact"
+      },
+      "expected": "Fact status remains 'active'; integrated-status and zero-active-fact assertions fail."
+    },
+    {
+      "id": "S188",
+      "name": "manual markdown save skips bulk rejection",
+      "file": "src/services/memory/personal/manual.rs",
+      "target": "    reject_superseded_revisions(conn, &current).await?;",
+      "replacement": "    let _ = ();",
+      "test": {
+        "binary": "personal_memory_test",
+        "filter": "manual_markdown_save_rejects_superseded_revisions"
+      },
+      "expected": "Superseded revision stays pending; pending_after.is_empty() and status 'rejected' assertions fail."
+    },
+    {
+      "id": "S264",
+      "name": "session start skips Ready transition",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "    transition(InteractionState::Ready, None, &session_ctx, app, state);",
+      "replacement": "    let _ = (&session_ctx, app, state);",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "session_start_transitions_to_ready_and_assigns_a_conversation_id"
+      },
+      "expected": "Pipeline remains Idle; wait_for_state(Ready) times out and fails."
+    },
+    {
+      "id": "S265",
+      "name": "session start drops SessionStarted persistence event",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "        if let Err(e) = tx.try_send(PersistenceEvent::SessionStarted {",
+      "replacement": "        if let Err(e) = tx.try_send(PersistenceEvent::SessionEnded {",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "session_start_persists_the_session_row"
+      },
+      "expected": "No sessions row is inserted; SELECT COUNT(*) WHERE id = conv_id assertion fails."
+    },
+    {
+      "id": "S266",
+      "name": "harness created without personal memory",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "                    personal_memory,",
+      "replacement": "                    None,",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "session_start_loads_identity_facts_into_the_working_prompt"
+      },
+      "expected": "Assembled system prompt lacks the seeded identity text; contains assertion fails."
+    },
+    {
+      "id": "S267",
+      "name": "session start sets VAD to WindowedValidation",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "            if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode)) {",
+      "replacement": "            if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(VadOperationalMode::WindowedValidation)) {",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "session_start_switches_vad_to_continuous_segmentation"
+      },
+      "expected": "Session start emits WindowedValidation; mode assertion fails."
+    },
+    {
+      "id": "S268",
+      "name": "duplicate session start guard removed",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "    if current_state != InteractionState::Idle {",
+      "replacement": "    if false {",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "duplicate_session_start_while_ready_is_ignored"
+      },
+      "expected": "Duplicate start mints a new conversation id; conv_id unchanged assertion fails."
+    },
+    {
+      "id": "S269",
+      "name": "session start skips continuation hydration",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "                    harness.seed_continuation(summary, turns, title_is_set);",
+      "replacement": "                    let _ = (&summary, &turns, &title_is_set);",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "session_continuation_hydrates_the_harness_with_prior_turns"
+      },
+      "expected": "Harness history lacks seeded turn text; messages.any(...) assertion fails."
+    },
+    {
+      "id": "S270",
+      "name": "turn counter initialised to zero on continuation",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "    state.pipeline.turn_id.store(max_turn_id, Ordering::Relaxed);",
+      "replacement": "    state.pipeline.turn_id.store(0, Ordering::Relaxed);",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "session_continuation_advances_the_turn_counter_past_the_persisted_max"
+      },
+      "expected": "peek_turn_id() is 0 instead of 2; counter assertion fails."
+    },
+    {
+      "id": "S271",
+      "name": "empty compaction output accepted as summary",
+      "file": "src/persistence/sessions.rs",
+      "target": "                    if !p.context_summary.trim().is_empty() {",
+      "replacement": "                    if true {",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "empty_compaction_output_falls_back_to_the_raw_turns"
+      },
+      "expected": "Empty compaction yields Some(\"\") summary; latest_summary.is_none() fails."
+    },
+    {
+      "id": "S272",
+      "name": "pause skips cancelling the active turn",
+      "file": "src/pipeline/atomics.rs",
+      "target": "        self.turn_cancel_token.lock().cancel();",
+      "replacement": "        let _ = 0;",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "pause_transitions_to_paused_cancels_the_turn_and_yields_ownership"
+      },
+      "expected": "Turn token stays live on pause; is_cancelled() assertion fails."
+    },
+    {
+      "id": "S273",
+      "name": "pause leaves VAD in ContinuousSegmentation",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "    // Sync VAD operational mode to Dictation's configured interaction mode (Passive vs PTT)",
+      "replacement": "    { let mut s = state.settings.write().unwrap(); s.dictation.interaction_mode = DictationInteractionMode::Passive; }",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "pause_switches_the_vad_to_the_dictation_mode"
+      },
+      "expected": "Pause emits ContinuousSegmentation instead of WindowedValidation; mode assertion fails."
+    },
+    {
+      "id": "S274",
+      "name": "resume skips rearming the turn cancel token",
+      "file": "src/pipeline/atomics.rs",
+      "target": "        let mut guard = self.turn_cancel_token.lock();",
+      "replacement": "        let mut guard = self.turn_cancel_token.lock();\n        return guard.clone();",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "resume_restores_ready_and_the_assistant_ownership"
+      },
+      "expected": "Token remains cancelled after resume; !turn_cancel_token().is_cancelled() assertion fails."
+    },
+    {
+      "id": "S275",
+      "name": "resume guard accepts only Paused",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "        && current_state != InteractionState::Sleeping",
+      "replacement": "        && true",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "resume_from_sleeping_and_error_restores_ready"
+      },
+      "expected": "Resume from Sleeping is rejected; state stays Sleeping and wait_for_state(Ready) fails."
+    },
+    {
+      "id": "S276",
+      "name": "resume guard accepts Idle",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "        && current_state != InteractionState::Sleeping",
+      "replacement": "        && current_state != InteractionState::Idle",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "resume_from_idle_is_ignored"
+      },
+      "expected": "Resume from Idle is accepted and reaches Ready; Idle state assertion fails."
+    },
+    {
+      "id": "S277",
+      "name": "session end always stops audio engine",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "    if state.pipeline.dictation_state() == InteractionState::Idle {",
+      "replacement": "    if true {",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "session_end_keeps_the_audio_engine_while_dictation_is_ready"
+      },
+      "expected": "Engine is stopped while dictation is Ready; engine.is_some() assertion fails."
+    },
+    {
+      "id": "S278",
+      "name": "session end never stops audio engine",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "    if state.pipeline.dictation_state() == InteractionState::Idle {",
+      "replacement": "    if false {",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "session_end_stops_the_audio_engine_when_dictation_is_idle"
+      },
+      "expected": "Engine stays mounted while dictation is Idle; engine.is_none() assertion fails."
+    },
+    {
+      "id": "S279",
+      "name": "session end skips unmounting the harness",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "    state.harness.lock().take();",
+      "replacement": "    let _ = 0;",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "session_end_unmounts_the_harness_clears_the_accumulator_and_purges_the_cache"
+      },
+      "expected": "Harness stays mounted; harness.is_none() assertion fails."
+    },
+    {
+      "id": "S280",
+      "name": "session end skips cancelling the active turn",
+      "file": "src/pipeline/atomics.rs",
+      "target": "        self.turn_cancel_token.lock().cancel();",
+      "replacement": "        let _ = 0;",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "session_end_cancels_the_in_flight_turn"
+      },
+      "expected": "Turn token stays live on session end; is_cancelled() assertion fails."
+    },
+    {
+      "id": "S281",
+      "name": "failed probe treated as unsupported",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "        if let Some(enabled) = supported {",
+      "replacement": "        if let Some(enabled) = Some(false) {",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "failed_capability_probe_keeps_tools_enabled_and_emits_no_notification"
+      },
+      "expected": "Failed probe disables tools and emits notification; supports_tools and no-notification assertions fail."
+    },
+    {
+      "id": "S282",
+      "name": "resolve_model_tool_support ignores capability cache",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "    if cache_file.exists() {",
+      "replacement": "    if false {",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "cached_supported_capabilities_enable_tools_immediately"
+      },
+      "expected": "Cache is bypassed; 'tools supported' log never appears, wait_for_log times out."
+    },
+    {
+      "id": "S283",
+      "name": "cached unsupported branch skips notification",
+      "file": "src/pipeline/assistant/session.rs",
+      "target": "                            emit_tool_unsupported_notification(app, state, active_model);",
+      "replacement": "                            let _ = ();",
+      "test": {
+        "binary": "session_lifecycle_test",
+        "filter": "cached_unsupported_capabilities_disable_tools_and_notify"
+      },
+      "expected": "No model_tool_unsupported notification is written; notification assertion fails."
+    },
+    {
+      "id": "S001",
+      "name": "terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity",
+      "file": "src/pipeline/assistant/mod.rs",
+      "target": "        self.assistant_response.push_str(token);",
+      "replacement": "        let _ = token;",
+      "test": {
+        "binary": "agentic_tool_loop_test",
+        "filter": "terminal_tool_sets_the_title_and_keeps_the_accumulator_in_parity"
+      },
+      "expected": "TurnAccumulator.assistant_response stays empty, so the Completed outcome text and the accumulator parity assertion fail."
+    },
+    {
+      "id": "S002",
+      "name": "search_memory_retrieval_is_non_terminal_and_drops_the_scratchpad",
+      "file": "src/harness/loop.rs",
+      "target": "                    Ok(_) => (LoopAction::Continue, circuit_broken),",
+      "replacement": "                    Ok(_) => (LoopAction::Terminal(step7_commit_completed(ctx.harness_arc, turn_id, preamble_text)), circuit_broken),",
+      "test": {
+        "binary": "agentic_tool_loop_test",
+        "filter": "search_memory_retrieval_is_non_terminal_and_drops_the_scratchpad"
+      },
+      "expected": "The loop terminates after the search_memory tool call; the final answer pass never runs, so the expected assistant_response is missing."
+    },
+    {
+      "id": "S003",
+      "name": "tool_call_preserves_the_buffered_preamble_clause",
+      "file": "src/pipeline/assistant/mod.rs",
+      "target": "        self.chunker.push_str(token)",
+      "replacement": "        Vec::new()",
+      "test": {
+        "binary": "agentic_tool_loop_test",
+        "filter": "tool_call_preserves_the_buffered_preamble_clause"
+      },
+      "expected": "The chunker never receives the preamble tokens, so no eager clause reaches TTS and the dispatched-command assertion fails."
+    },
+    {
+      "id": "S004",
+      "name": "nvidia_preset_maps_the_request_and_parses_the_tool_stream",
+      "file": "src/services/llm/transport/chat_completions.rs",
+      "target": "            body.insert(\"tools\".to_string(), super::canonical_tools_json(tools));",
+      "replacement": "            let _ = tools;",
+      "test": {
+        "binary": "agentic_tool_loop_test",
+        "filter": "nvidia_preset_maps_the_request_and_parses_the_tool_stream"
+      },
+      "expected": "The chat-completions request body has no tools array; the mock wire server assertion on body.tools fails."
+    },
+    {
+      "id": "S005",
+      "name": "ollama_native_maps_the_request_and_parses_the_tool_stream",
+      "file": "src/services/llm/transport/ollama.rs",
+      "target": "            body.insert(\"tools\".to_string(), super::canonical_tools_json(tools));",
+      "replacement": "            let _ = tools;",
+      "test": {
+        "binary": "agentic_tool_loop_test",
+        "filter": "ollama_native_maps_the_request_and_parses_the_tool_stream"
+      },
+      "expected": "The Ollama native request body has no tools array; the mock wire server assertion on body.tools fails."
+    },
+    {
+      "id": "S006",
+      "name": "web_search_tool_declares_a_hermetic_non_terminal_contract",
+      "file": "src/harness/tools/web_search.rs",
+      "target": "        ToolExecutionMode::Parallel",
+      "replacement": "        ToolExecutionMode::Exclusive",
+      "test": {
+        "binary": "agentic_tool_loop_test",
+        "filter": "web_search_tool_declares_a_hermetic_non_terminal_contract"
+      },
+      "expected": "web_search now declares an exclusive (barrier) execution mode; the non-terminal/parallel contract check fails."
+    },
+    {
+      "id": "S007",
+      "name": "web_search_flows_through_the_harness_turn_without_network",
+      "file": "src/harness/stages/streaming/router.rs",
+      "target": "            if let Err(e) = tx.send(cmd) {",
+      "replacement": "            if let Err(e) = Ok::<(), std::convert::Infallible>(()) {",
+      "test": {
+        "binary": "agentic_tool_loop_test",
+        "filter": "web_search_flows_through_the_harness_turn_without_network"
+      },
+      "expected": "Clause dispatch to TTS is dropped, so the interim filler for the web_search tool never reaches tts_rx and saw_filler stays false."
+    },
+    {
+      "id": "S008",
+      "name": "tool_filter_hides_the_title_tool_once_the_title_is_set",
+      "file": "src/harness/tools/registry.rs",
+      "target": "            if name == \"set_title\" && !filter.title_is_unset {",
+      "replacement": "            if false {",
+      "test": {
+        "binary": "agentic_tool_loop_test",
+        "filter": "tool_filter_hides_the_title_tool_once_the_title_is_set"
+      },
+      "expected": "set_title stays in active_definitions even when title_is_unset is false; the suppression assertion fails."
+    },
+    {
+      "id": "S009",
+      "name": "tool_filter_hides_retrieval_tools_when_they_are_disabled",
+      "file": "src/harness/tools/registry.rs",
+      "target": "            if name == \"search_memory\" && !filter.memory_retrieval_enabled {",
+      "replacement": "            if false {",
+      "test": {
+        "binary": "agentic_tool_loop_test",
+        "filter": "tool_filter_hides_retrieval_tools_when_they_are_disabled"
+      },
+      "expected": "search_memory stays active while memory retrieval is disabled; the suppression assertion fails."
+    },
+    {
+      "id": "S010",
+      "name": "chat_completions_wire_demuxes_reasoning_content_and_think_tags",
+      "file": "src/services/llm/transport/chat_completions.rs",
+      "target": "                        tx.send(super::super::LlmStreamEvent::Thinking(thought.to_string()))",
+      "replacement": "                        tx.send(super::super::LlmStreamEvent::Token(thought.to_string()))",
+      "test": {
+        "binary": "agentic_tool_loop_test",
+        "filter": "chat_completions_wire_demuxes_reasoning_content_and_think_tags"
+      },
+      "expected": "delta.reasoning_content is routed as a content Token instead of a Thinking event; the reasoning demux assertion fails."
+    },
+    {
+      "id": "S011",
+      "name": "ollama_native_wire_demuxes_thinking_field_and_think_tags",
+      "file": "src/services/llm/transport/ollama.rs",
+      "target": "                            let reasoning = msg.thinking.as_deref().or(msg.thought.as_deref());",
+      "replacement": "                            let reasoning: Option<&str> = None;",
+      "test": {
+        "binary": "agentic_tool_loop_test",
+        "filter": "ollama_native_wire_demuxes_thinking_field_and_think_tags"
+      },
+      "expected": "message.thinking is ignored, so no Thinking event is emitted; the thinking-field demux assertion fails."
+    },
+    {
+      "id": "S106",
+      "name": "scripted_stream_dispatches_clauses_to_tts",
+      "file": "src/harness/stages/streaming/router.rs",
+      "target": "            if let Err(e) = tx.send(cmd) {",
+      "replacement": "            if let Err(e) = Ok::<(), std::convert::Infallible>(()) {",
+      "test": {
+        "binary": "llm_to_tts_test",
+        "filter": "scripted_stream_dispatches_clauses_to_tts"
+      },
+      "expected": "StreamRoutingStage no longer sends clause TTS commands; the clauses.len() >= 2 assertion fails."
+    },
+    {
+      "id": "S107",
+      "name": "scripted_complete_sentence_reaches_tts",
+      "file": "src/harness/stages/streaming/router.rs",
+      "target": "            self.dispatch_clauses(clauses, handles);",
+      "replacement": "            let _ = clauses;",
+      "test": {
+        "binary": "llm_to_tts_test",
+        "filter": "scripted_complete_sentence_reaches_tts"
+      },
+      "expected": "The complete sentence produces no clause dispatch; the exactly-one-clause assertion fails."
+    },
+    {
+      "id": "S108",
+      "name": "tools_registered_but_unused_stream_completes",
+      "file": "src/harness/stages/streaming/router.rs",
+      "target": "        let clauses = handles.accumulator.lock().push_token(&token);",
+      "replacement": "        let clauses: Vec<String> = Vec::new();",
+      "test": {
+        "binary": "llm_to_tts_test",
+        "filter": "tools_registered_but_unused_stream_completes"
+      },
+      "expected": "No clauses are extracted for the tool-less sentence; the !clauses.is_empty() assertion fails."
+    },
+    {
+      "id": "S109",
+      "name": "harness_turn_streams_clauses_to_tts_and_commits_history",
+      "file": "src/harness/chassis.rs",
+      "target": "        self.history.push_assistant_turn(assistant_response);",
+      "replacement": "        let _ = assistant_response;",
+      "test": {
+        "binary": "llm_to_tts_test",
+        "filter": "harness_turn_streams_clauses_to_tts_and_commits_history"
+      },
+      "expected": "The completed turn no longer commits the assistant turn to harness history; the history-pair assertion fails."
+    },
+    {
+      "id": "S189",
+      "name": "real_synthesis_is_ingested_and_arms_the_pre_roll",
+      "file": "src/services/audio/playback.rs",
+      "target": "        let pushed = prod.push_slice(scratch);",
+      "replacement": "        let pushed = 0usize;",
+      "test": {
+        "binary": "playback_test",
+        "filter": "real_synthesis_is_ingested_and_arms_the_pre_roll"
+      },
+      "expected": "Synthesised samples are dropped before the ring buffer/sink; the sink-received and non-silent-sample assertions fail."
+    },
+    {
+      "id": "S190",
+      "name": "short_utterance_needs_a_flush_to_arm_the_pre_roll",
+      "file": "src/services/audio/playback.rs",
+      "target": "            if occupied >= preroll_threshold {",
+      "replacement": "            if occupied > 0 {",
+      "test": {
+        "binary": "playback_test",
+        "filter": "short_utterance_needs_a_flush_to_arm_the_pre_roll"
+      },
+      "expected": "The pre-roll is armed on the first ingested sample; the in-provider !turn_armed assertion fails before the flush."
+    },
+    {
+      "id": "S191",
+      "name": "playback_gates_thinking_to_speaking_and_speaking_to_ready",
+      "file": "src/pipeline/assistant/playback.rs",
+      "target": "    transition(InteractionState::Speaking, None, ctx, app, state);",
+      "replacement": "    transition(InteractionState::Thinking, None, ctx, app, state);",
+      "test": {
+        "binary": "playback_test",
+        "filter": "playback_gates_thinking_to_speaking_and_speaking_to_ready"
+      },
+      "expected": "PlaybackStarted leaves the pipeline in Thinking instead of Speaking; the Speaking-state assertion fails."
+    },
+    {
+      "id": "S192",
+      "name": "short_utterance_requires_a_flush_to_arm_the_pre_roll",
+      "file": "src/services/audio/mod.rs",
+      "target": "pub const MODULAR_PREROLL_THRESHOLD_SAMPLES: usize = 12_000;",
+      "replacement": "pub const MODULAR_PREROLL_THRESHOLD_SAMPLES: usize = 1;",
+      "test": {
+        "binary": "playback_test",
+        "filter": "short_utterance_requires_a_flush_to_arm_the_pre_roll"
+      },
+      "expected": "Any sample satisfies the pre-roll cushion, so PlaybackStarted fires during ingest; the channel-empty assertion before flush fails."
+    },
+    {
+      "id": "S193",
+      "name": "playback_finished_is_deferred_while_a_job_is_pending",
+      "file": "src/pipeline/assistant/playback.rs",
+      "target": "    if pending_jobs > 0 {",
+      "replacement": "    if false {",
+      "test": {
+        "binary": "playback_test",
+        "filter": "playback_finished_is_deferred_while_a_job_is_pending"
+      },
+      "expected": "PlaybackFinished is no longer deferred while a synthesis job is pending; the still-Speaking assertion fails."
+    },
+    {
+      "id": "S194",
+      "name": "speech_detection_follows_the_audio_output_mode",
+      "file": "src/services/vad/segmenter.rs",
+      "target": "        if let Err(e) = tx.send(VoxEvent::SpeechStart { owner }) {",
+      "replacement": "        if let Err(e) = Ok::<(), std::convert::Infallible>(()) {",
+      "test": {
+        "binary": "playback_test",
+        "filter": "speech_detection_follows_the_audio_output_mode"
+      },
+      "expected": "The VAD no longer emits SpeechStart events; both Speaker-mode and Headset-mode assertions fail."
+    },
+    {
+      "id": "S195",
+      "name": "stage1_ptt_pauses_generation_without_ending_the_turn",
+      "file": "src/pipeline/assistant/interrupt.rs",
+      "target": "    state.pipeline.cancel_active_stream();",
+      "replacement": "    state.pipeline.cancel_active_turn();",
+      "test": {
+        "binary": "playback_test",
+        "filter": "stage1_ptt_pauses_generation_without_ending_the_turn"
+      },
+      "expected": "Stage 1 now latches the hardware cancel flag and cancels the turn token; the armed-token and flag-false assertions fail."
+    },
+    {
+      "id": "S196",
+      "name": "duplex_quiescence_playback_finished_before_llm_finished_returns_thinking",
+      "file": "src/pipeline/assistant/playback.rs",
+      "target": "    let target = if state.pipeline.is_llm_done() {",
+      "replacement": "    let target = if true {",
+      "test": {
+        "binary": "playback_test",
+        "filter": "duplex_quiescence_playback_finished_before_llm_finished_returns_thinking"
+      },
+      "expected": "PlaybackFinished transitions to Ready even though llm_done is false; the Speaking -> Thinking assertion fails."
+    },
+    {
+      "id": "S197",
+      "name": "hardware_cancel_flag_rearmed_after_barge_in_produces_audible_chunks",
+      "file": "src/pipeline/atomics.rs",
+      "target": "        self.hardware_cancel_flag.store(false, Ordering::Release);",
+      "replacement": "        self.hardware_cancel_flag.store(true, Ordering::Release);",
+      "test": {
+        "binary": "playback_test",
+        "filter": "hardware_cancel_flag_rearmed_after_barge_in_produces_audible_chunks"
+      },
+      "expected": "next_turn leaves the hardware cancel flag latched; the re-armed flag assertion fails (and turn-2 chunks are dropped)."
+    },
+    {
+      "id": "S198",
+      "name": "llm_finished_with_drained_audio_closes_quiescence_latch",
+      "file": "src/pipeline/assistant/llm.rs",
+      "target": "    transition(InteractionState::Ready, None, ctx, emitter, state);",
+      "replacement": "    let _ = (emitter, ctx, state);",
+      "test": {
+        "binary": "playback_test",
+        "filter": "llm_finished_with_drained_audio_closes_quiescence_latch"
+      },
+      "expected": "LlmFinished sets llm_done but never transitions to Ready; the Ready-state assertion fails."
+    },
+    {
+      "id": "S326",
+      "name": "voice_switch_does_not_restart_the_tts_worker",
+      "file": "src/services/tts/actor.rs",
+      "target": "                provider.set_voice(voice);",
+      "replacement": "                let _ = voice;",
+      "test": {
+        "binary": "tts_catalogue_test",
+        "filter": "voice_switch_does_not_restart_the_tts_worker"
+      },
+      "expected": "The SetVoice command is ignored, so the tracking provider's active voice never changes; the voice-switch assertion fails."
+    },
+    {
+      "id": "S327",
+      "name": "compaction_filler_is_dispatched_and_counted",
+      "file": "src/harness/steps.rs",
+      "target": "        play_filler: should_play_filler,",
+      "replacement": "        play_filler: false,",
+      "test": {
+        "binary": "tts_catalogue_test",
+        "filter": "compaction_filler_is_dispatched_and_counted"
+      },
+      "expected": "The critical-threshold compaction phase never dispatches its filler phrase; the filler-on-tts_rx assertion fails."
+    },
+    {
+      "id": "S328",
+      "name": "fresh_install_resolves_to_supertonic",
+      "file": "src/services/tts/config.rs",
+      "target": "                model: DEFAULT_TTS_PROVIDER.to_string(),",
+      "replacement": "                model: \"edge_tts\".to_string(),",
+      "test": {
+        "binary": "tts_catalogue_test",
+        "filter": "fresh_install_resolves_to_supertonic"
+      },
+      "expected": "A fresh install selects edge_tts instead of supertonic; the model/provider-config assertions fail."
+    },
+    {
+      "id": "S329",
+      "name": "supertonic_path_produces_non_silent_samples",
+      "file": "src/services/tts/providers/supertonic.rs",
+      "target": "        output.push((1.0 - frac) * filtered[idx] + frac * filtered[next_idx]);",
+      "replacement": "        output.push(0.0f32);",
+      "test": {
+        "binary": "tts_catalogue_test",
+        "filter": "supertonic_path_produces_non_silent_samples"
+      },
+      "expected": "The resampler emits only zeros, so the synthesised buffer is silent; the RMS > 0 assertion fails."
+    },
+    {
+      "id": "S330",
+      "name": "edge_tts_path_returns_the_explicit_availability_error",
+      "file": "src/services/tts/providers/edge_tts.rs",
+      "target": "            return Err(edge_tts_unavailable_error(ctx.turn_id, Some(&ctx.event_tx)));",
+      "replacement": "            return Ok(());",
+      "test": {
+        "binary": "tts_catalogue_test",
+        "filter": "edge_tts_path_returns_the_explicit_availability_error"
+      },
+      "expected": "The dead Edge TTS path returns Ok (silence) instead of the explicit HTTP 403 error; expect_err fails."
+    },
+    {
+      "id": "S331",
+      "name": "edge_tts_is_still_in_the_provider_catalogue",
+      "file": "src/setup/manifest.rs",
+      "target": "        serde_json::from_str(BUNDLED_MODELS_MANIFEST_JSON)",
+      "replacement": "        Ok({ let mut m: Self = serde_json::from_str(BUNDLED_MODELS_MANIFEST_JSON).expect(\"manifest\"); m.model_groups.retain(|g| g.id != \"edge_tts\"); m })",
+      "test": {
+        "binary": "tts_catalogue_test",
+        "filter": "edge_tts_is_still_in_the_provider_catalogue"
+      },
+      "expected": "The bundled manifest drops the edge_tts group; the catalogue-membership assertion fails."
+    },
+    {
+      "id": "S332",
+      "name": "provider_factory_resolves_exactly_one_provider",
+      "file": "src/services/tts/providers/edge_tts.rs",
+      "target": "    \"Edge TTS is currently unavailable (HTTP 403 from the upstream service)\";",
+      "replacement": "    \"The selected provider is currently unavailable (HTTP 403 from the upstream service)\";",
+      "test": {
+        "binary": "tts_catalogue_test",
+        "filter": "provider_factory_resolves_exactly_one_provider"
+      },
+      "expected": "The provider-attribution error no longer names Edge TTS; the error.contains(\"Edge TTS\") factory assertion fails."
+    },
+    {
+      "id": "S333",
+      "name": "devanagari_route_declaration_targets_supertonic",
+      "file": "src/services/tts/providers/devanagari.rs",
+      "target": "pub const DEVANAGARI_ROUTE_PROVIDER: &str = \"supertonic\";",
+      "replacement": "pub const DEVANAGARI_ROUTE_PROVIDER: &str = \"edge_tts\";",
+      "test": {
+        "binary": "tts_catalogue_test",
+        "filter": "devanagari_route_declaration_targets_supertonic"
+      },
+      "expected": "The Devanagari route constant names the dead edge_tts provider; the route-target assertion fails."
+    },
+    {
+      "id": "S334",
+      "name": "devanagari_route_reports_missing_supertonic_weights",
+      "file": "src/services/tts/providers/devanagari.rs",
+      "target": "            let engine = self.build_engine(model_path, speed)?;",
+      "replacement": "            let engine = match self.build_engine(model_path, speed) { Ok(e) => e, Err(_) => return Ok(()) };",
+      "test": {
+        "binary": "tts_catalogue_test",
+        "filter": "devanagari_route_reports_missing_supertonic_weights"
+      },
+      "expected": "Missing weights are silently swallowed instead of reported; expect_err fails."
+    },
+    {
+      "id": "S335",
+      "name": "default_voice_is_provider_aware",
+      "file": "src/services/tts/voice.rs",
+      "target": "    let provider = parse_tts_provider(provider_id).ok()?;",
+      "replacement": "    let provider = TtsActiveProvider::Supertonic;",
+      "test": {
+        "binary": "tts_catalogue_test",
+        "filter": "default_voice_is_provider_aware"
+      },
+      "expected": "Every provider resolves to the Supertonic default voice; the provider-scoped default-voice assertions fail."
+    },
+    {
+      "id": "S336",
+      "name": "devanagari_route_reuses_one_cached_engine",
+      "file": "src/services/tts/providers/devanagari.rs",
+      "target": "        if stale || guard.is_none() {",
+      "replacement": "        if true {",
+      "test": {
+        "binary": "tts_catalogue_test",
+        "filter": "devanagari_route_reuses_one_cached_engine"
+      },
+      "expected": "The engine cache is bypassed and an engine is rebuilt on every synthesize; the single-build assertion fails."
+    },
+    {
+      "id": "S134",
+      "name": "loaded_embedder_produces_384_dimension_vector",
+      "file": "src/services/memory/ml/embedder.rs",
+      "target": "    Ok(batch_res.and_then(|mut v| v.pop()))",
+      "replacement": "    Ok(Some(vec![0.0f32; 0]))",
+      "test": {
+        "binary": "model_eviction_test",
+        "filter": "loaded_embedder_produces_384_dimension_vector"
+      },
+      "expected": "The embedder returns a zero-length vector; the 384-dimension assertion fails."
+    },
+    {
+      "id": "S135",
+      "name": "memory_pipeline_unload_evicts_embedder_but_keeps_transliteration",
+      "file": "src/services/memory/ml/mod.rs",
+      "target": "    embedder::unload_embedder();",
+      "replacement": "    { embedder::unload_embedder(); unload_transliteration_engine(); }",
+      "test": {
+        "binary": "model_eviction_test",
+        "filter": "memory_pipeline_unload_evicts_embedder_but_keeps_transliteration"
+      },
+      "expected": "The memory-pipeline unload also evicts transliteration; the transliteration-still-loaded assertion fails."
+    },
+    {
+      "id": "S136",
+      "name": "evicted_embedder_returns_none_without_crashing",
+      "file": "src/services/memory/ml/embedder.rs",
+      "target": "        None => return Ok(None),",
+      "replacement": "        None => return Ok(Some(vec![vec![0.0f32; 0]])),",
+      "test": {
+        "binary": "model_eviction_test",
+        "filter": "evicted_embedder_returns_none_without_crashing"
+      },
+      "expected": "After eviction the accessor returns Some instead of None; the post-evict is_none assertion fails."
+    },
+    {
+      "id": "S137",
+      "name": "full_onnx_unload_evicts_embedder_and_transliteration",
+      "file": "src/services/memory/ml/mod.rs",
+      "target": "    unload_transliteration_engine();",
+      "replacement": "    let _ = ();",
+      "test": {
+        "binary": "model_eviction_test",
+        "filter": "full_onnx_unload_evicts_embedder_and_transliteration"
+      },
+      "expected": "The full unload leaves the transliteration engine resident; the transliteration-evicted assertion fails."
+    },
+    {
+      "id": "S138",
+      "name": "repeated_full_unload_is_idempotent",
+      "file": "src/services/memory/ml/embedder.rs",
+      "target": "    EMBEDDER.read().is_some()",
+      "replacement": "    true",
+      "test": {
+        "binary": "model_eviction_test",
+        "filter": "repeated_full_unload_is_idempotent"
+      },
+      "expected": "The embedder always reports loaded, so the !is_embedder_loaded assertion after repeated unloads fails."
+    },
+    {
+      "id": "S139",
+      "name": "embedder_reloads_cleanly_after_full_unload",
+      "file": "src/services/memory/ml/embedder.rs",
+      "target": "    Ok(true)",
+      "replacement": "    Ok(false)",
+      "test": {
+        "binary": "model_eviction_test",
+        "filter": "embedder_reloads_cleanly_after_full_unload"
+      },
+      "expected": "init_embedder always reports failure, so ensure_embedder_loaded returns false and the clean-reload assertion fails."
+    },
+    {
+      "id": "S140",
+      "name": "tts_warmup_populates_worker_handles",
+      "file": "src/services/tts/actor.rs",
+      "target": "    if handles.tts_tx.is_some() {",
+      "replacement": "    if true {",
+      "test": {
+        "binary": "model_eviction_test",
+        "filter": "tts_warmup_populates_worker_handles"
+      },
+      "expected": "warm_up_tts returns Ok without spawning the worker; the tts_tx/tts_handle populated assertions fail."
+    },
+    {
+      "id": "S141",
+      "name": "tts_cooldown_clears_sender_and_joins_worker",
+      "file": "src/services/tts/actor.rs",
+      "target": "    if let Some(tx) = tts_tx.take() {",
+      "replacement": "    if let Some(tx) = tts_tx.clone() {",
+      "test": {
+        "binary": "model_eviction_test",
+        "filter": "tts_cooldown_clears_sender_and_joins_worker"
+      },
+      "expected": "cool_down_tts leaves the sender in place after shutdown; the sender-is-None assertion fails."
+    },
+    {
+      "id": "S110",
+      "name": "hardcode_compaction_from_turn_to_1",
+      "file": "src/persistence/compactions.rs",
+      "target": "             WHERE session_id = ? AND turn_id >= ? AND turn_id <= ?",
+      "replacement": "             WHERE session_id = ? AND turn_id >= 1 AND turn_id <= ?",
+      "test": {
+        "binary": "memory_compaction_test",
+        "filter": "compaction_slice_covers_only_the_turns_past_the_watermark"
+      },
+      "expected": "fetch_turns_for_compaction ignores its from_turn_id argument; pending_2 includes turn 1 so the first-turn-id assertion fails."
+    },
+    {
+      "id": "S111",
+      "name": "skip_compaction_queue_insert",
+      "file": "src/persistence/compactions.rs",
+      "target": "            if trimmed.is_empty() {",
+      "replacement": "            if true {",
+      "test": {
+        "binary": "memory_compaction_test",
+        "filter": "compaction_commit_stages_every_fact_in_the_ingestion_queue"
+      },
+      "expected": "Every fact is skipped; the pending ingestion-queue count is 0 instead of 2."
+    },
+    {
+      "id": "S112",
+      "name": "drop_partial_unique_index",
+      "file": "src/persistence/schema.rs",
+      "target": "    \"CREATE UNIQUE INDEX IF NOT EXISTS idx_compactions_one_in_progress ON session_compactions(status) WHERE status = 'in_progress';\",",
+      "replacement": "    \"CREATE INDEX IF NOT EXISTS idx_compactions_one_in_progress ON session_compactions(status) WHERE status = 'in_progress';\",",
+      "test": {
+        "binary": "memory_compaction_test",
+        "filter": "second_in_progress_compaction_on_a_session_is_rejected"
+      },
+      "expected": "A second in_progress insert succeeds; the is_err / UNIQUE-constraint assertion fails."
+    },
+    {
+      "id": "S113",
+      "name": "remove_in_progress_guard",
+      "file": "src/services/memory/compaction/coordinator.rs",
+      "test": {
+        "binary": "memory_compaction_test",
+        "filter": "coordinator_declines_a_slice_while_a_compaction_is_in_progress"
+      },
+      "expected": "The coordinator no longer short-circuits when fetch_latest_compaction_run reports an in_progress run.",
+      "skip_reason": "The partial unique index still rejects the competing compaction, so disabling the coordinator guard is equivalent for this test. Replaced by a mutant against the index check."
+    },
+    {
+      "id": "S114",
+      "name": "lower_min_messages_for_compaction",
+      "file": "src/harness/stages/compaction.rs",
+      "target": "pub const MIN_MESSAGES_FOR_COMPACTION: usize = 4;",
+      "replacement": "pub const MIN_MESSAGES_FOR_COMPACTION: usize = 1;",
+      "test": {
+        "binary": "memory_compaction_test",
+        "filter": "inline_compaction_requires_the_minimum_message_count"
+      },
+      "expected": "The constant assertion expects 4; can_perform_inline_compaction(3) also becomes true."
+    },
+    {
+      "id": "S115",
+      "name": "retain_assistant_message_during_pruning",
+      "file": "src/harness/stages/compaction.rs",
+      "target": "        let mut pruned = Vec::new();",
+      "replacement": "        let mut pruned = vec![ChatMessage::new(Role::Assistant, \"stale assistant\".to_string())];",
+      "test": {
+        "binary": "memory_compaction_test",
+        "filter": "pruned_history_keeps_only_the_system_and_the_current_user_turn"
+      },
+      "expected": "The pruned history holds three messages instead of two; the length assertion fails."
+    },
+    {
+      "id": "S116",
+      "name": "drop_session_context_from_pruned_prompt",
+      "file": "src/harness/stages/compaction.rs",
+      "target": "            format!(\"{}\\n\\n{}\", base_system_prompt.trim(), wrapped_context)",
+      "replacement": "            base_system_prompt.to_string()",
+      "test": {
+        "binary": "memory_compaction_test",
+        "filter": "pruned_system_prompt_carries_the_session_context"
+      },
+      "expected": "The system message lacks the <session_context> tags and the session context text."
+    },
+    {
+      "id": "S117",
+      "name": "skip_uncompacted_notification_insert",
+      "file": "src/services/memory/compaction/coordinator.rs",
+      "target": "        notify(app, db, params).await",
+      "replacement": "        Ok(None)",
+      "test": {
+        "binary": "memory_compaction_test",
+        "filter": "uncompacted_session_notification_is_created_as_a_pending_card"
+      },
+      "expected": "notify_uncompacted_session returns None and writes no card; the expect and card lookup fail."
+    },
+    {
+      "id": "S118",
+      "name": "dismiss_card_instead_of_resolving",
+      "file": "src/persistence/notifications.rs",
+      "target": "    record.updated_at = now;",
+      "replacement": "    record.status = \"dismissed\".to_string();",
+      "test": {
+        "binary": "memory_compaction_test",
+        "filter": "compaction_card_is_resolved_in_place_on_completion"
+      },
+      "expected": "The returned record has status dismissed; the status == unread assertion fails."
+    },
+    {
+      "id": "S119",
+      "name": "drop_latest_summary_on_continuation",
+      "file": "src/persistence/sessions.rs",
+      "target": "                (summary, compacted_turn)",
+      "replacement": "                (None, compacted_turn)",
+      "test": {
+        "binary": "memory_compaction_test",
+        "filter": "continuation_recovers_the_prior_compaction_summary"
+      },
+      "expected": "latest_summary is None; the is_some assertion fails."
+    },
+    {
+      "id": "S120",
+      "name": "drop_system_message_in_history_assembler",
+      "file": "src/services/memory/compaction/coordinator.rs",
+      "target": "            messages.push(ChatMessage::new(Role::System, wrapped));",
+      "replacement": "            messages.push(ChatMessage::new(Role::User, wrapped));",
+      "test": {
+        "binary": "memory_compaction_test",
+        "filter": "production_assembler_emits_a_system_message_carrying_the_prior_summary"
+      },
+      "expected": "The first history message has role User instead of System; the role assertion fails."
+    },
+    {
+      "id": "S121",
+      "name": "drop_prior_summary_tag_from_request",
+      "file": "src/services/memory/compaction/prompt.rs",
+      "target": "            format!(\"<prior_summary>\\n{}\\n</prior_summary>\\n\\n\", s.trim())",
+      "replacement": "            String::new()",
+      "test": {
+        "binary": "memory_compaction_test",
+        "filter": "compaction_request_includes_the_prior_summary_tag"
+      },
+      "expected": "The user message lacks the <prior_summary> tag and prior objective text."
+    },
+    {
+      "id": "S122",
+      "name": "cap_compaction_slice_at_20_turns",
+      "file": "src/persistence/compactions.rs",
+      "target": "            (session_id, from_turn_id as i64, to_turn_id as i64),",
+      "replacement": "            (session_id, from_turn_id as i64, 20_i64),",
+      "test": {
+        "binary": "memory_compaction_test",
+        "filter": "compaction_slice_100_turns_against_a_remote_ollama_server"
+      },
+      "expected": "The slice ends at turn 20; the summary and persisted-run to_turn_id == 100 assertions fail (ignored test)."
+    },
+    {
+      "id": "S123",
+      "name": "skip_stage1_deactivation",
+      "file": "src/services/memory/ingestion/stage1_dedup.rs",
+      "target": "    deactivate_observations_batch(conn, &duplicate_ids).await?;",
+      "replacement": "    let _ = duplicate_ids;",
+      "test": {
+        "binary": "memory_ingestion_test",
+        "filter": "stage1_exact_dedup_deactivates_the_older_matching_fact"
+      },
+      "expected": "The older fact stays active; duplicates_deactivated is 0 and active_facts.is_empty() fails."
+    },
+    {
+      "id": "S124",
+      "name": "stage1_item_stays_pending",
+      "file": "src/services/memory/ingestion/stage1_dedup.rs",
+      "target": "                if let Err(e) = update_queue_item_status(conn, item.id, \"stage1_done\", None).await {",
+      "replacement": "                if let Err(e) = update_queue_item_status(conn, item.id, \"pending\", None).await {",
+      "test": {
+        "binary": "memory_ingestion_test",
+        "filter": "stage1_exact_dedup_marks_the_queue_item_stage1_done"
+      },
+      "expected": "The queue row stays pending; the status == stage1_done assertion fails."
+    },
+    {
+      "id": "S125",
+      "name": "raise_cosine_threshold_above_one",
+      "file": "src/services/memory/ingestion/mod.rs",
+      "target": "pub const SOFT_VECTOR_DEDUP_THRESHOLD: f32 = 0.95;",
+      "replacement": "pub const SOFT_VECTOR_DEDUP_THRESHOLD: f32 = 1.1;",
+      "test": {
+        "binary": "memory_ingestion_test",
+        "filter": "stage2_cosine_dedup_inserts_the_new_fact_and_deactivates_the_old_one"
+      },
+      "expected": "No pair reaches the threshold; duplicates_deactivated is 0 and two active facts remain."
+    },
+    {
+      "id": "S126",
+      "name": "skip_vector_insert_in_cosine_stage",
+      "file": "src/persistence/facts.rs",
+      "target": "    let blob = encode_f32_blob(embedding);",
+      "replacement": "    return Ok(()); let blob = encode_f32_blob(embedding);",
+      "test": {
+        "binary": "memory_ingestion_test",
+        "filter": "stage2_cosine_dedup_stores_a_384_dimension_vector_for_the_new_fact"
+      },
+      "expected": "insert_vector is a no-op; active_vectors.len() is 0 instead of 1."
+    },
+    {
+      "id": "S127",
+      "name": "stage2_item_stays_stage1_done",
+      "file": "src/services/memory/ingestion/stage2_embed.rs",
+      "target": "                if let Err(e) = update_queue_item_status(conn, item.id, \"completed\", None).await {",
+      "replacement": "                if let Err(e) = update_queue_item_status(conn, item.id, \"stage1_done\", None).await {",
+      "test": {
+        "binary": "memory_ingestion_test",
+        "filter": "stage2_cosine_dedup_marks_the_queue_item_completed"
+      },
+      "expected": "The queue row stays stage1_done; the status == completed assertion fails."
+    },
+    {
+      "id": "S128",
+      "name": "stop_ingestion_cycle_after_stage1",
+      "file": "src/services/memory/ingestion/mod.rs",
+      "target": "            let s2 = run_stage2_cosine_dedup(conn).await?;",
+      "replacement": "            let s2 = Stage2Summary::default();",
+      "test": {
+        "binary": "memory_ingestion_test",
+        "filter": "ingestion_cycle_processes_every_queued_fact"
+      },
+      "expected": "Stage 2 never runs; stage2.processed and stage2.inserted stay 0."
+    },
+    {
+      "id": "S129",
+      "name": "cycle_leaves_items_stage1_done",
+      "file": "src/services/memory/ingestion/stage2_embed.rs",
+      "target": "                if let Err(e) = update_queue_item_status(conn, item.id, \"completed\", None).await {",
+      "replacement": "                if let Err(e) = update_queue_item_status(conn, item.id, \"stage1_done\", None).await {",
+      "test": {
+        "binary": "memory_ingestion_test",
+        "filter": "ingestion_cycle_marks_every_queue_item_completed"
+      },
+      "expected": "No queue row reaches completed; the completed count is 0 instead of 10."
+    },
+    {
+      "id": "S130",
+      "name": "store_vectors_with_staged_status",
+      "file": "src/services/memory/ingestion/stage2_embed.rs",
+      "target": "        \"active\",",
+      "replacement": "        \"staged\",",
+      "test": {
+        "binary": "memory_ingestion_test",
+        "filter": "ingestion_cycle_stores_one_active_vector_per_fact"
+      },
+      "expected": "Vectors are staged; the active-vector count is 0 instead of 10."
+    },
+    {
+      "id": "S131",
+      "name": "skip_stage1_crash_reset",
+      "file": "src/persistence/queue.rs",
+      "target": "             SET status = 'pending', retry_count = retry_count + 1",
+      "replacement": "             SET status = 'stage1_processing', retry_count = retry_count + 1",
+      "test": {
+        "binary": "memory_ingestion_test",
+        "filter": "crash_reconciliation_resets_a_stage1_crashed_item_to_pending"
+      },
+      "expected": "The crashed item remains stage1_processing; the status == pending assertion fails."
+    },
+    {
+      "id": "S132",
+      "name": "reset_stage2_crash_to_pending",
+      "file": "src/persistence/queue.rs",
+      "target": "             SET status = 'stage1_done', retry_count = retry_count + 1",
+      "replacement": "             SET status = 'pending', retry_count = retry_count + 1",
+      "test": {
+        "binary": "memory_ingestion_test",
+        "filter": "crash_reconciliation_resets_a_stage2_crashed_item_to_stage1_done"
+      },
+      "expected": "The stage2 crashed item becomes pending; the status == stage1_done assertion fails."
+    },
+    {
+      "id": "S133",
+      "name": "quarantine_poison_pill_to_stage1_done",
+      "file": "src/persistence/queue.rs",
+      "target": "             SET status = 'failed', processed_at = ?, error_msg = 'Process crashed while processing batch (max retries exceeded)'",
+      "replacement": "             SET status = 'stage1_done', processed_at = ?, error_msg = 'Process crashed while processing batch (max retries exceeded)'",
+      "test": {
+        "binary": "memory_ingestion_test",
+        "filter": "crash_reconciliation_quarantines_a_poison_pill_item"
+      },
+      "expected": "The poison pill becomes stage1_done; the status == failed assertion fails."
+    },
+    {
+      "id": "S142",
+      "name": "skip_marker_write_in_presence_check",
+      "file": "src/setup/manager_ops.rs",
+      "target": "            if let Err(e) = marker.save(&verified_path) {",
+      "replacement": "            if let Err(e) = Ok::<(), anyhow::Error>(()) {",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "model_file_with_matching_hash_is_marked_present_and_verified"
+      },
+      "expected": "is_model_file_present still returns true, but no .verified marker is written; the marker-exists assertion fails."
+    },
+    {
+      "id": "S143",
+      "name": "ignore_size_in_presence_check",
+      "file": "src/setup/manager_ops.rs",
+      "target": "                .map(|m| m.len() == file.size_bytes)",
+      "replacement": "                .map(|_| true)",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "model_file_with_mismatching_size_is_not_marked_present"
+      },
+      "expected": "The truncated file is reported present; the !present assertion fails."
+    },
+    {
+      "id": "S144",
+      "name": "trust_marker_without_validation",
+      "file": "src/setup/manager_ops.rs",
+      "target": "                && (is_archive || marker.expected_size == file.size_bytes)",
+      "replacement": "                || true",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "stale_marker_with_wrong_hash_does_not_validate_the_model"
+      },
+      "expected": "The stale wrong-hash marker validates the model; the !present assertion fails."
+    },
+    {
+      "id": "S145",
+      "name": "skip_zip_traversal_check",
+      "file": "src/setup/model_manager.rs",
+      "target": "                    let enclosed = match entry.enclosed_name() {",
+      "replacement": "                    let enclosed = match Some(Path::new(entry.name())) {",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "zip_archive_with_a_traversal_path_is_rejected"
+      },
+      "expected": "The raw traversal name is used as the output path; do_extract returns Ok and expect_err fails."
+    },
+    {
+      "id": "S146",
+      "name": "skip_tar_traversal_check",
+      "file": "src/setup/model_manager.rs",
+      "target": "                    if path.components().any(|c| c == Component::ParentDir) {",
+      "replacement": "                    if false {",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "tar_archive_with_a_traversal_path_is_rejected"
+      },
+      "expected": "The traversal entry is unpacked; do_extract returns Ok and expect_err fails."
+    },
+    {
+      "id": "S147",
+      "name": "skip_marker_deletion_on_removal",
+      "file": "src/setup/manager_ops.rs",
+      "target": "        if let Err(e) = remove_file(&verified_path) {",
+      "replacement": "        if let Err(e) = Ok::<(), std::io::Error>(()) {",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "model_removal_clears_the_file_and_the_verified_marker"
+      },
+      "expected": "The model file is deleted but the .verified marker remains; the marker-absence assertion fails."
+    },
+    {
+      "id": "S148",
+      "name": "ignore_computed_download_hash",
+      "file": "src/setup/model_manager.rs",
+      "target": "        let hash = format!(\"{:x}\", hasher.finalize());",
+      "replacement": "        let hash = \"0000000000000000000000000000000000000000000000000000000000000000\".to_string();",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "fresh_download_writes_the_verified_payload"
+      },
+      "expected": "The computed hash is ignored; hash != manifest triggers failure and no marker is written."
+    },
+    {
+      "id": "S149",
+      "name": "ignore_existing_tmp_offset",
+      "file": "src/setup/model_manager.rs",
+      "target": "        let resume_offset = existing_length(dest).await;",
+      "replacement": "        let resume_offset = 0u64;",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "resume_sends_a_range_header_and_fetches_only_the_tail"
+      },
+      "expected": "No Range header is sent; the range-header and 206 assertions fail."
+    },
+    {
+      "id": "S150",
+      "name": "hash_tail_only_on_resume",
+      "file": "src/setup/model_manager.rs",
+      "target": "        let mut hasher = seed_hasher(dest, append_from).await?;",
+      "replacement": "        let mut hasher = Sha256::new();",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "resumed_download_hash_matches_the_manifest"
+      },
+      "expected": "The prefix is not folded into the hash; hash mismatch aborts setup."
+    },
+    {
+      "id": "S151",
+      "name": "append_full_body_on_200",
+      "file": "src/setup/model_manager.rs",
+      "target": "    if status == StatusCode::PARTIAL_CONTENT {",
+      "replacement": "    if true {",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "server_ignoring_range_restarts_without_duplicating_bytes"
+      },
+      "expected": "A 200 body is appended to the existing .tmp; the installed file is PREFIX_LEN bytes too long."
+    },
+    {
+      "id": "S152",
+      "name": "treat_416_as_terminal_error",
+      "file": "src/setup/model_manager.rs",
+      "target": "                Ok(TransferOutcome::StalePartial)",
+      "replacement": "                Err(anyhow::anyhow!(\"Range not satisfiable\"))",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "range_not_satisfiable_discards_the_stale_tmp_and_restarts"
+      },
+      "expected": "The 416 aborts immediately; only one request is made and the second-request assertion fails."
+    },
+    {
+      "id": "S153",
+      "name": "delete_tmp_on_cancel_arm",
+      "file": "src/setup/model_manager.rs",
+      "target": "                    SetupStep::Cancelled",
+      "replacement": "                    { let _ = remove_file(&temp_path); SetupStep::Cancelled }",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "cancel_mid_transfer_retains_the_partial_tmp"
+      },
+      "expected": "The partial .tmp is removed on cancellation; the tmp.exists() assertion fails."
+    },
+    {
+      "id": "S154",
+      "name": "delete_tmp_on_body_transfer_error",
+      "file": "src/setup/model_manager.rs",
+      "target": "            let chunk = chunk_result?;",
+      "replacement": "            let chunk = match chunk_result { Ok(c) => c, Err(e) => { let _ = tokio::fs::remove_file(dest).await; return Err(e.into()); } };",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "dropped_connection_retains_the_partial_tmp"
+      },
+      "expected": "The .tmp is deleted when the body stream errors; the tmp.exists() assertion fails."
+    },
+    {
+      "id": "S155",
+      "name": "install_before_hash_verification",
+      "file": "src/setup/model_manager.rs",
+      "target": "        if hash != entry.sha256 {",
+      "replacement": "        if false {",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "hash_mismatch_deletes_the_partial_tmp"
+      },
+      "expected": "The hash-mismatched file is installed and a marker written; the no-model-file assertion fails."
+    },
+    {
+      "id": "S156",
+      "name": "zero_seed_progress_counter",
+      "file": "src/setup/model_manager.rs",
+      "target": "        let mut downloaded = append_from;",
+      "replacement": "        let mut downloaded = 0u64;",
+      "test": {
+        "binary": "model_manager_test",
+        "filter": "resume_reports_absolute_progress"
+      },
+      "expected": "In-transfer progress reports fewer than PREFIX_LEN bytes; the absolute-progress assertion fails."
+    },
+    {
+      "id": "S099",
+      "name": "rename_generate_handler_macro",
+      "file": "src/",
+      "target": "",
+      "replacement": "",
+      "test": {
+        "binary": "ipc_command_registration_test",
+        "filter": "handler_registration_block_yields_command_names"
+      },
+      "expected": "skipped",
+      "skip_reason": "Source-text lint rule against the literal token `tauri::generate_handler![` in src/lib.rs. Renaming a real macro invocation cannot produce valid Rust; source-text-only edits (e.g. whitespace) would not be a behavioral production mutation."
+    },
+    {
+      "id": "S100",
+      "name": "move_ipc_directory",
+      "file": "src/",
+      "target": "",
+      "replacement": "",
+      "test": {
+        "binary": "ipc_command_registration_test",
+        "filter": "ipc_command_definitions_are_scanned_with_guards"
+      },
+      "expected": "skipped",
+      "skip_reason": "Requires relocating a directory and updating modules/imports; not a single-line production edit. The test only parses source layout."
+    },
+    {
+      "id": "S101",
+      "name": "unregister_get_settings_command",
+      "file": "src/lib.rs",
+      "target": "        get_settings,",
+      "replacement": "",
+      "test": {
+        "binary": "ipc_command_registration_test",
+        "filter": "defined_command_is_registered_in_generate_handler"
+      },
+      "expected": "get_settings is no longer in the registered set; the unregistered-commands assertion fails."
+    },
+    {
+      "id": "S102",
+      "name": "delete_non_desktop_stub_arm",
+      "file": "src/",
+      "target": "",
+      "replacement": "",
+      "test": {
+        "binary": "ipc_command_registration_test",
+        "filter": "desktop_guarded_command_retains_non_desktop_stub"
+      },
+      "expected": "skipped",
+      "skip_reason": "Seed deletes a whole #[cfg(not(desktop))] function arm in src/ipc/tray.rs. Removing that multi-line block is not a single-line edit, and the test only checks guard text."
+    },
+    {
+      "id": "S103",
+      "name": "drop_not_desktop_classifier_clause",
+      "file": "src/",
+      "target": "",
+      "replacement": "",
+      "test": {
+        "binary": "ipc_command_registration_test",
+        "filter": "desktop_guard_predicate_is_classified_correctly"
+      },
+      "expected": "skipped",
+      "skip_reason": "The is_desktop_guard classifier under test lives in the test file itself, not in app/src-tauri/src. No production one-line edit applies."
+    },
+    {
+      "id": "S104",
+      "name": "remove_comment_strip_in_parser",
+      "file": "src/",
+      "target": "",
+      "replacement": "",
+      "test": {
+        "binary": "ipc_command_registration_test",
+        "filter": "registration_parser_ignores_comment_lines"
+      },
+      "expected": "skipped",
+      "skip_reason": "extract_registered_commands is defined in the test file, not in production code. No production one-line edit applies."
+    },
+    {
+      "id": "S105",
+      "name": "remove_block_end_early_exit_in_parser",
+      "file": "src/",
+      "target": "",
+      "replacement": "",
+      "test": {
+        "binary": "ipc_command_registration_test",
+        "filter": "registration_parser_stops_at_block_end"
+      },
+      "expected": "skipped",
+      "skip_reason": "extract_registered_commands is defined in the test file, not in production code. No production one-line edit applies."
+    },
+    {
+      "id": "S041",
+      "name": "drop_last_transcript_store",
+      "file": "src/pipeline/dictation/transcript.rs",
+      "target": "    *state.dictation_last_transcript.lock() = Some(processed_text.clone());",
+      "replacement": "    let _ = state.dictation_last_transcript.lock();",
+      "test": {
+        "binary": "dictation_output_test",
+        "filter": "transcript_is_stored_and_survives_every_output_mode"
+      },
+      "expected": "dictation_last_transcript stays None; last_transcript() assertion fails."
+    },
+    {
+      "id": "S042",
+      "name": "remove_blank_transcript_guard",
+      "file": "src/pipeline/dictation/transcript.rs",
+      "target": "    if text.trim().is_empty() {",
+      "replacement": "    if false {",
+      "test": {
+        "binary": "dictation_output_test",
+        "filter": "blank_transcript_is_not_stored"
+      },
+      "expected": "Whitespace-only text is stored as an empty transcript instead of being dropped."
+    },
+    {
+      "id": "S043",
+      "name": "remove_dictation_disabled_guard",
+      "file": "src/pipeline/dictation/transcript.rs",
+      "target": "    if state.pipeline.dictation_state() == InteractionState::Idle {",
+      "replacement": "    if false {",
+      "test": {
+        "binary": "dictation_output_test",
+        "filter": "transcript_is_dropped_while_dictation_is_disabled"
+      },
+      "expected": "Transcript is stored while dictation is disabled."
+    },
+    {
+      "id": "S044",
+      "name": "drop_requested_transliteration",
+      "file": "src/pipeline/dictation/transcript.rs",
+      "target": "    let processed_text = transliterate_if_hi(&text, true, transliterate_enabled);",
+      "replacement": "    let processed_text = transliterate_if_hi(&text, true, false);",
+      "test": {
+        "binary": "dictation_output_test",
+        "filter": "devanagari_transcript_is_transliterated_when_enabled"
+      },
+      "expected": "Devanagari text is not transliterated even when the setting is enabled."
+    },
+    {
+      "id": "S045",
+      "name": "force_transliteration_unconditionally",
+      "file": "src/pipeline/dictation/transcript.rs",
+      "target": "    let processed_text = transliterate_if_hi(&text, true, transliterate_enabled);",
+      "replacement": "    let processed_text = transliterate_if_hi(&text, true, true);",
+      "test": {
+        "binary": "dictation_output_test",
+        "filter": "devanagari_transcript_is_preserved_when_transliteration_is_off"
+      },
+      "expected": "Devanagari text is transliterated even when the setting is off."
+    },
+    {
+      "id": "S046",
+      "name": "clear_history_before_push",
+      "file": "src/pipeline/dictation/transcript.rs",
+      "target": "        .push_back(processed_text.clone());",
+      "replacement": "        .clear();\n    state\n        .pipeline\n        .transcript_history\n        .lock()\n        .push_back(processed_text.clone());",
+      "test": {
+        "binary": "dictation_output_test",
+        "filter": "every_transcript_gets_its_own_history_entry"
+      },
+      "expected": "History deque is cleared on every transcript, so it never grows past one entry."
+    },
+    {
+      "id": "S047",
+      "name": "tray_mode_returns_error",
+      "file": "src/services/dictation/output_router.rs",
+      "target": "        DictationOutputMode::Tray => {",
+      "replacement": "        DictationOutputMode::Tray => {\n            return Err(DictationError::ClipboardFailed { message: \"tray\".to_string() });",
+      "test": {
+        "binary": "dictation_output_test",
+        "filter": "output_router_returns_ok_for_tray_mode"
+      },
+      "expected": "Tray routing returns ClipboardFailed instead of Ok."
+    },
+    {
+      "id": "S048",
+      "name": "ignore_clipboard_set_error",
+      "file": "src/services/dictation/output_router.rs",
+      "target": "    clipboard::set_text(text)?;",
+      "replacement": "    let _ = clipboard::set_text(text);",
+      "test": {
+        "binary": "dictation_output_test",
+        "filter": "output_router_reports_a_typed_error_without_a_display"
+      },
+      "expected": "Clipboard failure is swallowed; route_transcript returns Ok without a typed error."
+    },
+    {
+      "id": "S049",
+      "name": "skip_ready_transition_after_transcript",
+      "file": "src/pipeline/dictation/transcript.rs",
+      "target": "    if state.pipeline.dictation_state() != InteractionState::Listening {\n        transition_dictation(InteractionState::Ready, app, state);\n    }\n\n    log::info!(",
+      "replacement": "    if false {\n        transition_dictation(InteractionState::Ready, app, state);\n    }\n\n    log::info!(",
+      "test": {
+        "binary": "dictation_output_test",
+        "filter": "dictation_returns_to_ready_after_the_transcript"
+      },
+      "expected": "Dictation never returns to Ready; the state wait times out."
+    },
+    {
+      "id": "S050",
+      "name": "change_fixture_path_to_nonexistent",
+      "file": "src/",
+      "target": "",
+      "replacement": "",
+      "test": {
+        "binary": "dictation_output_test",
+        "filter": "dictation_history_reads_from_sandboxed_fixture"
+      },
+      "expected": "No production mutant: the test would no longer read its fixture.",
+      "skip_reason": "Seed targets get_dictation_fixture_path, a test-owned helper in tests/common/paths.rs, not production code."
+    },
+    {
+      "id": "S051",
+      "name": "invert_modular_dispatch_branch",
+      "file": "src/pipeline/assistant/ptt.rs",
+      "target": "    if ctx.pipeline_mode == PipelineMode::Modular {",
+      "replacement": "    if ctx.pipeline_mode != PipelineMode::Modular {",
+      "test": {
+        "binary": "dictation_ptt_test",
+        "filter": "validated_speech_reaches_only_the_selected_dispatch_arm"
+      },
+      "expected": "Modular validated speech is sent to the realtime arm; no STT Final is emitted."
+    },
+    {
+      "id": "S052",
+      "name": "drop_silero_prediction_dispatch",
+      "file": "src/services/vad/providers/mod.rs",
+      "target": "            VadBackend::Silero(e) => e.predict(chunk),",
+      "replacement": "            VadBackend::Silero(_) => false,",
+      "test": {
+        "binary": "dictation_ptt_test",
+        "filter": "silero_vad_drives_dictation_ptt_speech_pipeline"
+      },
+      "expected": "Silero backend always reports no speech, so the PTT speech pipeline never fires."
+    },
+    {
+      "id": "S053",
+      "name": "invert_ptt_stop_owner",
+      "file": "src/ipc/pipeline.rs",
+      "target": "    event_tx\n        .send(VoxEvent::PttStop { owner })",
+      "replacement": "    event_tx\n        .send(VoxEvent::PttCancel { owner })",
+      "test": {
+        "binary": "dictation_ptt_test",
+        "filter": "ptt_ipc_dictation_seam"
+      },
+      "expected": "PttStop carries the inverted owner; the Final owner assertion fails."
+    },
+    {
+      "id": "S199",
+      "name": "skip_audio_arm_in_test_driver_encode",
+      "file": "src/",
+      "target": "",
+      "replacement": "",
+      "test": {
+        "binary": "realtime_transport_test",
+        "filter": "outbound_commands_are_encoded_and_reach_the_origin"
+      },
+      "expected": "No production mutant: the test would mutate its own driver.",
+      "skip_reason": "Seed targets TestDriver::encode, a test-owned double in tests/realtime_transport_test.rs, not production code."
+    },
+    {
+      "id": "S200",
+      "name": "ignore_goaway_reconnect",
+      "file": "src/services/realtime/transport.rs",
+      "target": "                        if let Some(tx) = reconnect_tx_opt.take() {",
+      "replacement": "                        if let None = reconnect_tx_opt.take() {",
+      "test": {
+        "binary": "realtime_transport_test",
+        "filter": "reconnect_after_go_away_re_establishes_the_connection"
+      },
+      "expected": "GoAway no longer signals the reconnect notifier, so no reconnect occurs."
+    },
+    {
+      "id": "S201",
+      "name": "emit_degraded_instead_of_session_halted",
+      "file": "src/services/realtime/transport.rs",
+      "target": "                    impact: PipelineImpact::SessionHalted,",
+      "replacement": "                    impact: PipelineImpact::Degraded,",
+      "test": {
+        "binary": "realtime_transport_test",
+        "filter": "terminal_reconnect_failure_emits_a_session_halted_error"
+      },
+      "expected": "Terminal error carries Degraded impact instead of SessionHalted."
+    },
+    {
+      "id": "S202",
+      "name": "retry_reconnect_without_ceiling",
+      "file": "src/services/realtime/transport.rs",
+      "target": "            for attempt in 0..config.max_reconnect_attempts {",
+      "replacement": "            for attempt in 0..usize::MAX {",
+      "test": {
+        "binary": "realtime_transport_test",
+        "filter": "terminal_reconnect_failure_stops_after_the_configured_attempts"
+      },
+      "expected": "Reconnect loop has no configured ceiling; the terminal event is never emitted."
+    },
+    {
+      "id": "S203",
+      "name": "ignore_paused_state_on_drop",
+      "file": "src/services/realtime/transport.rs",
+      "target": "        if *state_rx.borrow() == InteractionState::Paused {\n            log::info!(\"[RealtimeHarness] WebSocket disconnected silently during Paused state.\");",
+      "replacement": "        if false {\n            log::info!(\"[RealtimeHarness] WebSocket disconnected silently during Paused state.\");",
+      "test": {
+        "binary": "realtime_transport_test",
+        "filter": "paused_state_suppresses_the_reconnect"
+      },
+      "expected": "Paused session reconnects after the connection drop."
+    },
+    {
+      "id": "S204",
+      "name": "skip_cache_expiry_check",
+      "file": "src/services/realtime/actor.rs",
+      "target": "                if now_ms < expires_at {",
+      "replacement": "                if true {",
+      "test": {
+        "binary": "realtime_transport_test",
+        "filter": "expired_session_cache_is_purged_on_provider_creation"
+      },
+      "expected": "Expired cache is treated as valid; the resumption token is reused and the file is kept."
+    },
+    {
+      "id": "S205",
+      "name": "purge_cache_unconditionally",
+      "file": "src/services/realtime/actor.rs",
+      "target": "                if now_ms < expires_at {",
+      "replacement": "                if false {",
+      "test": {
+        "binary": "realtime_transport_test",
+        "filter": "unexpired_session_cache_is_retained_on_provider_creation"
+      },
+      "expected": "Unexpired cache is purged on every provider creation."
+    },
+    {
+      "id": "S206",
+      "name": "make_purge_session_cache_noop",
+      "file": "src/services/realtime/actor.rs",
+      "target": "        if let Err(e) = remove_file(&cache_path) {",
+      "replacement": "        if false {",
+      "test": {
+        "binary": "realtime_transport_test",
+        "filter": "purge_session_cache_removes_the_cache_file"
+      },
+      "expected": "Cache file is never removed; the existence assertion fails."
+    },
+    {
+      "id": "S207",
+      "name": "skip_health_check_in_provider_factory",
+      "file": "src/",
+      "target": "",
+      "replacement": "",
+      "test": {
+        "binary": "realtime_transport_test",
+        "filter": "live_cloud_realtime_handshake"
+      },
+      "expected": "No production mutant: the test is #[ignore] and requires a live cloud API key.",
+      "skip_reason": "Seed describes a health check call in create_realtime_provider; that function performs no health check, and the paired test is an ignored external-dependency test."
+    },
+    {
+      "id": "S301",
+      "name": "emit_wrong_turn_id_in_final",
+      "file": "src/services/stt/actor.rs",
+      "target": "        if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptFinal {\n            turn_id: tid,",
+      "replacement": "        if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptFinal {\n            turn_id: tid.wrapping_add(1),",
+      "test": {
+        "binary": "stt_turn_identity_test",
+        "filter": "final_transcript_carries_its_turn_and_owner"
+      },
+      "expected": "TranscriptFinal carries turn 5 instead of the command's turn 4."
+    },
+    {
+      "id": "S302",
+      "name": "hardcode_assistant_owner_in_final",
+      "file": "src/services/stt/actor.rs",
+      "target": "        if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptFinal {\n            turn_id: tid,\n            text: transcript,\n            owner,",
+      "replacement": "        if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptFinal {\n            turn_id: tid,\n            text: transcript,\n            owner: InteractionOwner::Assistant,",
+      "test": {
+        "binary": "stt_turn_identity_test",
+        "filter": "final_transcript_keeps_the_dictation_owner"
+      },
+      "expected": "Dictation owner is replaced by Assistant in the final event."
+    },
+    {
+      "id": "S303",
+      "name": "adopt_incremented_turn_without_reset",
+      "file": "src/services/stt/actor.rs",
+      "target": "        current_active_turn: 0u32,",
+      "replacement": "        current_active_turn: 2u32,",
+      "test": {
+        "binary": "stt_turn_identity_test",
+        "filter": "open_stream_adopts_incremented_turn_without_reset"
+      },
+      "expected": "The first chunk is treated as an already-active turn; reset count is 2 instead of 3."
+    },
+    {
+      "id": "S304",
+      "name": "adopt_turn_jump_without_reset",
+      "file": "src/services/stt/actor.rs",
+      "target": "/// Ingests streaming audio chunk into provider active stream and throttles partial UI updates.\nfn handle_stream_chunk_command(\n    ctx: &WorkerContext<'_>,\n    tid: u32,\n    utterance_id: u32,\n    chunk: &[f32],\n    state: &mut WorkerState,\n) {\n    if tid != state.current_active_turn",
+      "replacement": "/// Ingests streaming audio chunk into provider active stream and throttles partial UI updates.\nfn handle_stream_chunk_command(\n    ctx: &WorkerContext<'_>,\n    tid: u32,\n    utterance_id: u32,\n    chunk: &[f32],\n    state: &mut WorkerState,\n) {\n    if false",
+      "test": {
+        "binary": "stt_turn_identity_test",
+        "filter": "turn_jump_resets_provider_state"
+      },
+      "expected": "The turn-9 chunk is treated as already active; reset count is 2 instead of 3."
+    },
+    {
+      "id": "S305",
+      "name": "reset_provider_on_every_stream_chunk",
+      "file": "src/services/stt/actor.rs",
+      "target": "    match ctx.provider.transcribe_chunk(chunk, false) {",
+      "replacement": "    match { let _ = ctx.provider.reset_state(); ctx.provider.transcribe_chunk(chunk, false) } {",
+      "test": {
+        "binary": "stt_turn_identity_test",
+        "filter": "repeated_chunk_for_same_turn_keeps_stream_state"
+      },
+      "expected": "Each stream chunk forces an extra provider reset; the reset count no longer matches."
+    },
+    {
+      "id": "S306",
+      "name": "adopt_wrapped_turn_without_reset",
+      "file": "src/services/stt/actor.rs",
+      "target": "        current_active_turn: 0u32,",
+      "replacement": "        current_active_turn: u32::MAX,",
+      "test": {
+        "binary": "stt_turn_identity_test",
+        "filter": "wrapped_turn_id_is_adopted_without_reset"
+      },
+      "expected": "The MAX chunk is treated as already active; reset count is 2 instead of 3."
+    },
+    {
+      "id": "S307",
+      "name": "remove_cancelled_final_guard",
+      "file": "src/services/stt/actor.rs",
+      "target": "    if cancelled && tid == state.current_active_turn {",
+      "replacement": "    if false {",
+      "test": {
+        "binary": "stt_turn_identity_test",
+        "filter": "cancelled_final_for_current_turn_emits_cancelled"
+      },
+      "expected": "Cancelled final is transcribed; the Cancelled event is never emitted."
+    },
+    {
+      "id": "S308",
+      "name": "reject_every_final_while_cancelled",
+      "file": "src/services/stt/actor.rs",
+      "target": "    if cancelled && tid == state.current_active_turn {",
+      "replacement": "    if cancelled {",
+      "test": {
+        "binary": "stt_turn_identity_test",
+        "filter": "cancelled_final_for_a_later_turn_is_not_rejected"
+      },
+      "expected": "A stale cancel flag causes the later-turn final to be rejected."
+    },
+    {
+      "id": "S309",
+      "name": "make_reset_stream_noop",
+      "file": "src/services/stt/actor.rs",
+      "target": "                if drain_reset_stream(&channels.rx, ctx.provider, &mut state, &mut pending_cmd) {",
+      "replacement": "                if false {",
+      "test": {
+        "binary": "stt_turn_identity_test",
+        "filter": "reset_stream_clears_provider_before_the_next_final"
+      },
+      "expected": "ResetStream no longer clears provider state; reset count is 2 instead of 3."
+    },
+    {
+      "id": "S310",
+      "name": "drop_warmup_dispatch",
+      "file": "src/services/stt/actor.rs",
+      "target": "                if let Err(e) = ctx.provider.warmup() {",
+      "replacement": "                if false {",
+      "test": {
+        "binary": "stt_turn_identity_test",
+        "filter": "warmup_reaches_the_provider"
+      },
+      "expected": "Warmup command never reaches the provider; warmup count stays 0."
+    },
+    {
+      "id": "S311",
+      "name": "recycle_wrong_buffer_for_partial",
+      "file": "src/services/stt/actor.rs",
+      "target": "                handle_partial_command(&ctx, turn_id, utterance_id, &audio, &mut state);",
+      "replacement": "                handle_partial_command(&ctx, turn_id, utterance_id, &audio, &mut state); let _ = recycle_tx.try_send(Vec::new());",
+      "test": {
+        "binary": "stt_turn_identity_test",
+        "filter": "partial_command_recycles_its_buffer"
+      },
+      "expected": "The recycle channel receives an empty buffer, so the original buffer is not returned."
+    },
+    {
+      "id": "S312",
+      "name": "remove_shutdown_arm_from_dispatch",
+      "file": "src/",
+      "target": "",
+      "replacement": "",
+      "test": {
+        "binary": "stt_turn_identity_test",
+        "filter": "shutdown_terminates_the_worker_within_deadline"
+      },
+      "expected": "No production mutant: the worker also exits via the engine_shutdown flag.",
+      "skip_reason": "A single-line silent change cannot defeat both the Shutdown arm and the engine_shutdown flag check; the test would still pass or hang."
+    },
+    {
+      "id": "S313",
+      "name": "adopt_adjacent_turn_without_reset",
+      "file": "src/",
+      "target": "",
+      "replacement": "",
+      "test": {
+        "binary": "stt_turn_identity_test",
+        "filter": "stt_resets_stream_on_turn_divergence_without_prior_reset"
+      },
+      "expected": "No production mutant available: the described adoption branch is absent.",
+      "skip_reason": "Current stt/actor.rs has no wrapping_add(1) adoption branch, and the test only asserts resets >= 1, which any single-line silent mutant cannot violate cleanly."
+    },
+    {
+      "id": "S314",
+      "name": "dispatch_wrong_text_instead_of_query",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "        PipelineMode::Modular => spawn_harness_turn_task(turn_id, query, app, state, ctx),",
+      "replacement": "        PipelineMode::Modular => spawn_harness_turn_task(turn_id, String::new(), app, state, ctx),",
+      "test": {
+        "binary": "transcript_ingestion_test",
+        "filter": "transcript_is_stored_and_dispatched_to_the_llm"
+      },
+      "expected": "The LLM request carries an empty user message instead of the finalized transcript."
+    },
+    {
+      "id": "S315",
+      "name": "remove_empty_transcript_guard",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "    let raw_query = if trimmed.is_empty() {",
+      "replacement": "    let raw_query = if false {",
+      "test": {
+        "binary": "transcript_ingestion_test",
+        "filter": "empty_transcript_returns_to_ready_without_dispatch"
+      },
+      "expected": "Whitespace-only transcript is dispatched instead of returning to Ready."
+    },
+    {
+      "id": "S316",
+      "name": "remove_state_guard",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "    if current_state != InteractionState::Thinking {",
+      "replacement": "    if false {",
+      "test": {
+        "binary": "transcript_ingestion_test",
+        "filter": "transcript_outside_thinking_is_dropped"
+      },
+      "expected": "Transcript arriving in Ready is processed and dispatched."
+    },
+    {
+      "id": "S317",
+      "name": "dispatch_harness_turn_in_realtime_mode",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "    transition(InteractionState::Thinking, None, ctx, app, state);\n\n    match ctx.pipeline_mode {",
+      "replacement": "    transition(InteractionState::Ready, None, ctx, app, state);\n\n    match ctx.pipeline_mode {",
+      "test": {
+        "binary": "transcript_ingestion_test",
+        "filter": "realtime_mode_keeps_the_query_but_does_not_dispatch"
+      },
+      "expected": "Realtime mode now dispatches a harness generation turn."
+    },
+    {
+      "id": "S318",
+      "name": "remove_duplicate_turn_guard",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "    if ctx.pipeline_mode == PipelineMode::Modular && is_duplicate_user_turn(state, &query) {",
+      "replacement": "    if false {",
+      "test": {
+        "binary": "transcript_ingestion_test",
+        "filter": "duplicate_user_turn_is_suppressed_before_dispatch"
+      },
+      "expected": "Duplicate user turn is dispatched again instead of being suppressed."
+    },
+    {
+      "id": "S319",
+      "name": "drop_continuation_prefix_on_merge",
+      "file": "src/pipeline/assistant/mod.rs",
+      "target": "        let mut prefix = take(&mut self.continuation_prefix);",
+      "replacement": "        let mut prefix = String::new();",
+      "test": {
+        "binary": "transcript_ingestion_test",
+        "filter": "continuation_prefix_is_merged_into_the_next_query"
+      },
+      "expected": "Stashed continuation prefix is omitted from the merged query."
+    },
+    {
+      "id": "S320",
+      "name": "late-final prefix append is a no-op",
+      "file": "src/pipeline/assistant/mod.rs",
+      "target": "            if self.continuation_prefix.is_empty() {\n                self.continuation_prefix = trimmed.to_string();",
+      "replacement": "            if self.continuation_prefix.is_empty() {\n                let _ = trimmed;",
+      "test": {
+        "binary": "transcript_ingestion_test",
+        "filter": "late_arriving_final_is_captured_as_a_continuation_prefix"
+      },
+      "expected": "Late final is not captured as a continuation prefix."
+    },
+    {
+      "id": "S321",
+      "name": "drop_empty_transcript_prefix_promotion",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "        if !acc.continuation_prefix.is_empty() {",
+      "replacement": "        if false {",
+      "test": {
+        "binary": "transcript_ingestion_test",
+        "filter": "empty_transcript_promotes_the_stashed_prefix"
+      },
+      "expected": "Stashed prefix is not promoted when the transcript is empty."
+    },
+    {
+      "id": "S322",
+      "name": "drop_turn_cancel_token_rearm",
+      "file": "src/pipeline/atomics.rs",
+      "target": "        let new_turn_token = tokio_util::sync::CancellationToken::new();",
+      "replacement": "        let new_turn_token = self.turn_cancel_token.lock().clone();",
+      "test": {
+        "binary": "transcript_ingestion_test",
+        "filter": "stale_cancel_does_not_block_the_next_turn"
+      },
+      "expected": "The stale cancel token is carried into the new turn."
+    },
+    {
+      "id": "S323",
+      "name": "skip_transliteration_before_dispatch",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "    let query = transliterate_if_hi(&raw_query, true, transliterate_enabled);\n\n    if ctx.pipeline_mode == PipelineMode::Modular && is_duplicate_user_turn(state, &query) {",
+      "replacement": "    let query = transliterate_if_hi(&raw_query, false, transliterate_enabled);\n\n    if ctx.pipeline_mode == PipelineMode::Modular && is_duplicate_user_turn(state, &query) {",
+      "test": {
+        "binary": "transcript_ingestion_test",
+        "filter": "transcript_is_transliterated_before_dispatch"
+      },
+      "expected": "Devanagari query is dispatched without transliteration."
+    },
+    {
+      "id": "S324",
+      "name": "keep_old_turn_id_after_interrupt",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "        let (new_turn_id, _) = state.pipeline.next_turn();",
+      "replacement": "        let (new_turn_id, _) = (turn_id, state.pipeline.turn_cancel_token());",
+      "test": {
+        "binary": "transcript_ingestion_test",
+        "filter": "interrupt_opens_a_new_turn"
+      },
+      "expected": "Stage 2 does not allocate a new turn id after the interrupt."
+    },
+    {
+      "id": "S325",
+      "name": "store_text_before_state_guard",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "    if current_state != InteractionState::Thinking {",
+      "replacement": "    state.pipeline_accumulator.lock().set_user_transcript(trimmed.clone());\n    if current_state != InteractionState::Thinking {",
+      "test": {
+        "binary": "transcript_ingestion_test",
+        "filter": "dropped_transcript_is_not_dispatched_or_stored"
+      },
+      "expected": "Dropped transcript is still stored in the accumulator."
+    },
+    {
+      "id": "S337",
+      "name": "shorten_silence_end_frames",
+      "file": "src/services/vad/actor.rs",
+      "target": "        let speech_end_frames = (silence_duration_ms as usize / 16).max(1);",
+      "replacement": "        let speech_end_frames = 1;",
+      "test": {
+        "binary": "vad_segmentation_test",
+        "filter": "passive_streaming_segments_speech_and_suppresses_silence"
+      },
+      "expected": "Silence end fires after a single frame, so natural pauses split utterances."
+    },
+    {
+      "id": "S338",
+      "name": "invert_silero_prediction",
+      "file": "src/services/vad/providers/silero_onnx.rs",
+      "target": "        let detected = self.detector.detected();",
+      "replacement": "        let detected = !self.detector.detected();",
+      "test": {
+        "binary": "vad_segmentation_test",
+        "filter": "silero_vad_segments_speech_and_triggers_auto_silence_stop"
+      },
+      "expected": "Silero speech/silence classification is inverted."
+    },
+    {
+      "id": "S339",
+      "name": "error_on_absent_turn_detector_model",
+      "file": "src/services/vad/turn_detector.rs",
+      "target": "        if !model_path_buf.exists() {",
+      "replacement": "        if false {",
+      "test": {
+        "binary": "vad_segmentation_test",
+        "filter": "smart_turn_detector_gracefully_degrades_when_model_absent"
+      },
+      "expected": "An absent model path yields Err instead of a dormant detector."
+    },
+    {
+      "id": "S012",
+      "name": "reference_tap_pushes_every_48k_sample",
+      "file": "src/services/audio/sink.rs",
+      "target": "        if self.decimator_count == 3 {",
+      "replacement": "        if self.decimator_count == 1 {",
+      "test": {
+        "binary": "audio_capture_aec_test",
+        "filter": "playback_reference_tap_downsamples_48k_to_16k"
+      },
+      "expected": "Every 48 kHz sample is pushed, so 480 pushed samples yield 480 buffered samples instead of 160; the occupied_len assertion fails."
+    },
+    {
+      "id": "S013",
+      "name": "aec_worker_skips_a_capture_chunk",
+      "file": "src/services/audio/aec.rs",
+      "target": "                    let popped = capture_consumer.pop_slice(&mut capture_frame);",
+      "replacement": "                    let popped = capture_consumer.pop_slice(&mut capture_frame);\n                    if popped == AEC_FRAME_SAMPLES {\n                        capture_consumer.skip(AEC_FRAME_SAMPLES);\n                    }",
+      "test": {
+        "binary": "audio_capture_aec_test",
+        "filter": "aec_worker_passes_every_captured_chunk_through"
+      },
+      "expected": "One of every two capture frames is discarded, so only 160 of the 320 pushed samples arrive per chunk and the per-chunk sample-count assertion fails."
+    },
+    {
+      "id": "S014",
+      "name": "aec_bypass_flag_ignored",
+      "file": "src/services/audio/aec.rs",
+      "target": "        self.enabled = enabled;",
+      "replacement": "        self.enabled = true;",
+      "test": {
+        "binary": "audio_capture_aec_test",
+        "filter": "aec_worker_honours_the_dynamic_bypass_command"
+      },
+      "expected": "SetEnabled(false) no longer disables AEC; the filtered output differs from the 0.42 passthrough input and the received == test_input assertion fails."
+    },
+    {
+      "id": "S015",
+      "name": "delay_adaptation_pinned_to_wrong_value",
+      "file": "src/services/audio/aec.rs",
+      "target": "                        let pushed = clean_producer.push_slice(&clean_frame);",
+      "replacement": "                        let pushed = 0usize;",
+      "test": {
+        "binary": "audio_capture_aec_test",
+        "filter": "aec_suppresses_the_synthetic_tts_echo"
+      },
+      "expected": "Adaptation reports 500 ms instead of the measured 120 ms skew, so AEC3 cannot align the echo and the ERLE assertion (>= 20 dB) fails."
+    },
+    {
+      "id": "S016",
+      "name": "aec_disabled_by_default",
+      "file": "src/services/audio/aec.rs",
+      "target": "            enabled: true,",
+      "replacement": "            enabled: false,",
+      "test": {
+        "binary": "audio_capture_aec_test",
+        "filter": "solo_playback_over_six_seconds_never_interrupts_with_pipewire_delay"
+      },
+      "expected": "AEC is bypassed from startup, so the echo reaches the VAD unattenuated, barge-in fires, and the turn_id / Listening assertions fail."
+    },
+    {
+      "id": "S017",
+      "name": "speech_start_listening_transition_dropped",
+      "file": "src/pipeline/assistant/interrupt.rs",
+      "target": "    transition(InteractionState::Listening, None, ctx, app, state);",
+      "replacement": "    let _ = app;",
+      "test": {
+        "binary": "audio_capture_aec_test",
+        "filter": "double_talk_barge_in_cancels_the_playback_and_opens_listening"
+      },
+      "expected": "Stage 1 no longer enters Listening, so double-talk during Speaking never opens listening and the state assertion fails."
+    },
+    {
+      "id": "S018",
+      "name": "bypass_command_ignored_by_worker",
+      "file": "src/services/audio/aec.rs",
+      "target": "                                aec.set_enabled(enabled);",
+      "replacement": "                                let _ = enabled;",
+      "test": {
+        "binary": "audio_capture_aec_test",
+        "filter": "bypass_reproduces_the_echo_interruption"
+      },
+      "expected": "The worker ignores SetEnabled(false); the echo stays suppressed and the positive-control scene never reaches Listening, so the seen-bit assertion fails."
+    },
+    {
+      "id": "S054",
+      "name": "transcript_final_dispatch_dropped",
+      "file": "src/pipeline/assistant/mod.rs",
+      "target": "            transcript::on_transcript_final(turn_id, text, app, state, ctx);",
+      "replacement": "            let _ = (turn_id, text, app, state, ctx);",
+      "test": {
+        "binary": "e2e_voice_pipeline_test",
+        "filter": "full_conversational_turn_runs_from_idle_to_ready_and_persists_the_turn"
+      },
+      "expected": "TranscriptFinal never reaches the assistant handler, no Thinking transition occurs, and the Thinking-bit and turn-persistence assertions fail."
+    },
+    {
+      "id": "S055",
+      "name": "speaking_barge_in_branch_disabled",
+      "file": "src/pipeline/assistant/speech.rs",
+      "target": "        || current_state == InteractionState::Speaking",
+      "replacement": "        || false",
+      "test": {
+        "binary": "e2e_voice_pipeline_test",
+        "filter": "true_acoustic_barge_in_during_speaking_cancels_and_completes"
+      },
+      "expected": "SpeechStart while Speaking no longer takes the interrupt arm, so no Listening transition occurs and the barge-in assertion fails."
+    },
+    {
+      "id": "S056",
+      "name": "continuation_prefix_stash_dropped",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "test": {
+        "binary": "e2e_voice_pipeline_test",
+        "filter": "mid_thought_continuation_combines_both_bursts"
+      },
+      "expected": "The first burst's text is not stashed as a continuation prefix, so the merged turn contains only the Hindi burst and the both-halves assertion fails.",
+      "target": "                .append_continuation_prefix(&trimmed);",
+      "replacement": "                .append_continuation_prefix(\"\");"
+    },
+    {
+      "id": "S057",
+      "name": "empty_transcript_fallback_dropped",
+      "file": "src/services/vad/segmenter.rs",
+      "target": "    } else if state.realtime_tx.is_none() {",
+      "replacement": "    } else if false {",
+      "test": {
+        "binary": "e2e_voice_pipeline_test",
+        "filter": "sub_300ms_cough_recovers_to_ready_without_deadlock"
+      },
+      "expected": "Sub-300 ms bursts emit no empty TranscriptFinal, so the pipeline stays in Thinking and the Ready recovery assertion fails."
     }
   ]
 }

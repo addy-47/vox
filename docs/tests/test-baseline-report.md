@@ -1,8 +1,8 @@
 # Vox Pipeline Refactor — Test Baseline & Remediation Report
 
-**Date:** 2026-11-18 (Checkpoint 4.6 Final Certification)  
-**Role:** Senior System Architect  
-**Suite Status (current):** `566 tests run: 566 passed, 0 failed, 2 skipped` (100% green, release, sequential). Both previously red defects (TF-03 tool loop & continuation drop, TF-04 WsLink conformance framing) are fully resolved in production code. Zero ungrounded ignores remain.  
+**Date:** 2026-11-19 (post-merge verification)  
+**Role:** Senior Test Engineer  
+**Suite Status (current):** `566 tests run: 566 passed, 0 failed, 2 skipped` (203.8s, release, sequential). Verified after merging the CP5 work with the backend's TF-03/TF-04 fixes. All four `process::exit(0)` bypasses were removed from `e2e_voice_pipeline_test.rs` and the E2E binary passes 4/4 with clean teardown. TF-01 through TF-07 are CLOSED; only the two §8-compliant external-dependency tests remain ignored.  
 **Previous status (Checkpoint 4.5):** `564 passed, 2 failed, 2 skipped` — exposed TF-03 and TF-04.  
 
 ---

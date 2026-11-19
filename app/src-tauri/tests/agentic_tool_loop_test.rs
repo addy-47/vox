@@ -33,7 +33,10 @@ use vox_lib::{
             prompt::PromptBuilderStage,
             streaming::{StreamRoutingHandles, StreamRoutingStage},
         },
-        tools::{ToolDomain, ToolError, ToolExecutionContext, ToolFilter, ToolRegistry},
+        tools::{
+            ToolDomain, ToolError, ToolExecutionContext, ToolExecutionMode, ToolFilter,
+            ToolRegistry,
+        },
         Role, TurnExecutionRequest, TurnOutcome,
     },
     persistence::{
@@ -797,6 +800,11 @@ async fn web_search_tool_declares_a_hermetic_non_terminal_contract() {
 
         assert_eq!(tool.name(), "web_search");
         assert_eq!(tool.domain(), ToolDomain::Modular);
+        assert_eq!(
+            tool.execution_mode(&serde_json::json!({})),
+            ToolExecutionMode::Parallel,
+            "web_search must remain non-terminal (Parallel) for the turn to continue"
+        );
 
         // 2. Verify Parameter Schema conforms to Section 3.1
         let schema = tool.parameters_schema(PipelineMode::Modular);
