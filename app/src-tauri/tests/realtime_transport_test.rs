@@ -211,7 +211,6 @@ async fn outbound_commands_are_encoded_and_reach_the_origin() {
 // Folded into `src/services/realtime/providers/deepgram/session.rs` unit tests:
 // this scene asserted the test-owned TestDriver decoder, not production decode.
 
-
 /// PURPOSE:  When the provider says goodbye the harness must reconnect and
 ///           keep the session usable; a session that dies on a polite
 ///           `go_away` ends the user's turn for no reason.

@@ -529,7 +529,10 @@ pub fn step4_assemble_request(
     let mut messages = harness.history.messages().to_vec();
     if let Some((staged_id, ref staged_text)) = harness.pending_user_query {
         if staged_id == turn_id {
-            messages.push(ChatMessage::new(crate::harness::Role::User, staged_text.clone()));
+            messages.push(ChatMessage::new(
+                crate::harness::Role::User,
+                staged_text.clone(),
+            ));
         }
     }
 
@@ -575,8 +578,8 @@ pub async fn step6_run_stream_pass(
     let handles_clone = stream_handles.clone();
     let stage_clone = stream_stage.clone();
     tokio::task::spawn_blocking(move || stage_clone.route_stream(handles_clone, response_rx))
-    .await
-    .unwrap_or_else(|join_err| Err(format!("Stream task panic: {:?}", join_err)))
+        .await
+        .unwrap_or_else(|join_err| Err(format!("Stream task panic: {:?}", join_err)))
 }
 
 /// Executes a batch of intercepted canonical tool calls, persisting execution audit and metrics.

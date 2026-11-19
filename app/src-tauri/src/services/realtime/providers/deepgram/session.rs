@@ -345,8 +345,9 @@ fn dispatch_deepgram_server_message(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::atomic::AtomicU32;
+
+    use super::*;
 
     fn driver() -> DeepgramDriver {
         DeepgramDriver {
@@ -364,10 +365,7 @@ mod tests {
     async fn binary_frame_decodes_to_pcm_with_production_driver() {
         let (tx, mut rx) = mpsc::channel(4);
         let d = driver();
-        let action = d.handle_frame(
-            Message::Binary(vec![0x10, 0x00, 0x20, 0x00].into()),
-            &tx,
-        );
+        let action = d.handle_frame(Message::Binary(vec![0x10, 0x00, 0x20, 0x00].into()), &tx);
         assert!(matches!(action, FrameAction::Continue));
         match rx.recv().await.expect("audio event emitted") {
             RealtimeProviderEvent::AudioChunk(pcm) => assert_eq!(pcm, vec![16i16, 32i16]),

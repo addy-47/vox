@@ -180,7 +180,11 @@ pub fn on_transcript_final<R: tauri::Runtime>(
 
     if is_held {
         if trimmed.is_empty() {
-            let has_continuation = !state.pipeline_accumulator.lock().continuation_prefix.is_empty();
+            let has_continuation = !state
+                .pipeline_accumulator
+                .lock()
+                .continuation_prefix
+                .is_empty();
             if !has_continuation {
                 // False barge-in: resume the active turn without cancelling it.
                 {
@@ -281,9 +285,7 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         };
         let staged = {
             let mut guard = state.harness.lock();
-            guard
-                .as_mut()
-                .and_then(|h| h.take_staged_query(turn_id))
+            guard.as_mut().and_then(|h| h.take_staged_query(turn_id))
         };
 
         // A final for a segment whose query is still in flight is stashed, not dispatched.

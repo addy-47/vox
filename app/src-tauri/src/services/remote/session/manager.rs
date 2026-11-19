@@ -231,7 +231,10 @@ impl RemoteSessionManager {
     /// Returns true if a voice pipeline session is currently active (not Idle).
     pub fn is_session_active(&self) -> bool {
         let view = *self.current_pipeline_view.read();
-        !matches!(view.state, InteractionState::Idle | InteractionState::Paused)
+        !matches!(
+            view.state,
+            InteractionState::Idle | InteractionState::Paused
+        )
     }
 
     /// Sets the pipeline state with a router-allocated turn identity.

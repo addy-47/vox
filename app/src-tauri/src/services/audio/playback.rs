@@ -16,10 +16,7 @@ use super::{
 };
 pub use super::{PlaybackEngineHandles, PlaybackTelemetryHandles};
 use crate::{
-    core::{
-        events::VoxEvent,
-        metrics::TurnMetricsCollector,
-    },
+    core::{events::VoxEvent, metrics::TurnMetricsCollector},
     services::realtime::{RealtimeAudioConfig, DEFAULT_OUTPUT_SAMPLE_RATE},
 };
 
@@ -209,7 +206,10 @@ impl PlaybackEngine {
             if occupied >= preroll_threshold {
                 self.turn_armed.store(true, Ordering::Relaxed);
                 let tid = self.current_turn_id.load(Ordering::Relaxed);
-                if let Err(e) = self.event_tx.send(VoxEvent::PlaybackStarted { turn_id: tid }) {
+                if let Err(e) = self
+                    .event_tx
+                    .send(VoxEvent::PlaybackStarted { turn_id: tid })
+                {
                     log::warn!("[Audio::Playback] Failed to emit PlaybackStarted: {}", e);
                 } else {
                     log::info!(
@@ -264,7 +264,10 @@ impl PlaybackEngine {
             if occupied > 0 {
                 self.turn_armed.store(true, Ordering::Relaxed);
                 let tid = self.current_turn_id.load(Ordering::Relaxed);
-                if let Err(e) = self.event_tx.send(VoxEvent::PlaybackStarted { turn_id: tid }) {
+                if let Err(e) = self
+                    .event_tx
+                    .send(VoxEvent::PlaybackStarted { turn_id: tid })
+                {
                     log::warn!(
                         "[Audio::Playback] Failed to emit PlaybackStarted on flush_pre_roll: {}",
                         e

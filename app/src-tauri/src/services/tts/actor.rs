@@ -25,10 +25,7 @@ use crate::{
 /// Commands accepted by the dedicated TTS synthesis worker thread.
 #[derive(Debug)]
 pub enum TtsCommand {
-    Generate {
-        turn_id: u32,
-        text: String,
-    },
+    Generate { turn_id: u32, text: String },
     SetVoice(i32),
     SetSpeed(f32),
     Shutdown,
@@ -74,7 +71,7 @@ pub fn spawn_tts_worker(
                         turn_id
                     );
                     if let Some(ref jobs) = handles.pending_synthesis_jobs {
-                        let _ = jobs.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+                        let _ = jobs.fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| {
                             Some(v.saturating_sub(1))
                         });
                     }
@@ -119,7 +116,7 @@ pub fn spawn_tts_worker(
                 let mut flushed_pre_roll = false;
                 if let Some(ref jobs) = handles.pending_synthesis_jobs {
                     let prev = jobs
-                        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+                        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| {
                             Some(v.saturating_sub(1))
                         })
                         .unwrap_or(0);

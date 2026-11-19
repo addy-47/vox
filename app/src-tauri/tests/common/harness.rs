@@ -654,7 +654,10 @@ pub async fn get_test_app_and_state() -> (
     (app, state)
 }
 
-fn assign_mock_engine(state: &vox_lib::core::state::AppState, engine: vox_lib::core::engine::VoxEngine) {
+fn assign_mock_engine(
+    state: &vox_lib::core::state::AppState,
+    engine: vox_lib::core::engine::VoxEngine,
+) {
     if let Ok(mut guard) = state.engine.try_lock() {
         *guard = Some(engine);
     } else if tokio::runtime::Handle::try_current().is_ok() {

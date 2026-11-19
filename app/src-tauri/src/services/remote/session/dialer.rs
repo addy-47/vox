@@ -142,15 +142,13 @@ pub(crate) async fn perform_dial_handshake(
 
 pub(crate) async fn handle_dial_peer_rejection(
     manager: &RemoteSessionManager,
-    db: &VoxDb,
-    device_id: &str,
+    _db: &VoxDb,
+    _device_id: &str,
     rejection: &PeerRejection,
 ) {
     match rejection {
         PeerRejection::UnknownPeer(_) => {
             // Tier 2 rejection never mutates Tier 1 pairing trust.
-            let _ = db;
-            let _ = device_id;
             manager.set_peer_identity(None);
             *manager.event_forwarder.lock() = None;
             manager.set_state(RemoteLinkState::failed(

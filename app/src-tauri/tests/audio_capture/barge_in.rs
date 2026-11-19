@@ -242,10 +242,13 @@ async fn double_talk_barge_in_cancels_the_playback_and_opens_listening() {
 
         // The user's speech must reach STT with the active turn_id (TURN per RULE-EVT-01A).
         let uid = scene.state.pipeline.utterance_id.load(Ordering::Relaxed);
-        let _ = scene.rig.vad_tx.send(vox_lib::services::vad::VadCommand::BindUtterance {
-            turn_id: TURN,
-            utterance_id: uid,
-        });
+        let _ = scene
+            .rig
+            .vad_tx
+            .send(vox_lib::services::vad::VadCommand::BindUtterance {
+                turn_id: TURN,
+                utterance_id: uid,
+            });
 
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut saw_stream_chunk = false;

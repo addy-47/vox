@@ -98,7 +98,6 @@ fn fresh_install_resolves_to_supertonic() {
         index >= 0,
         "The default voice id must resolve in the Supertonic catalogue"
     );
-
 }
 
 // ============================================================================
@@ -243,7 +242,6 @@ fn edge_tts_path_returns_the_explicit_availability_error() {
         }
         other => panic!("Expected VoxEvent::Error, got {:?}", other),
     }
-
 }
 
 // ============================================================================
@@ -299,7 +297,6 @@ fn edge_tts_is_still_in_the_provider_catalogue() {
             .any(|v| v.id == "james" && v.provider_id == "supertonic"),
         "The Supertonic voice catalogue must be unchanged"
     );
-
 }
 
 // ============================================================================
@@ -368,7 +365,6 @@ fn provider_factory_resolves_exactly_one_provider() {
         "The factory must not substitute another provider for Edge TTS; got: {}",
         error
     );
-
 }
 
 // ============================================================================
@@ -410,7 +406,6 @@ fn devanagari_route_declaration_targets_supertonic() {
             engine
         );
     }
-
 }
 
 // ============================================================================
@@ -485,7 +480,6 @@ fn devanagari_route_reports_missing_supertonic_weights() {
         "The Devanagari route must produce non-silent audio (RMS: {:.5})",
         rms
     );
-
 }
 
 // ============================================================================
@@ -571,7 +565,6 @@ fn default_voice_is_provider_aware() {
         5,
         "A voice that belongs to the provider must keep its own index"
     );
-
 }
 
 // ============================================================================
@@ -680,5 +673,4 @@ fn devanagari_route_reuses_one_cached_engine() {
         1,
         "A new provider must rebuild the engine"
     );
-
 }

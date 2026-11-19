@@ -237,11 +237,8 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             conn.execute(statement, ()).await?;
         }
 
-        conn.execute(
-            &format!("PRAGMA user_version = {};", SCHEMA_VERSION),
-            (),
-        )
-        .await?;
+        conn.execute(&format!("PRAGMA user_version = {};", SCHEMA_VERSION), ())
+            .await?;
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

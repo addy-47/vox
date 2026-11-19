@@ -18,10 +18,7 @@ use std::{
 };
 
 use vox_lib::{
-    core::{
-        events::VoxEvent,
-        state::InteractionState,
-    },
+    core::{events::VoxEvent, state::InteractionState},
     services::tts::{
         actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
         providers::{supertonic::TtsEngine as SupertonicEngine, SynthesisContext, TtsProvider},

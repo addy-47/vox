@@ -193,7 +193,9 @@ impl Rig {
                 Ok(SttCommand::Final {
                     turn_id,
                     audio,
-                    owner, .. }) => return (turn_id, audio, owner),
+                    owner,
+                    ..
+                }) => return (turn_id, audio, owner),
                 Ok(_) => continue,
                 Err(_) => panic!("{label}: no SttCommand::Final before the deadline"),
             }

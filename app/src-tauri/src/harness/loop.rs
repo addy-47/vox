@@ -299,7 +299,11 @@ async fn handle_pass_outcome(
                     false,
                 );
             }
-            let inbox = ctx.harness_arc.lock().as_ref().map(|h| Arc::clone(h.inbox()));
+            let inbox = ctx
+                .harness_arc
+                .lock()
+                .as_ref()
+                .map(|h| Arc::clone(h.inbox()));
             if let Some(inbox) = inbox {
                 inbox.wait_if_speech_held(&ctx.req.cancel).await;
             }

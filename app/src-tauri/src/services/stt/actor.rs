@@ -155,7 +155,10 @@ fn handle_partial_command(
         state.last_transcript.clear();
         state.stream_open = false;
         if let Err(e) = ctx.provider.reset_state() {
-            log::warn!("[STT] Error resetting state for new speech segment: {:?}", e);
+            log::warn!(
+                "[STT] Error resetting state for new speech segment: {:?}",
+                e
+            );
         }
     }
 
@@ -225,7 +228,10 @@ fn handle_stream_chunk_command(
         state.last_transcript.clear();
         state.stream_open = false;
         if let Err(e) = ctx.provider.reset_state() {
-            log::warn!("[STT] Error resetting state for new speech segment: {:?}", e);
+            log::warn!(
+                "[STT] Error resetting state for new speech segment: {:?}",
+                e
+            );
         }
     }
 
@@ -574,7 +580,8 @@ mod tests {
         let (_tx, rx) = mpsc::channel();
         let mut pending = None;
         let cmd = SttCommand::Final {
-            turn_id: 3, utterance_id: 0,
+            turn_id: 3,
+            utterance_id: 0,
             audio: vec![0.0; 4],
             owner: InteractionOwner::Assistant,
         };
@@ -583,7 +590,8 @@ mod tests {
         assert!(matches!(
             out,
             SttCommand::Final {
-                turn_id: 3, utterance_id: 0,
+                turn_id: 3,
+                utterance_id: 0,
                 owner: InteractionOwner::Assistant,
                 ..
             }
@@ -600,7 +608,8 @@ mod tests {
         tx.send(second).expect("queue second partial");
         tx.send(third).expect("queue third partial");
         tx.send(SttCommand::StreamChunk {
-            turn_id: 2, utterance_id: 0,
+            turn_id: 2,
+            utterance_id: 0,
             audio: vec![],
         })
         .expect("queue stream chunk");
@@ -653,7 +662,8 @@ mod tests {
     fn drain_reset_stream_recycles_partials_and_drops_chunks() {
         let (tx, rx) = mpsc::channel();
         tx.send(SttCommand::StreamChunk {
-            turn_id: 1, utterance_id: 0,
+            turn_id: 1,
+            utterance_id: 0,
             audio: vec![0.0; 8],
         })
         .expect("queue chunk");
@@ -680,7 +690,8 @@ mod tests {
     fn drain_reset_stream_preserves_a_queued_final() {
         let (tx, rx) = mpsc::channel();
         tx.send(SttCommand::Final {
-            turn_id: 2, utterance_id: 0,
+            turn_id: 2,
+            utterance_id: 0,
             audio: vec![0.0; 8],
             owner: InteractionOwner::Assistant,
         })
@@ -693,7 +704,14 @@ mod tests {
 
         assert!(!stop);
         assert!(
-            matches!(pending, Some(SttCommand::Final { turn_id: 2, utterance_id: 0, .. })),
+            matches!(
+                pending,
+                Some(SttCommand::Final {
+                    turn_id: 2,
+                    utterance_id: 0,
+                    ..
+                })
+            ),
             "the final must be deferred, not dropped"
         );
     }

@@ -165,7 +165,10 @@ fn handle_controller_involuntary_cutoff(params: &LinkSupervisorParams) {
         return;
     }
     let view = *params.current_pipeline_view.read();
-    let is_active = !matches!(view.state, InteractionState::Idle | InteractionState::Paused);
+    let is_active = !matches!(
+        view.state,
+        InteractionState::Idle | InteractionState::Paused
+    );
     if is_active {
         if let Some(cb) = params.on_remote_event.lock().clone() {
             cb(

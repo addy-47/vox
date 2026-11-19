@@ -41,7 +41,9 @@ impl SharedRingProducer {
 
     /// Non-blocking push for the CPAL callback; drops the frame on lock contention.
     pub fn try_push_slice(&self, slice: &[f32]) -> Option<usize> {
-        self.inner.try_lock().map(|mut guard| guard.push_slice(slice))
+        self.inner
+            .try_lock()
+            .map(|mut guard| guard.push_slice(slice))
     }
 }
 

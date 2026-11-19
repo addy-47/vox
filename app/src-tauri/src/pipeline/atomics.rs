@@ -139,6 +139,11 @@ impl PipelineAtomics {
         self.turn_cancel_token.lock().cancel();
     }
 
+    /// Returns true when the active turn has been cancelled.
+    pub fn is_turn_cancelled(&self) -> bool {
+        self.hardware_cancel_flag.load(Ordering::Acquire)
+    }
+
     /// Rearms the hardware flag and turns a fresh cancellation token without a new turn ID.
     pub fn rearm_turn_cancel_token(&self) -> tokio_util::sync::CancellationToken {
         self.rearm_hardware_cancel_flag();
@@ -207,14 +212,19 @@ impl PipelineAtomics {
         self.utterance_id.load(Ordering::Relaxed)
     }
 
-    /// Allocates a new turn, clearing per-turn latches and rearming both tokens.
+    /// Allocates a new turn, clearing per-turn latches and installing fresh tokens.
+    ///
+    /// INVARIANT: Caller MUST call `cancel_active_turn()` first if cancelling an active prior turn.
+    /// `next_turn()` advances turn identity and installs fresh cancellation tokens without
+    /// redundant cancellation of already-cancelled or idle tokens.
     pub fn next_turn(&self) -> (u32, tokio_util::sync::CancellationToken) {
         let id = self.next_turn_id();
         self.llm_done.store(false, Ordering::Release);
         self.rearm_hardware_cancel_flag();
-        let tok = self.rearm_turn_cancel_token();
-        self.rearm_stream_cancel_token();
-        (id, tok)
+        let new_turn_token = tokio_util::sync::CancellationToken::new();
+        *self.turn_cancel_token.lock() = new_turn_token.clone();
+        *self.stream_cancel_token.lock() = tokio_util::sync::CancellationToken::new();
+        (id, new_turn_token)
     }
 
     /// Returns the currently active non-terminal activity envelope, if any.

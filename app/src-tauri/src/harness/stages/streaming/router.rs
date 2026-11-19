@@ -156,7 +156,11 @@ impl StreamRoutingStage {
 
             // RULE-HARN-12: an acoustic pause cancels only the stream pass. Park the
             // cognitive loop at the speech hold instead of aborting the active turn.
-            if handles.app_state.pipeline.stream_cancel_token().is_cancelled()
+            if handles
+                .app_state
+                .pipeline
+                .stream_cancel_token()
+                .is_cancelled()
                 && !handles.cancel.load(Ordering::Relaxed)
             {
                 log::info!(

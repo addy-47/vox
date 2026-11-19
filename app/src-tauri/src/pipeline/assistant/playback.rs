@@ -75,8 +75,8 @@ pub fn on_playback_finished<R: tauri::Runtime>(
     }
 
     let current_state = state.pipeline.state();
-    let pending_jobs = state.pipeline.pending_tts_jobs.load(Ordering::Relaxed);
-    let sink_occupied = state.pipeline.sink_occupied.load(Ordering::Relaxed);
+    let pending_jobs = state.pipeline.pending_tts_jobs.load(Ordering::Acquire);
+    let sink_occupied = state.pipeline.sink_occupied.load(Ordering::Acquire);
     let zero_audio_fallback = matches!(
         current_state,
         InteractionState::Thinking | InteractionState::Working
@@ -110,6 +110,9 @@ pub fn on_playback_finished<R: tauri::Runtime>(
         }
     }
 
+    // S-01 ordering assumption: clearing accumulator on zero-audio fallback is safe
+    // because is_llm_done() is verified true, ensuring the harness turn artifact has
+    // already been committed prior to quiescence latch resolution.
     state.pipeline_accumulator.lock().clear();
     let target = if state.pipeline.is_llm_done() {
         InteractionState::Ready

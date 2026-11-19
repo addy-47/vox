@@ -11,10 +11,7 @@ use super::{
     PLAYBACK_VOLUME_RAMP_STEP,
 };
 use crate::{
-    core::{
-        events::VoxEvent,
-        state::InteractionState,
-    },
+    core::{events::VoxEvent, state::InteractionState},
     utils::audio_filters::{BiquadLowPass, FilterBank},
 };
 
@@ -214,7 +211,7 @@ impl PlaybackStreamContext {
         // Publish sink occupancy lock-free for the router's quiescence latch.
         self.handles
             .sink_occupied
-            .store(!self.consumer.is_empty(), Ordering::Relaxed);
+            .store(!self.consumer.is_empty(), Ordering::Release);
 
         if self.consumer.is_empty() {
             let pending_jobs = self.handles.pending_synthesis_jobs.load(Ordering::Relaxed);
