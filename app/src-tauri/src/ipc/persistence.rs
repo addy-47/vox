@@ -153,7 +153,8 @@ pub async fn delete_session(
 ) -> Result<(), VoxIpcError> {
     let conn = state
         .db
-        .connect()
+        .connect_with_foreign_keys()
+        .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
     delete_session_row(&conn, session_id, hard.unwrap_or(false))
         .await

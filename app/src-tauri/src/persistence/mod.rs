@@ -209,6 +209,21 @@ impl VoxDb {
         Ok(conn)
     }
 
+    /// Vends a connection with foreign-key enforcement for cascade deletes.
+    ///
+    /// `PRAGMA foreign_keys` is per-connection, so callers that depend on
+    /// `ON DELETE CASCADE` must use this helper instead of `connect()`.
+    pub async fn connect_with_foreign_keys(&self) -> Result<Connection, PersistenceError> {
+        let conn = self.connect()?;
+        if let Err(e) = conn.pragma_update("foreign_keys", "ON").await {
+            log::warn!(
+                "[Persistence::Db] Failed to enable foreign_keys on cascade connection: {}",
+                e
+            );
+        }
+        Ok(conn)
+    }
+
     /// Returns the database file path.
     pub fn path(&self) -> &Path {
         &self.path
