@@ -1603,6 +1603,18 @@
 - **Latent findings queued for clean-room review (no changes yet):** `manage_task.rs:120` uses session-wide `has_running_tasks()` for per-task status; `manager.rs:356` `read_log_tail` loads the whole file instead of seeking backward; supervisor registry removal at child exit may race promotion.
 - **Next:** Test Engineer resumes gate → 12 seam tests → author 10 D5 mutants (`mutants.json` currently has 339 entries, zero D5) → dry-run → 10-mutant local campaign → commit. Then clean-room review and sign-off.
 
+## 2026-11-20 — Domain 5 Test-Side Gates CERTIFIED
+
+- **Role:** Test Engineer (persistent persona), steered by incoming System Architect.
+- **Commit:** `cf062c04` — `test(tasks): verify domain 5 seams and mutation coverage`. Production tree clean from this work.
+- **Compile gate:** Desktop stages PASS (architectural lint, clippy 0 warnings / 0 errors, release build). Android stage BLOCKED by a pre-existing production `libc` dependency defect (below). `ANDROID_HOME=/opt/android-sdk` is required in this environment.
+- **3 `await_holding_lock` lints cleared:** `tests/harness_loop_test.rs` D5-01/02/04 guarded regions wrapped in inner block scopes so guard-derived borrows die before awaits. No lint suppression used; Backend Engineer's "semantic/concurrency change" claim was verified false and rejected.
+- **Seams:** 12/12 D5 seams PASS; 75/75 across both seam binaries under canonical `cargo nextest --release --test-threads=1`. Plain single-process `cargo test` failed 6 tests due to process-global `TempPathsGuard` / `VOX_HOME` interference (`tests/common/paths.rs:184-186`); nextest process isolation is the authoritative runner. No test weakened.
+- **Mutants:** 10 D5 mutants `D5-M01`–`D5-M10` authored in `tests/assets/mutants.json`; dry-run PASS (10/10 unique targets); all 10 KILLED in `--mode local` with byte-exact reverts. `docs/tests/mutation_report.md` reports 100.0% (10/10). First campaign had one survivor (`D5-M02`): vacuous `if let Some(row)` DB assertions skipped before async persistence landed. Fixed with a bounded 5s poll requiring both rows; mutant then KILLED. No assertion weakened.
+- **Production defect confirmed (Backend Engineer assigned):** `Cargo.toml:129-141` scopes `libc` to desktop/Linux only, while `services/tasks/manager.rs:69,161` uses `libc::kill`/`libc::setpgid` under `#[cfg(unix)]` (matches Android) → three `E0433` errors. Fix: add `libc = "0.2"` to the Android target dependency table to preserve required process-group behavior.
+- **Latent findings queued for clean-room review (no changes):** `manage_task.rs:120` session-wide status for a per-task query; `manager.rs:356` full-file `read_log_tail` vs. seek-to-tail; supervisor registry removal at child exit near the promotion boundary.
+- **Next:** Backend Engineer lands the Android `libc` fix and re-runs the full gate → clean-room adversarial review → `changes.diff` → user sign-off → parent coordinator report.
+
 ## 2026-11-20 — Domain 5 Test Engineer: Seam Verification & Mutation Proof (COMPLETE)
 
 - **Role:** Senior Test Engineer (resumed after upstream unblock).
