@@ -143,7 +143,7 @@ fn hash_canonical_json<H: std::hash::Hasher>(val: &Value, hasher: &mut H) {
             5u8.hash(hasher);
             map.len().hash(hasher);
             let mut entries: Vec<(&String, &Value)> = map.iter().collect();
-            entries.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+            entries.sort_by_key(|(k1, _)| *k1);
             for (k, v) in entries {
                 k.hash(hasher);
                 hash_canonical_json(v, hasher);
