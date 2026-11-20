@@ -4080,7 +4080,7 @@
         "binary": "harness_loop_test",
         "filter": "bash_tool_executes_fast_command_synchronously_without_backgrounding"
       },
-      "expected": "The fast printf command never reports completion, so the promotion branch returns a running_in_background observation and the no-background assertion fails."
+      "expected": "With a permanently pending completion receiver, the bash tool always takes the promotion-timeout fallback. PromotionOutcome::AlreadyFinished masks the original running_in_background symptom, but the forced 5s stall pushes the terminal tool observation past the 2s per-stage first-output ceiling declared in the test intent block, so the bounded test fails."
     },
     {
       "id": "D5-M02",
