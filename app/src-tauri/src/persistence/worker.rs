@@ -24,6 +24,7 @@ use crate::{
 
 pub const MAX_TOOL_OUTPUTS_CACHE_BYTES: u64 = 100 * 1024 * 1024;
 pub const MAX_TOOL_OUTPUT_FILE_AGE_SECS: u64 = 7 * 24 * 3600;
+pub const MAX_TASKS_CACHE_BYTES: u64 = 100 * 1024 * 1024;
 
 /// Spawns the persistence worker on a dedicated OS thread holding an isolated database connection.
 pub fn spawn_persistence_worker(
@@ -85,6 +86,13 @@ fn run_startup_sweeps(db: &Connection, rt_handle: &tokio::runtime::Handle) {
     if let Err(e) = rt_handle.block_on(sweep_tool_outputs_cache(db)) {
         log::warn!(
             "[Persistence::Worker] Tool outputs cache startup sweep failed (non-fatal): {}",
+            e
+        );
+    }
+
+    if let Err(e) = rt_handle.block_on(sweep_tasks_cache(db)) {
+        log::warn!(
+            "[Persistence::Worker] Tasks cache startup sweep failed (non-fatal): {}",
             e
         );
     }
@@ -218,6 +226,130 @@ async fn sweep_tool_outputs_cache(db: &Connection) -> Result<(), PersistenceErro
                 total_bytes = total_bytes.saturating_sub(file.size);
                 log::info!(
                     "[Persistence::Worker] LRU evicted tool output: {:?} ({} bytes)",
+                    file.path,
+                    file.size
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn sweep_tasks_cache(db: &Connection) -> Result<(), PersistenceError> {
+    let tasks_dir = crate::utils::paths::tasks_dir();
+    if !tasks_dir.exists() {
+        return Ok(());
+    }
+
+    let entries = match std::fs::read_dir(&tasks_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            log::warn!("[Persistence::Worker] Failed to read tasks_dir: {}", e);
+            return Ok(());
+        }
+    };
+
+    let now_system = SystemTime::now();
+
+    struct LogFile {
+        path: std::path::PathBuf,
+        size: u64,
+        mtime: SystemTime,
+    }
+
+    let mut remaining_files: Vec<LogFile> = Vec::new();
+    let mut total_bytes: u64 = 0;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let dir_name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(name) => name,
+            None => continue,
+        };
+
+        let session_id: i64 = match dir_name.parse() {
+            Ok(sid) => sid,
+            Err(_) => {
+                let _ = std::fs::remove_dir_all(&path);
+                continue;
+            }
+        };
+
+        let is_active_session: bool = {
+            let mut rows = match db
+                .query(
+                    "SELECT 1 FROM sessions WHERE id = ? AND deleted_at IS NULL;",
+                    (session_id,),
+                )
+                .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    log::warn!(
+                        "[Persistence::Worker] Error checking session {}: {}",
+                        session_id,
+                        e
+                    );
+                    continue;
+                }
+            };
+            match rows.next().await {
+                Ok(opt) => opt.is_some(),
+                Err(_) => false,
+            }
+        };
+
+        if !is_active_session {
+            log::info!(
+                "[Persistence::Worker] Purging task logs for inactive/orphaned session {}",
+                session_id
+            );
+            let _ = std::fs::remove_dir_all(&path);
+            continue;
+        }
+
+        if let Ok(file_entries) = std::fs::read_dir(&path) {
+            let mut child_count = 0;
+            for file_entry in file_entries.flatten() {
+                let file_path = file_entry.path();
+                if !file_path.is_file() {
+                    continue;
+                }
+                let metadata = match file_entry.metadata() {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
+                let size = metadata.len();
+                let mtime = metadata.modified().unwrap_or(now_system);
+                total_bytes += size;
+                remaining_files.push(LogFile {
+                    path: file_path,
+                    size,
+                    mtime,
+                });
+                child_count += 1;
+            }
+            if child_count == 0 {
+                let _ = std::fs::remove_dir(&path);
+            }
+        }
+    }
+
+    if total_bytes > MAX_TASKS_CACHE_BYTES {
+        remaining_files.sort_by_key(|f| f.mtime);
+        for file in remaining_files {
+            if total_bytes <= MAX_TASKS_CACHE_BYTES {
+                break;
+            }
+            if std::fs::remove_file(&file.path).is_ok() {
+                total_bytes = total_bytes.saturating_sub(file.size);
+                log::info!(
+                    "[Persistence::Worker] LRU evicted task log: {:?} ({} bytes)",
                     file.path,
                     file.size
                 );

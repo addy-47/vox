@@ -1562,3 +1562,34 @@
 - React Doctor adds higher-level maintainability analysis (complex components, repeated JSX, dead code, supply chain, PR scoring) and explicitly complements existing lint.
 
 **Outcome:** Advisory only. No code or config changes made. No recommendation adopted yet — tradeoffs presented to user.
+
+---
+
+## 2026-11-20 — Domain 5: Background Tasks, Timeout Promotion & Router Wake-Up (Incremental Progress)
+
+- **Role:** Lead System Architect & Subagent Orchestrator.
+- **Scope:** Implementation of Domain 5: Background Tasks, Auto-Promotion, and 9-State Wake-Up routing.
+- **Commits Executed:**
+  1. `88f27c641` (`feat(tasks): minimal signatures and stubs for domain 5`):
+     - Added `TaskStatus`, `TaskDto`, `VoxEvent::TaskFinished`, and `VoxEvent::EndSession { force: bool }` in `core/events.rs`.
+     - Mounted `Arc<BackgroundTaskManager>` on `AppState` (`core/state.rs`).
+     - Added `supports_background_promotion` to `ToolDefinition` trait and registered `bash` and `manage_task` stubs.
+     - Added `task_log_path`, `session_tasks_dir`, and `tasks_dir` in `utils/paths.rs`.
+     - Added `auto_promote_timeout` and `foreground_hard_timeout` in `harness/chassis.rs`.
+     - Added `spawn_idle_monitor_with_timeouts` in `pipeline/lifecycle.rs`.
+  2. `60a840370` (`test(tasks): add 12 red seam tests for domain 5 background tasks`):
+     - Authored 12 black-box seam tests: `TEST-D5-01` to `TEST-D5-10` in `tests/harness_loop_test.rs`, and `TEST-D5-11` to `TEST-D5-12` in `tests/database_persistence_boundary_test.rs`.
+     - Verified all 12 tests compile and fail RED as expected against the stubs.
+  3. `wip(tasks): in-progress domain 5 production implementation`:
+     - Database Migration v19: Created `session_tasks` table with foreign key to `sessions(id)` and status check constraints in `persistence/schema.rs` and `persistence/tasks.rs`.
+     - Sweeper & Directory Purging: Added orphaned task cleanup and 100MB directory limits in `persistence/worker.rs`; cleaned session task directories on delete in `persistence/sessions.rs`.
+     - `BackgroundTaskManager` (`services/tasks/manager.rs`): Implemented process group isolation (`setpgid(0, 0)` / `CREATE_NEW_PROCESS_GROUP`), kernel log redirection (`Stdio::from(file)`), termination (`SIGKILL` to `-pgid`), and non-blocking zombie reaping.
+     - `BashTool` (`harness/tools/bash.rs`): Implemented 5s auto-promotion without error strikes (`is_error: false`), 120s foreground ceiling when `run_in_background: false`, and cancel token propagation.
+     - `ManageTaskTool` (`harness/tools/manage_task.rs`): Implemented `list`, `status`, `kill`, and `kill_all` operations.
+     - 9-State Duplex Router (`pipeline/assistant/tasks.rs`): Implemented `VoxEvent::TaskFinished` handling across `Idle`, `Ready`, `Listening`, `Thinking`, `Working`, `Speaking`, `Paused`, `Sleeping`, and `Error`. Handled active window proactive turn dispatch in `Ready` vs. coalescing when active tasks remain.
+     - Sleep & Disengage Invariants: Implemented `RULE-EVT-12` sleep standby suppression in `pipeline/lifecycle.rs` and `RULE-EVT-13` backend force guard in `pipeline/assistant/session.rs`.
+     - Frontend Integration: Exposed IPC commands in `ipc/pipeline.rs`, updated `pipelineService.ts`, `VoiceSessionContext.tsx`, and `sessionStore.ts` for task counts and two-step confirmation modal.
+- **Verification Status:**
+  - `TEST-D5-01` (synchronous fast command) and `TEST-D5-02` (5s auto-promotion) confirmed green.
+  - Handoff prepared for next System Architect to verify remaining seam tests and execute Phase 2b mutation campaign.
+

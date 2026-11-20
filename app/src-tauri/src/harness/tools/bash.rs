@@ -5,7 +5,7 @@ use super::{
     ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolExecutionMode, ToolResult,
     TruncationPolicy,
 };
-use crate::core::events::PipelineMode;
+use crate::core::events::{PipelineMode, TaskStatus};
 
 /// Built-in tool that executes OS shell commands in an isolated process group.
 pub struct BashTool;
@@ -61,7 +61,7 @@ impl ToolDefinition for BashTool {
         &'a self,
         _mode: PipelineMode,
         args: Value,
-        _ctx: &'a ToolExecutionContext,
+        ctx: &'a ToolExecutionContext,
     ) -> BoxFuture<'a, Result<ToolResult, ToolError>> {
         async move {
             let command = args
@@ -77,7 +77,104 @@ impl ToolDefinition for BashTool {
                 ));
             }
 
-            Ok(ToolResult::new(format!("Command output stub for: {}", command)))
+            let run_in_background = args
+                .get("run_in_background")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+
+            let handle = ctx
+                .app_state
+                .tasks
+                .spawn_supervised_task(
+                    ctx.session_id,
+                    Some(ctx.step_id.clone()),
+                    command.clone(),
+                )
+                .map_err(|e| ToolError::ExecutionFailed(format!("Failed to spawn task: {}", e)))?;
+
+            let timeout_duration = if run_in_background {
+                ctx.auto_promote_timeout
+            } else {
+                ctx.foreground_hard_timeout
+            };
+
+            let mut completion_rx = handle.completion_rx;
+            let task_id = handle.task_id;
+            let log_path = handle.log_path;
+
+            tokio::select! {
+                _ = ctx.cancel.cancelled() => {
+                    log::info!("[BashTool] Turn cancelled; terminating process group for task {}", task_id);
+                    let _ = ctx.app_state.tasks.kill_task(&task_id).await;
+                    Err(ToolError::Cancelled)
+                }
+                status_res = &mut completion_rx => {
+                    match status_res {
+                        Ok(TaskStatus::Completed { exit_code, .. }) => {
+                            let tail = ctx
+                                .app_state
+                                .tasks
+                                .read_log_tail(&log_path, 50)
+                                .unwrap_or_default();
+                            ctx.app_state.tasks.prune_unpromoted(&task_id);
+                            if exit_code == 0 {
+                                Ok(ToolResult::new(format!("Exit code: 0\nOutput:\n{}", tail)))
+                            } else {
+                                Err(ToolError::ExecutionFailed(format!(
+                                    "Exit code: {}\nOutput:\n{}",
+                                    exit_code, tail
+                                )))
+                            }
+                        }
+                        Ok(TaskStatus::Failed { error, .. }) => {
+                            ctx.app_state.tasks.prune_unpromoted(&task_id);
+                            Err(ToolError::ExecutionFailed(format!("Execution failed: {}", error)))
+                        }
+                        Ok(TaskStatus::Killed { .. }) => {
+                            Err(ToolError::ExecutionFailed("Process was terminated".to_string()))
+                        }
+                        _ => {
+                            ctx.app_state.tasks.prune_unpromoted(&task_id);
+                            Err(ToolError::ExecutionFailed(
+                                "Execution channel closed unexpectedly".to_string(),
+                            ))
+                        }
+                    }
+                }
+                _ = tokio::time::sleep(timeout_duration) => {
+                    if run_in_background {
+                        log::info!(
+                            "[BashTool] Exceeded {:?}; auto-promoting task {}",
+                            timeout_duration,
+                            task_id
+                        );
+                        ctx.app_state.tasks.mark_promoted(&task_id).await;
+                        let payload = json!({
+                            "status": "running_in_background",
+                            "task_id": task_id,
+                            "command": command,
+                            "log_path": log_path.to_string_lossy(),
+                            "message": "Process running in background. Use manage_task to monitor or kill."
+                        });
+                        Ok(ToolResult::new(payload.to_string()))
+                    } else {
+                        log::warn!(
+                            "[BashTool] Exceeded {:?} foreground ceiling; promoting task {}",
+                            timeout_duration,
+                            task_id
+                        );
+                        ctx.app_state.tasks.mark_promoted(&task_id).await;
+                        let payload = json!({
+                            "status": "running_in_background",
+                            "task_id": task_id,
+                            "command": command,
+                            "log_path": log_path.to_string_lossy(),
+                            "message": "Process exceeded foreground ceiling and was promoted to background."
+                        });
+                        Ok(ToolResult::new(payload.to_string()))
+                    }
+                }
+            }
         }
         .boxed()
     }

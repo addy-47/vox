@@ -25,6 +25,7 @@ pub mod queue;
 pub mod schema;
 pub mod sessions;
 pub mod steps;
+pub mod tasks;
 pub mod tool_calls;
 pub mod voices;
 pub mod worker;

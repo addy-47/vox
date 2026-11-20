@@ -596,12 +596,25 @@ pub fn on_stop_turn<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rout
 }
 
 /// Ends active conversation session, persists final metadata, and triggers background compaction.
-pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext) {
+pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext, force: bool) {
     let current_state = state.pipeline.state();
     if current_state == InteractionState::Idle {
         log::debug!("[Pipeline::Session] EndSession called while already Idle; no-op");
         return;
     }
+
+    let session_id = state.conversation_id.load(Ordering::Relaxed) as i64;
+    let active_count = state.tasks.active_tasks_count(session_id);
+    if !force && active_count > 0 {
+        log::warn!(
+            "[Pipeline::Session] Cannot end session: {} tasks running and force=false",
+            active_count
+        );
+        return;
+    }
+
+    // Terminate all process groups for this session and reap children
+    state.tasks.kill_all(session_id);
 
     state.pipeline.cancel_active_turn();
     state.pipeline_accumulator.lock().clear();

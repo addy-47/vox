@@ -363,6 +363,15 @@ pub async fn delete_session(conn: &Connection, session_id: i64, hard: bool) -> R
         );
     }
 
+    let tasks_dir = crate::utils::paths::session_tasks_dir(session_id);
+    if tasks_dir.exists() {
+        let _ = std::fs::remove_dir_all(&tasks_dir);
+        log::info!(
+            "[Persistence::Sessions] Purged task logs directory for session_id={}",
+            session_id
+        );
+    }
+
     Ok(())
 }
 

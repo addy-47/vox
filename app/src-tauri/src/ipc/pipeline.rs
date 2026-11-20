@@ -7,7 +7,7 @@ use crate::{
     core::{
         engine::{start_audio_engine, stop_audio_engine},
         error::VoxIpcError,
-        events::VoxEvent,
+        events::{TaskDto, VoxEvent},
         state::{AppState, InteractionOwner, InteractionState},
     },
     persistence::sessions::{fetch_session_by_id, fetch_turns, SessionRow, TurnRow},
@@ -150,6 +150,25 @@ pub async fn end_session<R: tauri::Runtime>(
         .map_err(|e| VoxIpcError::Engine(format!("Failed to send EndSession: {}", e)))?;
 
     Ok(())
+}
+
+/// Returns the number of active background tasks for the specified or current session.
+#[tauri::command]
+pub async fn get_active_tasks_count(
+    state: State<'_, Arc<AppState>>,
+    session_id: Option<i64>,
+) -> Result<usize, VoxIpcError> {
+    let sid = session_id.unwrap_or_else(|| state.conversation_id.load(Ordering::Relaxed) as i64);
+    Ok(state.tasks.active_tasks_count(sid))
+}
+
+/// Lists active background tasks, optionally filtered by session ID.
+#[tauri::command]
+pub async fn list_tasks(
+    state: State<'_, Arc<AppState>>,
+    session_id: Option<i64>,
+) -> Result<Vec<TaskDto>, VoxIpcError> {
+    Ok(state.tasks.list_tasks(session_id))
 }
 
 /// Aborts the active turn to Ready state without ending the session.

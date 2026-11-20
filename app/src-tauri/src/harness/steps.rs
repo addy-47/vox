@@ -624,6 +624,18 @@ pub async fn step6_execute_tool_batch(
         }
     };
 
+    let (auto_promote, foreground_hard) = {
+        let guard = ctx.harness_arc.lock();
+        if let Some(ref harness) = *guard {
+            (harness.auto_promote_timeout, harness.foreground_hard_timeout)
+        } else {
+            (
+                crate::harness::chassis::HARNESS_AUTO_PROMOTE_TIMEOUT,
+                crate::harness::chassis::HARNESS_FOREGROUND_HARD_TIMEOUT,
+            )
+        }
+    };
+
     let step_id = uuid::Uuid::new_v4().to_string();
 
     let tool_ctx = ToolExecutionContext::new(
@@ -634,7 +646,8 @@ pub async fn step6_execute_tool_batch(
         make_sessions_changed_callback(&ctx.req.emitter),
     )
     .with_step(step_id.clone(), step_index as u32)
-    .with_observation_budget(max_observation_tokens);
+    .with_observation_budget(max_observation_tokens)
+    .with_promotion_timeouts(auto_promote, foreground_hard);
 
     let non_terminal = if let Some(first_call) = calls.first() {
         NonTerminalPhase::tool(&first_call.name, &first_call.id, None)

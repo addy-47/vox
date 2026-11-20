@@ -88,6 +88,8 @@ pub struct ToolExecutionContext {
     pub cancel: tokio_util::sync::CancellationToken,
     pub on_sessions_changed: Option<Arc<dyn Fn() + Send + Sync>>,
     pub max_observation_tokens: Option<usize>,
+    pub auto_promote_timeout: std::time::Duration,
+    pub foreground_hard_timeout: std::time::Duration,
 }
 
 impl ToolExecutionContext {
@@ -108,7 +110,20 @@ impl ToolExecutionContext {
             cancel,
             on_sessions_changed,
             max_observation_tokens: None,
+            auto_promote_timeout: crate::harness::chassis::HARNESS_AUTO_PROMOTE_TIMEOUT,
+            foreground_hard_timeout: crate::harness::chassis::HARNESS_FOREGROUND_HARD_TIMEOUT,
         }
+    }
+
+    /// Attaches promotion timeouts to the execution context.
+    pub fn with_promotion_timeouts(
+        mut self,
+        auto_promote: std::time::Duration,
+        hard_ceiling: std::time::Duration,
+    ) -> Self {
+        self.auto_promote_timeout = auto_promote;
+        self.foreground_hard_timeout = hard_ceiling;
+        self
     }
 
     /// Attaches step tracking metadata to the execution context.

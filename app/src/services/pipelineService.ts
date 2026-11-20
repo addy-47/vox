@@ -57,8 +57,29 @@ export function startSession(sessionId?: number | null): Promise<void> {
   return invoke("start_session", { sessionId: sessionId ?? null });
 }
 
-export function endSession(): Promise<void> {
-  return invoke("end_session");
+export function endSession(force?: boolean): Promise<void> {
+  return invoke("end_session", { force: force ?? false });
+}
+
+export function getActiveTasksCount(sessionId?: number | null): Promise<number> {
+  return invoke("get_active_tasks_count", { sessionId: sessionId ?? null });
+}
+
+export interface TaskRecordDto {
+  taskId: string;
+  sessionId: number;
+  command: string;
+  status: string;
+  exitCode?: number | null;
+  error?: string | null;
+  logPath: string;
+  startedAt: number;
+  completedAt?: number | null;
+  durationMs?: number | null;
+}
+
+export function listTasks(sessionId?: number | null): Promise<TaskRecordDto[]> {
+  return invoke("list_tasks", { sessionId: sessionId ?? null });
 }
 
 export function stopTurn(): Promise<void> {
@@ -192,9 +213,10 @@ export async function engageSession(
 export async function disengageSession(
   notifyState: (state: InteractionState) => void,
   timeoutMs: number = 8000,
+  force: boolean = false,
 ): Promise<SessionOrchestrationResult> {
   try {
-    await invokeWithTimeout("end_session", undefined, timeoutMs);
+    await invokeWithTimeout("end_session", { force }, timeoutMs);
   } catch (err: unknown) {
     if (isVoxIpcError(err) && isInvalidStateError(err)) {
       const synced = await resyncFromSnapshot();

@@ -17,6 +17,7 @@ use crate::{
 
 /// Handles Push-To-Talk key press event, evaluating barge-in and opening the VAD validation window.
 pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext) {
+    state.pipeline.record_user_activity();
     if ctx.interaction_mode == InteractionMode::Passive {
         log::debug!("[Pipeline::Ptt] PttStart dropped in Passive mode");
         return;

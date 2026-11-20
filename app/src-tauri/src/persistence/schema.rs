@@ -8,7 +8,7 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 19;
 
 const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS projects (
@@ -212,6 +212,23 @@ const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
         paired_at    INTEGER NOT NULL,
         last_seen_at INTEGER
     );",
+    "CREATE TABLE IF NOT EXISTS session_tasks (
+        task_id TEXT PRIMARY KEY,
+        session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        tool_call_id TEXT,
+        command TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed', 'killed')),
+        exit_code INTEGER,
+        error TEXT,
+        log_path TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        duration_ms INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    );",
+    "CREATE INDEX IF NOT EXISTS idx_session_tasks_session_id ON session_tasks(session_id);",
+    "CREATE INDEX IF NOT EXISTS idx_session_tasks_status ON session_tasks(session_id, status);",
 ];
 
 /// Initializes the database schema to v1 and seeds initial static assets.

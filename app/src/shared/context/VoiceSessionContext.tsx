@@ -1,10 +1,11 @@
-import { createContext, useContext, useCallback, useEffect, useMemo, useRef } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useSessionStore } from "@/store/sessionStore";
 import { useVoiceSessionStream } from "@/shared/hooks/useVoiceSessionStream";
 import {
   engageSession,
   disengageSession,
+  getActiveTasksCount,
   pauseSession,
   resumeSession,
   pttStart,
@@ -18,6 +19,7 @@ import {
   createSession as createSessionIpc,
   stopEngine,
 } from "@/services/pipelineService";
+import { ConfirmModal } from "@/shared/ui/ConfirmModal";
 import { getRuntimeSnapshot } from "@/services/monitoringService";
 import { getSettings, updateSetting } from "@/services/settingsService";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -142,6 +144,8 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const commitTurnRef = useRef<() => void>(() => {});
   const clearTranscriptRef = useRef<() => void>(() => {});
   const isDisengagingRef = useRef(false);
+  const [confirmDisengageOpen, setConfirmDisengageOpen] = useState(false);
+  const [pendingTasksCount, setPendingTasksCount] = useState(0);
 
   const isEngaged = interactionState !== "Idle";
   const isSleeping = interactionState === "Sleeping";
@@ -288,29 +292,46 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
   }, []);
 
+  const executeDisengage = useCallback(
+    async (force = false) => {
+      isDisengagingRef.current = true;
+      clearTranscript();
+      const api = storeApi();
+      api.setIsLaunching(true);
+      api.setTranscript("");
+      api.setAssistantText("");
+      api.setDialogueHistory([]);
+      api.setActiveSessionId(null);
+      api.setActiveSessionLabel({ sessionTitle: null, projectName: null });
+      api.setTurnIdCounter(0);
+      api.setLatestTurnMetrics(null);
+      api.bumpSessionListVersion();
+      try {
+        await disengageSession((state) => storeApi().setInteractionState(state), 8000, force);
+      } catch {
+        // End is best-effort; local state was already cleared.
+      } finally {
+        storeApi().setActiveSessionId(null);
+        storeApi().setIsLaunching(false);
+        isDisengagingRef.current = false;
+      }
+    },
+    [clearTranscript],
+  );
+
   const disengage = useCallback(async () => {
-    isDisengagingRef.current = true;
-    clearTranscript();
-    const api = storeApi();
-    api.setIsLaunching(true);
-    api.setTranscript("");
-    api.setAssistantText("");
-    api.setDialogueHistory([]);
-    api.setActiveSessionId(null);
-    api.setActiveSessionLabel({ sessionTitle: null, projectName: null });
-    api.setTurnIdCounter(0);
-    api.setLatestTurnMetrics(null);
-    api.bumpSessionListVersion();
     try {
-      await disengageSession((state) => storeApi().setInteractionState(state));
+      const count = await getActiveTasksCount();
+      if (count > 0) {
+        setPendingTasksCount(count);
+        setConfirmDisengageOpen(true);
+        return;
+      }
     } catch {
-      // End is best-effort; local state was already cleared.
-    } finally {
-      storeApi().setActiveSessionId(null);
-      storeApi().setIsLaunching(false);
-      isDisengagingRef.current = false;
+      // Best-effort active task query fallback
     }
-  }, [clearTranscript]);
+    await executeDisengage(false);
+  }, [executeDisengage]);
 
   const pause = useCallback(async () => {
     const current = storeApi().interactionState;
@@ -635,7 +656,24 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
 
   return (
     <VoiceSessionActionsContext.Provider value={actionsValue}>
-      <VoiceSessionContext.Provider value={value}>{children}</VoiceSessionContext.Provider>
+      <VoiceSessionContext.Provider value={value}>
+        {children}
+        <ConfirmModal
+          open={confirmDisengageOpen}
+          title="Disengage Session?"
+          description={`You have ${pendingTasksCount} background process${pendingTasksCount === 1 ? "" : "es"} running. Disengaging will terminate them.`}
+          confirmLabel="Terminate & Disengage"
+          cancelLabel="Keep Running"
+          isDestructive={true}
+          onConfirm={async () => {
+            setConfirmDisengageOpen(false);
+            await executeDisengage(true);
+          }}
+          onCancel={() => {
+            setConfirmDisengageOpen(false);
+          }}
+        />
+      </VoiceSessionContext.Provider>
     </VoiceSessionActionsContext.Provider>
   );
 };

@@ -143,4 +143,8 @@ fn evaluate_synthesis_latch<R: tauri::Runtime>(
         "[Pipeline::Llm] LlmFinished latch resolved (audio drained) -> Ready (turn {})",
         turn_id
     );
+
+    if let Some(app_handle) = app {
+        super::tasks::check_and_dispatch_inbox_tasks(app_handle, state, ctx);
+    }
 }

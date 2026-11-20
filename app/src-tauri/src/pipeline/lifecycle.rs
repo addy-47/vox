@@ -63,6 +63,11 @@ pub fn spawn_idle_monitor_with_timeouts<R: tauri::Runtime>(
                 tokio::select! {
                     _ = tokio::time::sleep(paused_timeout) => {
                         if state.pipeline.state() == InteractionState::Paused {
+                            let session_id = state.conversation_id.load(std::sync::atomic::Ordering::Relaxed) as i64;
+                            if state.tasks.has_running_tasks(session_id) {
+                                log::info!("[Pipeline] Inactive sleep suppressed by RULE-EVT-12: background tasks running");
+                                continue;
+                            }
                             log::info!("[Pipeline] Offloading idle models after sustained Paused timeout.");
                             let mut lock = state.engine.lock().await;
                             if let Some(ref mut engine) = *lock {

@@ -170,6 +170,9 @@ pub fn on_transcript_final<R: tauri::Runtime>(
 
     let current_state = state.pipeline.state();
     let trimmed = text.trim().to_string();
+    if !trimmed.is_empty() {
+        state.pipeline.record_user_activity();
+    }
     let is_held = {
         let guard = state.harness.lock();
         guard
@@ -268,6 +271,33 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             );
             transition(InteractionState::Thinking, None, ctx, app, state);
             spawn_harness_turn_task(turn_id, query, app, state, ctx);
+            return;
+        }
+
+        // When background tasks have queued notifications in StepInbox, user speech during
+        // a speech hold acts as a steering message. Pushing to inbox releases the hold
+        // so the cognitive loop can drain both the task outcome and the user steering message.
+        let has_inbox_messages = {
+            let guard = state.harness.lock();
+            guard.as_ref().is_some_and(|h| !h.inbox().is_empty())
+        };
+        if has_inbox_messages {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let guard = state.harness.lock();
+            if let Some(ref harness) = *guard {
+                harness.inbox().push(crate::harness::stages::inbox::InboxMessage::new(
+                    trimmed.clone(),
+                    crate::harness::stages::inbox::QueuedMessageDelivery::Immediate,
+                    now,
+                ));
+            }
+            log::info!(
+                "[Pipeline::Transcript] Pushed user steering message to inbox while tasks queued (turn {})",
+                turn_id
+            );
             return;
         }
 

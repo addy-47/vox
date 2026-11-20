@@ -5,6 +5,7 @@ pub mod playback;
 pub mod ptt;
 pub mod session;
 pub mod speech;
+pub mod tasks;
 pub mod text;
 pub mod transcript;
 
@@ -185,7 +186,7 @@ pub fn handle_event<R: tauri::Runtime + 'static>(
         }
         VoxEvent::PauseSession => session::on_pause(app, state, ctx),
         VoxEvent::ResumeSession => session::on_resume(app, state, ctx),
-        VoxEvent::EndSession { force: _ } => session::on_end(app, state, ctx),
+        VoxEvent::EndSession { force } => session::on_end(app, state, ctx, force),
         VoxEvent::StopTurn => session::on_stop_turn(app, state, ctx),
 
         VoxEvent::PttStart {
@@ -238,6 +239,13 @@ pub fn handle_event<R: tauri::Runtime + 'static>(
         }
         VoxEvent::PlaybackFinished { turn_id } => {
             playback::on_playback_finished(turn_id, app, state, ctx);
+        }
+        VoxEvent::TaskFinished {
+            task_id,
+            session_id,
+            status,
+        } => {
+            tasks::on_task_finished(task_id, session_id, status, app, state, ctx);
         }
         _ => {}
     }

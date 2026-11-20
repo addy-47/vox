@@ -27,6 +27,7 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
         log::debug!("[Pipeline::Text] Dropping empty text input");
         return;
     }
+    state.pipeline.record_user_activity();
 
     let transliterate_enabled = state
         .settings

@@ -68,9 +68,10 @@ use crate::{
             search_history, update_session,
         },
         pipeline::{
-            continue_session, create_session, end_session, launch_engine, pause_session,
-            ptt_cancel, ptt_start, ptt_stop, resume_session, set_mic_muted, set_playback_muted,
-            set_session_private_mode, start_session, stop_engine, stop_turn, submit_text_input,
+            continue_session, create_session, end_session, get_active_tasks_count, launch_engine,
+            list_tasks, pause_session, ptt_cancel, ptt_start, ptt_stop, resume_session,
+            set_mic_muted, set_playback_muted, set_session_private_mode, start_session,
+            stop_engine, stop_turn, submit_text_input,
         },
         projects::{create_project, delete_project, get_projects, rename_project},
         remote::{
@@ -336,6 +337,8 @@ fn handle_invoke(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         debug_fire_transient,
         start_session,
         end_session,
+        get_active_tasks_count,
+        list_tasks,
         stop_turn,
         pause_session,
         resume_session,

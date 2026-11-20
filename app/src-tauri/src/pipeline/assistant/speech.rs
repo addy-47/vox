@@ -14,6 +14,7 @@ pub fn on_speech_start<R: tauri::Runtime>(
     state: &AppState,
     ctx: &RoutingContext,
 ) {
+    state.pipeline.record_user_activity();
     if ctx.interaction_mode == InteractionMode::PTT {
         log::debug!("[Pipeline::Speech] SpeechStart ignored in PTT mode");
         return;

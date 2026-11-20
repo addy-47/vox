@@ -122,6 +122,9 @@ pub fn on_playback_finished<R: tauri::Runtime>(
         InteractionState::Thinking
     };
     transition(target, None, ctx, app, state);
+    if target == InteractionState::Ready {
+        super::tasks::check_and_dispatch_inbox_tasks(app, state, ctx);
+    }
     state.turn_metrics.record_playback_finished(turn_id);
     log::info!(
         "[Pipeline::Playback] Playback finished ({:?} -> {:?}, turn {})",

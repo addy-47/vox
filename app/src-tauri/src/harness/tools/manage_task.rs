@@ -30,6 +30,14 @@ impl ToolDefinition for ManageTaskTool {
         }
     }
 
+    fn handles_own_timeout(&self) -> bool {
+        false
+    }
+
+    fn supports_background_promotion(&self) -> bool {
+        false
+    }
+
     fn description(&self, _mode: PipelineMode) -> &str {
         "Inspects or manages active and completed background tasks."
     }
@@ -56,7 +64,7 @@ impl ToolDefinition for ManageTaskTool {
         &'a self,
         _mode: PipelineMode,
         args: Value,
-        _ctx: &'a ToolExecutionContext,
+        ctx: &'a ToolExecutionContext,
     ) -> BoxFuture<'a, Result<ToolResult, ToolError>> {
         async move {
             let action = args
@@ -72,7 +80,91 @@ impl ToolDefinition for ManageTaskTool {
                 ));
             }
 
-            Ok(ToolResult::new(format!("manage_task stub for action: {}", action)))
+            match action.as_str() {
+                "list" => {
+                    let tasks = ctx.app_state.tasks.list_tasks(Some(ctx.session_id));
+                    let json_str =
+                        serde_json::to_string(&tasks).unwrap_or_else(|_| "[]".to_string());
+                    Ok(ToolResult::new(json_str))
+                }
+                "status" => {
+                    let task_id = args
+                        .get("task_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+
+                    if task_id.is_empty() {
+                        return Err(ToolError::InvalidArguments(
+                            "Parameter 'task_id' is required for action 'status'".to_string(),
+                        ));
+                    }
+
+                    let log_path =
+                        crate::utils::paths::task_log_path(ctx.session_id, &task_id);
+                    let tail = ctx
+                        .app_state
+                        .tasks
+                        .read_log_tail(&log_path, 50)
+                        .map_err(|e| {
+                            ToolError::ExecutionFailed(format!(
+                                "Failed to read task log tail: {}",
+                                e
+                            ))
+                        })?;
+
+                    Ok(ToolResult::new(format!(
+                        "Task: {}\nStatus: {}\nTail:\n{}",
+                        task_id,
+                        if ctx.app_state.tasks.has_running_tasks(ctx.session_id) {
+                            "running"
+                        } else {
+                            "unknown"
+                        },
+                        tail
+                    )))
+                }
+                "kill" => {
+                    let task_id = args
+                        .get("task_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+
+                    if task_id.is_empty() {
+                        return Err(ToolError::InvalidArguments(
+                            "Parameter 'task_id' is required for action 'kill'".to_string(),
+                        ));
+                    }
+
+                    ctx.app_state
+                        .tasks
+                        .kill_task(&task_id)
+                        .await
+                        .map_err(|e| {
+                            ToolError::ExecutionFailed(format!("Failed to kill task: {}", e))
+                        })?;
+
+                    let payload = json!({
+                        "status": "killed",
+                        "task_id": task_id
+                    });
+                    Ok(ToolResult::new(payload.to_string()))
+                }
+                "kill_all" => {
+                    ctx.app_state.tasks.kill_all(ctx.session_id);
+                    let payload = json!({
+                        "status": "all_killed"
+                    });
+                    Ok(ToolResult::new(payload.to_string()))
+                }
+                other => Err(ToolError::InvalidArguments(format!(
+                    "Unsupported action '{}' for manage_task",
+                    other
+                ))),
+            }
         }
         .boxed()
     }
