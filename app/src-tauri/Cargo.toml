@@ -162,6 +162,12 @@ ort = { version = "2.0.0-rc.13", features = ["download-binaries", "ndarray", "nn
 jni = "0.21"
 ndk-context = "0.1"
 
+# `manager.rs` calls `libc::kill` and `libc::setpgid` under `#[cfg(unix)]`,
+# which includes Android. Domain 5 process-group isolation and SIGKILL
+# teardown must stay intact on mobile, so libc must be a direct dependency
+# for this target as well.
+libc = "0.2"
+
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 sherpa-onnx = { version = "1.13.8", default-features = false, features = ["shared"] }
 
