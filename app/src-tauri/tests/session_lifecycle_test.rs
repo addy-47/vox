@@ -1005,7 +1005,7 @@ async fn session_end_keeps_the_audio_engine_while_dictation_is_ready() {
             spawn_router(app.clone(), event_rx).expect("Failed to spawn router thread");
 
         event_tx
-            .send(VoxEvent::EndSession)
+            .send(VoxEvent::EndSession { force: false })
             .expect("Failed to send EndSession");
 
         wait_for_state(&state, InteractionState::Idle, Duration::from_secs(5)).await;
@@ -1079,7 +1079,7 @@ async fn session_end_stops_the_audio_engine_when_dictation_is_idle() {
             spawn_router(app.clone(), event_rx).expect("Failed to spawn router thread");
 
         event_tx
-            .send(VoxEvent::EndSession)
+            .send(VoxEvent::EndSession { force: false })
             .expect("Failed to send EndSession");
 
         wait_for_state(&state, InteractionState::Idle, Duration::from_secs(5)).await;
@@ -1167,7 +1167,7 @@ async fn session_end_unmounts_the_harness_clears_the_accumulator_and_purges_the_
             spawn_router(app.clone(), event_rx).expect("Failed to spawn router thread");
 
         event_tx
-            .send(VoxEvent::EndSession)
+            .send(VoxEvent::EndSession { force: false })
             .expect("Failed to dispatch EndSession");
 
         wait_for_state(&state, InteractionState::Idle, Duration::from_secs(5)).await;
@@ -1234,7 +1234,7 @@ async fn session_end_cancels_the_in_flight_turn() {
             spawn_router(app.clone(), event_rx).expect("Failed to spawn router thread");
 
         event_tx
-            .send(VoxEvent::EndSession)
+            .send(VoxEvent::EndSession { force: false })
             .expect("Failed to dispatch EndSession");
 
         wait_for_state(&state, InteractionState::Idle, Duration::from_secs(5)).await;

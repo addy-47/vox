@@ -1946,3 +1946,203 @@ async fn session_deletion_and_startup_sweep_purge_tier4_tool_output_cache_direct
     .await
     .expect("test timed out");
 }
+
+// ============================================================================
+// Section 13: Domain 5 — Background Tasks & Session Tasks Lifecycle Persistence
+// ============================================================================
+
+/// PURPOSE:  Catch broken Schema v19 migrations, missing session_tasks columns, or invalid task status writes in Turso DB.
+/// SCENARIO: Run `run_migrations` to v19; insert a 'running' task in `session_tasks`, transition it to 'completed' (exit_code = 0, duration_ms = 4200), and attempt to insert an invalid status 'unknown_state'.
+/// ASSERTS:  `SCHEMA_VERSION == 19`; queried task record matches all persisted fields (task_id, session_id, tool_call_id, command, status = "completed", exit_code = Some(0), log_path, duration_ms = Some(4200)); inserting 'unknown_state' fails with a SQLite CHECK constraint error.
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   In `persistence/schema.rs`, omit the `CHECK (status IN ('running', 'completed', 'failed', 'killed'))` constraint from `session_tasks`.
+#[tokio::test]
+async fn schema_v19_persists_session_tasks_lifecycle_and_enforces_status_check_constraint() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_schema_v19.db");
+        let db = VoxDb::open(&db_path).await.expect("open db");
+        let conn = db.connect().expect("connect db");
+
+        run_migrations(&conn).await.expect("run migrations");
+
+        // 1. Assert schema version is 19
+        assert_eq!(
+            SCHEMA_VERSION, 19,
+            "SCHEMA_VERSION constant must be 19 after v19 migration"
+        );
+
+        let mut rows = conn
+            .query("PRAGMA user_version;", ())
+            .await
+            .expect("query user_version");
+        let user_version: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(user_version, 19, "PRAGMA user_version must be 19");
+
+        // Seed a valid session for foreign key constraint
+        let session_id = 91901i64;
+        let now = 1700000000000i64;
+        conn.execute(
+            "INSERT INTO sessions (id, created_at, updated_at, project_id) VALUES (?, ?, ?, 'default');",
+            (session_id, now, now),
+        )
+        .await
+        .expect("insert session");
+
+        // 2. Insert running task
+        let task_id = "task-v19-001";
+        let log_path = "/tmp/vox/test.log";
+        conn.execute(
+            "INSERT INTO session_tasks (task_id, session_id, tool_call_id, command, status, log_path, started_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?);",
+            (task_id, session_id, "call-1", "echo test", log_path, now, now, now),
+        )
+        .await
+        .expect("insert running task");
+
+        // 3. Update to completed
+        let duration_ms = 4200i64;
+        let completed_at = now + duration_ms;
+        conn.execute(
+            "UPDATE session_tasks SET status = 'completed', exit_code = 0, duration_ms = ?, completed_at = ?, updated_at = ? WHERE task_id = ?;",
+            (duration_ms, completed_at, completed_at, task_id),
+        )
+        .await
+        .expect("update to completed");
+
+        // 4. Query and verify all fields
+        let mut q_rows = conn
+            .query(
+                "SELECT task_id, session_id, tool_call_id, command, status, exit_code, log_path, duration_ms FROM session_tasks WHERE task_id = ?;",
+                (task_id,),
+            )
+            .await
+            .expect("query task");
+        let row = q_rows.next().await.unwrap().expect("task row found");
+        let q_task_id: String = row.get(0).unwrap();
+        let q_session_id: i64 = row.get(1).unwrap();
+        let q_tool_call_id: Option<String> = row.get(2).unwrap();
+        let q_command: String = row.get(3).unwrap();
+        let q_status: String = row.get(4).unwrap();
+        let q_exit_code: Option<i64> = row.get(5).unwrap();
+        let q_log_path: String = row.get(6).unwrap();
+        let q_duration_ms: Option<i64> = row.get(7).unwrap();
+
+        assert_eq!(q_task_id, task_id);
+        assert_eq!(q_session_id, session_id);
+        assert_eq!(q_tool_call_id, Some("call-1".to_string()));
+        assert_eq!(q_command, "echo test");
+        assert_eq!(q_status, "completed");
+        assert_eq!(q_exit_code, Some(0));
+        assert_eq!(q_log_path, log_path);
+        assert_eq!(q_duration_ms, Some(4200));
+
+        // 5. Assert CHECK constraint rejects invalid status
+        let invalid_res = conn.execute(
+            "INSERT INTO session_tasks (task_id, session_id, command, status, log_path, started_at, created_at, updated_at)
+             VALUES ('task-invalid', ?, 'invalid cmd', 'unknown_state', ?, ?, ?, ?);",
+            (session_id, log_path, now, now, now),
+        ).await;
+        assert!(
+            invalid_res.is_err(),
+            "Inserting status 'unknown_state' must fail with SQLite CHECK constraint violation"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch orphaned session_tasks DB rows or leaked `~/.vox/cache/tasks/<session_id>/` log files when a session is deleted (RULE-HARN-15).
+/// SCENARIO: Create a session with 1 session_tasks row and a populated log file under `paths::session_tasks_dir(session_id)`, plus an orphaned task log directory `paths::session_tasks_dir(orphan_session_id)`; invoke `delete_session(&conn, session_id, true)` and `run_startup_sweeps(&conn)`.
+/// ASSERTS:  `SELECT COUNT(*) FROM session_tasks WHERE session_id = ?` is 0; both `paths::session_tasks_dir(session_id)` and `paths::session_tasks_dir(orphan_session_id)` are removed from disk.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   In `delete_session` (`persistence/sessions.rs`), omit `std::fs::remove_dir_all(paths::session_tasks_dir(session_id))` or omit `ON DELETE CASCADE` on `session_tasks.session_id`.
+#[tokio::test]
+async fn session_hard_delete_kills_running_tasks_cascades_session_tasks_rows_and_purges_log_cache_dir() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _guard = TempPathsGuard::new();
+        vox_lib::utils::paths::init();
+
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_delete_tasks.db");
+        let db = VoxDb::open(&db_path).await.expect("open db");
+        let conn = db.connect().expect("connect db");
+
+        run_migrations(&conn).await.expect("run migrations");
+
+        let session_id = 91902i64;
+        let orphan_session_id = 91903i64;
+        let now = 1700000000000i64;
+
+        conn.execute(
+            "INSERT INTO sessions (id, created_at, updated_at, project_id) VALUES (?, ?, ?, 'default');",
+            (session_id, now, now),
+        )
+        .await
+        .expect("insert session");
+
+        let task_id = "task-purge-1";
+        let tasks_dir = vox_lib::utils::paths::session_tasks_dir(session_id);
+        let orphan_dir = vox_lib::utils::paths::session_tasks_dir(orphan_session_id);
+        std::fs::create_dir_all(&tasks_dir).expect("create tasks dir");
+        std::fs::create_dir_all(&orphan_dir).expect("create orphan tasks dir");
+
+        let log_file = vox_lib::utils::paths::task_log_path(session_id, task_id);
+        std::fs::write(&log_file, "task log output to be purged").expect("write log file");
+        std::fs::write(orphan_dir.join("orphan.log"), "orphan log output").expect("write orphan log");
+
+        conn.execute(
+            "INSERT INTO session_tasks (task_id, session_id, command, status, log_path, started_at, created_at, updated_at)
+             VALUES (?, ?, 'echo purge', 'running', ?, ?, ?, ?);",
+            (task_id, session_id, log_file.to_string_lossy().to_string(), now, now, now),
+        )
+        .await
+        .expect("insert task row");
+
+        assert!(tasks_dir.exists(), "tasks_dir must exist before delete");
+        assert!(orphan_dir.exists(), "orphan_dir must exist before sweep");
+
+        // 1. Delete session_id
+        delete_session(&conn, session_id, true)
+            .await
+            .expect("delete_session failed");
+
+        // Check DB row cascaded
+        let mut rows = conn
+            .query("SELECT COUNT(*) FROM session_tasks WHERE session_id = ?;", (session_id,))
+            .await
+            .expect("query session_tasks");
+        let task_count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(
+            task_count, 0,
+            "session_tasks row must be cascaded on session delete"
+        );
+
+        // Check session_tasks_dir purged
+        assert!(
+            !tasks_dir.exists(),
+            "session_tasks_dir must be removed on hard delete_session"
+        );
+
+        // 2. Spawn persistence worker to trigger startup sweeps
+        let is_healthy = Arc::new(AtomicBool::new(true));
+        let rate = Arc::new(AtomicU32::new(0));
+        let private_mode = Arc::new(AtomicBool::new(false));
+        let persist_tx = spawn_persistence_worker(Arc::new(db), is_healthy, rate, private_mode);
+        let _ = persist_tx.send(PersistenceEvent::Shutdown);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline && orphan_dir.exists() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        assert!(
+            !orphan_dir.exists(),
+            "orphan session_tasks_dir must be purged by startup sweeps"
+        );
+    })
+    .await
+    .expect("test timed out");
+}

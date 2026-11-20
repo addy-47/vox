@@ -2600,7 +2600,7 @@ async fn ready_state_disengages_session_to_idle_on_second_esc() {
         );
 
         // Esc Step 2: EndSession disengages session from Ready to Idle
-        rig.send_event(VoxEvent::EndSession);
+        rig.send_event(VoxEvent::EndSession { force: false });
         assert!(
             rig.wait_for_state(InteractionState::Idle, Duration::from_millis(500))
                 .await,
@@ -3581,6 +3581,1071 @@ async fn tool_active_false_barge_in_restores_working_with_intact_activity() {
             restored_activity,
             Some(envelope),
             "current_activity must remain intact with original activity envelope upon return to Working"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+// ============================================================================
+// Section 14: Domain 5 — Background Tasks, Timeout Promotion & Router Wake-Up
+// ============================================================================
+
+/// PURPOSE:  Catch premature background promotion or dropped stdout when a fast shell command completes within the auto-promotion window.
+/// SCENARIO: Model invokes `bash({"command": "printf 'FAST_SYNC_OK'", "run_in_background": true})` on a Harness with default 5s auto-promote timeout; command exits in <20ms with code 0.
+/// ASSERTS:  Committed `Role::Tool` observation contains "FAST_SYNC_OK" and exit code 0, and does NOT contain "running_in_background"; `state.tasks.active_tasks_count(session_id) == 0`; `SELECT COUNT(*) FROM session_tasks WHERE status = 'running'` is 0; `TurnOutcome::Completed` returns final spoken response.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   In `BashTool::execute` / `BackgroundTaskManager`, promote all commands unconditionally without awaiting the synchronous `auto_promote_timeout` window.
+#[tokio::test]
+async fn bash_tool_executes_fast_command_synchronously_without_backgrounding() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 5001;
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-bash-fast-1".to_string(),
+                name: "bash".to_string(),
+                arguments: serde_json::json!({
+                    "command": "printf 'FAST_SYNC_OK'",
+                    "run_in_background": true,
+                }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Fast command finished.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Run fast sync command", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+
+        match &outcome {
+            TurnOutcome::Completed { assistant_response, .. } => {
+                assert_eq!(assistant_response, "Fast command finished.");
+            }
+            other => panic!("Expected Completed outcome, got {:?}", other),
+        }
+
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let tool_obs = harness
+            .messages()
+            .iter()
+            .find(|m| m.role == Role::Tool)
+            .expect("Tool observation must be committed to history");
+        assert!(
+            tool_obs.content.contains("FAST_SYNC_OK"),
+            "Committed Tool observation must contain FAST_SYNC_OK stdout, got: {}",
+            tool_obs.content
+        );
+        assert!(
+            !tool_obs.content.contains("running_in_background"),
+            "Tool observation must not indicate running_in_background"
+        );
+        drop(guard);
+
+        assert_eq!(
+            rig.state.tasks.active_tasks_count(rig.session_id),
+            0,
+            "Active background tasks count must be 0 for synchronous command"
+        );
+
+        let conn = rig.state.db.connect().expect("db connect");
+        let mut rows = conn
+            .query("SELECT COUNT(*) FROM session_tasks WHERE status = 'running';", ())
+            .await
+            .expect("query session_tasks");
+        let running_count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(running_count, 0, "session_tasks running count must be 0");
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch foreground turn stalls, double-spawned processes, or false guardrail error strikes when a shell command exceeds `auto_promote_timeout`.
+/// SCENARIO: Configure `harness.auto_promote_timeout = Duration::from_millis(80)`. Model invokes `bash({"command": "echo 'BOOT_LINE' && sleep 10"})` (default `run_in_background: true`).
+/// ASSERTS:  Step 0 finishes in <500ms while child process is still running; committed `Role::Tool` observation parses as JSON with "status": "running_in_background", non-empty "task_id", and existing "log_path"; `session_steps` row has `guardrail_strike == 0` and `session_tool_calls` row has `is_error == 0`; `state.tasks.active_tasks_count(session_id) == 1`; `session_tasks` table has 1 row with `status = 'running'`.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   In `ToolExecutor` / `steps.rs`, mark auto-promoted tool outcomes with `is_error: true` (or drop the child process handle when the promotion timer expires).
+#[tokio::test]
+async fn bash_tool_auto_promotes_long_running_command_to_background_without_guardrail_strike() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 5002;
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness mounted");
+            harness.auto_promote_timeout = Duration::from_millis(80);
+        }
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-bash-promote-1".to_string(),
+                name: "bash".to_string(),
+                arguments: serde_json::json!({
+                    "command": "echo 'BOOT_LINE' && sleep 10",
+                    "run_in_background": true,
+                }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Task running in background.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let start = std::time::Instant::now();
+        let req = rig.turn_request("Run long background command", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "Step 0 must promote to background within 500ms, elapsed: {:?}",
+            elapsed
+        );
+
+        match &outcome {
+            TurnOutcome::Completed { .. } => {}
+            other => panic!("Expected Completed outcome on auto-promotion, got {:?}", other),
+        }
+
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let tool_obs = harness
+            .messages()
+            .iter()
+            .find(|m| m.role == Role::Tool)
+            .expect("Tool observation must be committed to history");
+        let parsed: serde_json::Value = serde_json::from_str(&tool_obs.content)
+            .expect("Tool observation for promoted task must parse as valid JSON");
+        assert_eq!(
+            parsed["status"], "running_in_background",
+            "Observation status must be running_in_background"
+        );
+        let task_id = parsed["task_id"]
+            .as_str()
+            .expect("task_id must be non-empty string");
+        assert!(!task_id.is_empty(), "task_id must not be empty");
+        let log_path_str = parsed["log_path"]
+            .as_str()
+            .expect("log_path must be string");
+        let log_path = std::path::PathBuf::from(log_path_str);
+        assert!(log_path.exists(), "task log file must exist on disk");
+        drop(guard);
+
+        // Assert 0 guardrail strikes and is_error == 0
+        let conn = rig.state.db.connect().expect("db connect");
+        let mut step_rows = conn
+            .query(
+                "SELECT guardrail_strike FROM session_steps WHERE session_id = ? AND turn_id = ?;",
+                (rig.session_id, turn_id),
+            )
+            .await
+            .expect("query session_steps");
+        if let Some(row) = step_rows.next().await.unwrap() {
+            let strikes: i64 = row.get(0).unwrap();
+            assert_eq!(strikes, 0, "guardrail_strike must be 0 for auto-promoted tool");
+        }
+
+        let mut tool_rows = conn
+            .query(
+                "SELECT is_error FROM session_tool_calls WHERE session_id = ? AND turn_id = ?;",
+                (rig.session_id, turn_id),
+            )
+            .await
+            .expect("query session_tool_calls");
+        if let Some(row) = tool_rows.next().await.unwrap() {
+            let is_error: i64 = row.get(0).unwrap();
+            assert_eq!(is_error, 0, "is_error must be 0 for auto-promoted tool call");
+        }
+
+        assert_eq!(
+            rig.state.tasks.active_tasks_count(rig.session_id),
+            1,
+            "active_tasks_count must be 1"
+        );
+
+        let mut task_rows = conn
+            .query(
+                "SELECT COUNT(*) FROM session_tasks WHERE session_id = ? AND status = 'running';",
+                (rig.session_id,),
+            )
+            .await
+            .expect("query session_tasks");
+        let running_tasks: i64 = task_rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(running_tasks, 1, "session_tasks must have 1 running row");
+
+        rig.state.tasks.kill_all(rig.session_id);
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch ignored `run_in_background: false` overrides that prematurely detach synchronous prerequisite commands to the background.
+/// SCENARIO: Configure `harness.auto_promote_timeout = Duration::from_millis(50)` and `foreground_hard_timeout = Duration::from_secs(5)`. Model invokes `bash({"command": "sleep 0.15 && printf 'MIGRATION_DONE'", "run_in_background": false})`.
+/// ASSERTS:  Tool execution does NOT promote at 50ms; it waits ~150ms for the process to exit synchronously; committed `Role::Tool` observation contains "MIGRATION_DONE" and does NOT contain "running_in_background"; `state.tasks.active_tasks_count(session_id) == 0`.
+/// CLASS:    edge-case
+/// REQUIRES: none
+/// MUTANT:   In `BashTool::execute` / `ToolExecutor`, ignore the `run_in_background: false` argument and always use `auto_promote_timeout`.
+#[tokio::test]
+async fn bash_tool_foreground_override_waits_past_auto_promote_window_until_completion() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 5003;
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness mounted");
+            harness.auto_promote_timeout = Duration::from_millis(50);
+            harness.foreground_hard_timeout = Duration::from_secs(5);
+        }
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-bash-foreground-1".to_string(),
+                name: "bash".to_string(),
+                arguments: serde_json::json!({
+                    "command": "sleep 0.15 && printf 'MIGRATION_DONE'",
+                    "run_in_background": false,
+                }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Migration completed synchronously.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let start = std::time::Instant::now();
+        let req = rig.turn_request("Run foreground override migration", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed >= Duration::from_millis(130),
+            "Foreground execution must wait past 50ms auto-promote window for command to complete, took {:?}",
+            elapsed
+        );
+
+        match &outcome {
+            TurnOutcome::Completed { assistant_response, .. } => {
+                assert_eq!(assistant_response, "Migration completed synchronously.");
+            }
+            other => panic!("Expected Completed outcome, got {:?}", other),
+        }
+
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness must be mounted");
+        let tool_obs = harness
+            .messages()
+            .iter()
+            .find(|m| m.role == Role::Tool)
+            .expect("Tool observation must be committed to history");
+        assert!(
+            tool_obs.content.contains("MIGRATION_DONE"),
+            "Committed Tool observation must contain MIGRATION_DONE output, got: {}",
+            tool_obs.content
+        );
+        assert!(
+            tool_obs.content.contains("Exit code: 0"),
+            "Committed Tool observation must report 'Exit code: 0', got: {}",
+            tool_obs.content
+        );
+        assert!(
+            !tool_obs.content.contains("running_in_background"),
+            "Tool observation must NOT indicate running_in_background when run_in_background is false"
+        );
+        drop(guard);
+
+        assert_eq!(
+            rig.state.tasks.active_tasks_count(rig.session_id),
+            0,
+            "active_tasks_count must be 0 after synchronous foreground completion"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch pipe buffer deadlocks or missing stderr redirection when a promoted background task writes incremental output streams.
+/// SCENARIO: Configure `auto_promote_timeout = Duration::from_millis(50)`. Spawn a command via `bash` that writes "STDOUT_LINE_1\n" to stdout and "STDERR_LINE_1\n" to stderr, then waits on a temp file flag before exiting.
+/// ASSERTS:  While the task is still `Running`, reading `log_path` directly from disk under `paths::session_tasks_dir(session_id)` contains both "STDOUT_LINE_1" and "STDERR_LINE_1".
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   In `BackgroundTaskManager::spawn_command`, redirect only `stdout` to `log_file` and leave `stderr` as `Stdio::null()`.
+#[tokio::test]
+async fn background_task_streams_stdout_and_stderr_directly_to_disk_log_without_buffering() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 5004;
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness mounted");
+            harness.auto_promote_timeout = Duration::from_millis(50);
+        }
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let flag_path = tmp.path().join("hold.flag");
+        std::fs::write(&flag_path, "hold").expect("write flag");
+
+        let cmd = format!(
+            "printf 'STDOUT_LINE_1\\n' && printf 'STDERR_LINE_1\\n' >&2 && while [ -f '{}' ]; do sleep 0.05; done",
+            flag_path.display()
+        );
+
+        rig.scripted_llm.push_step({
+            let cmd_clone = cmd.clone();
+            move |tx| {
+                let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                    id: "call-bash-streams-1".to_string(),
+                    name: "bash".to_string(),
+                    arguments: serde_json::json!({
+                        "command": cmd_clone,
+                        "run_in_background": true,
+                    }),
+                }));
+                let _ = tx.send(LlmResponse::Finished);
+            }
+        });
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Background task started.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Stream test", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+        assert!(matches!(outcome, TurnOutcome::Completed { .. }));
+
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness mounted");
+        let tool_obs = harness
+            .messages()
+            .iter()
+            .find(|m| m.role == Role::Tool)
+            .expect("Tool observation");
+        let parsed: serde_json::Value = serde_json::from_str(&tool_obs.content)
+            .expect("Valid JSON observation");
+        let log_path_str = parsed["log_path"].as_str().expect("log_path string");
+        let log_path = std::path::PathBuf::from(log_path_str);
+        drop(guard);
+
+        // Poll log file on disk while process is held by flag_path
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        let mut log_content = String::new();
+        while std::time::Instant::now() < deadline {
+            if log_path.exists() {
+                if let Ok(c) = std::fs::read_to_string(&log_path) {
+                    if c.contains("STDOUT_LINE_1") && c.contains("STDERR_LINE_1") {
+                        log_content = c;
+                        break;
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        assert!(
+            log_content.contains("STDOUT_LINE_1"),
+            "Log file on disk must contain STDOUT_LINE_1 without buffering"
+        );
+        assert!(
+            log_content.contains("STDERR_LINE_1"),
+            "Log file on disk must contain STDERR_LINE_1 without buffering"
+        );
+
+        let _ = std::fs::remove_file(&flag_path);
+        rig.state.tasks.kill_all(rig.session_id);
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch stale task status reporting or full-file memory reads when inspecting a multi-hundred-line background task log via `manage_task`.
+/// SCENARIO: Promote a `bash` command that writes 120 numbered lines (LINE_001 .. LINE_120) to its log file and stays running; in the next step, model calls `manage_task({"action": "list"})` and `manage_task({"action": "status", "task_id": task_id})` in a single parallel wave.
+/// ASSERTS:  Both `manage_task` calls execute in `ToolExecutionMode::Parallel`; `list` returns the active `task_id` with `status: "running"`; `status` returns the last 50 lines (containing "LINE_120" and "LINE_071", excluding "LINE_001").
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   In `ManageTaskTool`, return only the first 50 lines (head) instead of seeking the last 50 lines (tail) of `log_path`.
+#[tokio::test]
+async fn manage_task_list_and_status_read_live_state_and_log_tail_from_disk() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 5005;
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness mounted");
+            harness.auto_promote_timeout = Duration::from_millis(50);
+        }
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let flag_path = tmp.path().join("hold_5005.flag");
+        std::fs::write(&flag_path, "hold").expect("write flag");
+
+        let cmd = format!(
+            "for i in $(seq -w 1 120); do echo \"LINE_$i\"; done; while [ -f '{}' ]; do sleep 0.05; done",
+            flag_path.display()
+        );
+
+        // Turn 1: Spawn and promote background task
+        rig.scripted_llm.push_step({
+            let cmd_clone = cmd.clone();
+            move |tx| {
+                let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                    id: "call-bash-tail-1".to_string(),
+                    name: "bash".to_string(),
+                    arguments: serde_json::json!({
+                        "command": cmd_clone,
+                        "run_in_background": true,
+                    }),
+                }));
+                let _ = tx.send(LlmResponse::Finished);
+            }
+        });
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Task started in background.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req1 = rig.turn_request("Start task", turn_id);
+        let outcome1 = Harness::execute_turn(&rig.state.harness, req1).await;
+        assert!(matches!(outcome1, TurnOutcome::Completed { .. }));
+
+        let task_id = {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().expect("Harness mounted");
+            let tool_obs = harness
+                .messages()
+                .iter()
+                .find(|m| m.role == Role::Tool)
+                .expect("Tool observation");
+            let parsed: serde_json::Value = serde_json::from_str(&tool_obs.content)
+                .expect("Valid JSON observation");
+            parsed["task_id"].as_str().expect("task_id string").to_string()
+        };
+
+        // Turn 2: Inspect via manage_task parallel wave (list + status)
+        let turn_id_2 = 5006;
+        rig.scripted_llm.push_step({
+            let task_id_clone = task_id.clone();
+            move |tx| {
+                let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                    id: "call-manage-list".to_string(),
+                    name: "manage_task".to_string(),
+                    arguments: serde_json::json!({ "action": "list" }),
+                }));
+                let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                    id: "call-manage-status".to_string(),
+                    name: "manage_task".to_string(),
+                    arguments: serde_json::json!({ "action": "status", "task_id": task_id_clone }),
+                }));
+                let _ = tx.send(LlmResponse::Finished);
+            }
+        });
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Status checked.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req2 = rig.turn_request("Check status", turn_id_2);
+        let outcome2 = Harness::execute_turn(&rig.state.harness, req2).await;
+        assert!(matches!(outcome2, TurnOutcome::Completed { .. }));
+
+        let guard = rig.state.harness.lock();
+        let harness = guard.as_ref().expect("Harness mounted");
+        let tool_observations: Vec<_> = harness
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::Tool)
+            .collect();
+
+        let status_obs = tool_observations
+            .iter()
+            .find(|m| m.content.contains("LINE_120"))
+            .expect("status observation must contain LINE_120");
+        assert!(
+            status_obs.content.contains("LINE_071"),
+            "Tail must contain line 71 (last 50 lines of 120)"
+        );
+        assert!(
+            !status_obs.content.contains("LINE_001"),
+            "Tail must NOT contain line 001 (head line outside last 50)"
+        );
+
+        let list_obs = tool_observations
+            .iter()
+            .find(|m| m.content.contains(&task_id) && m.content.contains("running"))
+            .expect("list observation must contain task_id and running status");
+        assert!(list_obs.content.contains(&task_id));
+        drop(guard);
+
+        let _ = std::fs::remove_file(&flag_path);
+        rig.state.tasks.kill_all(rig.session_id);
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch orphaned grandchild processes when `manage_task(action="kill")` kills only the parent shell PID (+pid) instead of the negative process group ID (-pgid).
+/// SCENARIO: Promote a `bash` command that spawns a detached subshell grandchild (`sh -c 'sleep 60 & echo $! > <tmp>/grandchild.pid; wait'`). Wait until grandchild.pid is written on disk and parse grandchild_pid: i32. Model invokes `manage_task({"action": "kill", "task_id": task_id})`.
+/// ASSERTS:  `manage_task` returns `status: "killed"`; `state.tasks.active_tasks_count(session_id) == 0`; `session_tasks` row in Turso DB has `status = 'killed'`; polling `unsafe { libc::kill(grandchild_pid, 0) }` returns -1 (ESRCH, proving the grandchild process was reaped along with the parent shell).
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   In `kill_process_group` (`services/tasks/manager.rs`), change `libc::kill(-(pid as i32), libc::SIGKILL)` to `libc::kill(pid as i32, libc::SIGKILL)` (positive PID).
+#[tokio::test]
+async fn manage_task_kill_terminates_entire_process_group_including_grandchildren() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 5007;
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness mounted");
+            harness.auto_promote_timeout = Duration::from_millis(50);
+        }
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pid_file = tmp.path().join("grandchild.pid");
+
+        let cmd = format!(
+            "sh -c 'sleep 60 & echo $! > \"{}\"; wait'",
+            pid_file.display()
+        );
+
+        rig.scripted_llm.push_step({
+            let cmd_clone = cmd.clone();
+            move |tx| {
+                let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                    id: "call-bash-grandchild".to_string(),
+                    name: "bash".to_string(),
+                    arguments: serde_json::json!({
+                        "command": cmd_clone,
+                        "run_in_background": true,
+                    }),
+                }));
+                let _ = tx.send(LlmResponse::Finished);
+            }
+        });
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Spawned grandchild.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Spawn grandchild", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+        assert!(matches!(outcome, TurnOutcome::Completed { .. }));
+
+        let task_id = {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().expect("Harness mounted");
+            let tool_obs = harness
+                .messages()
+                .iter()
+                .find(|m| m.role == Role::Tool)
+                .expect("Tool observation");
+            let parsed: serde_json::Value = serde_json::from_str(&tool_obs.content)
+                .expect("Valid JSON observation");
+            parsed["task_id"].as_str().expect("task_id").to_string()
+        };
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        let mut grandchild_pid: i32 = 0;
+        while std::time::Instant::now() < deadline {
+            if pid_file.exists() {
+                if let Ok(content) = std::fs::read_to_string(&pid_file) {
+                    if let Ok(pid) = content.trim().parse::<i32>() {
+                        grandchild_pid = pid;
+                        break;
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(grandchild_pid > 0, "grandchild PID must be written and parsed");
+
+        assert_eq!(
+            unsafe { libc::kill(grandchild_pid, 0) },
+            0,
+            "grandchild process must be alive before kill"
+        );
+
+        // Turn 2: Invoke manage_task kill
+        let turn_id_2 = 5008;
+        rig.scripted_llm.push_step({
+            let task_id_clone = task_id.clone();
+            move |tx| {
+                let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                    id: "call-manage-kill".to_string(),
+                    name: "manage_task".to_string(),
+                    arguments: serde_json::json!({
+                        "action": "kill",
+                        "task_id": task_id_clone,
+                    }),
+                }));
+                let _ = tx.send(LlmResponse::Finished);
+            }
+        });
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Killed task.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req2 = rig.turn_request("Kill task", turn_id_2);
+        let outcome2 = Harness::execute_turn(&rig.state.harness, req2).await;
+        assert!(matches!(outcome2, TurnOutcome::Completed { .. }));
+
+        assert_eq!(
+            rig.state.tasks.active_tasks_count(rig.session_id),
+            0,
+            "active_tasks_count must be 0 after kill"
+        );
+
+        let conn = rig.state.db.connect().expect("db connect");
+        let mut rows = conn
+            .query(
+                "SELECT status FROM session_tasks WHERE task_id = ?;",
+                (task_id,),
+            )
+            .await
+            .expect("query session_tasks");
+        if let Some(row) = rows.next().await.unwrap() {
+            let status: String = row.get(0).unwrap();
+            assert_eq!(status, "killed", "task status in DB must be 'killed'");
+        }
+
+        let kill_deadline = std::time::Instant::now() + Duration::from_secs(3);
+        let mut grandchild_dead = false;
+        while std::time::Instant::now() < kill_deadline {
+            if unsafe { libc::kill(grandchild_pid, 0) } == -1 {
+                grandchild_dead = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        assert!(
+            grandchild_dead,
+            "grandchild process group must be terminated via SIGKILL to negative PGID"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch dropped `VoxEvent::TaskFinished` events in Ready state where a background task finishes while the user is active (<5m) but the assistant stays silent.
+/// SCENARIO: Session is in `InteractionState::Ready` with `last_user_activity_ms` within 5 minutes. A promoted background task exits with code 0.
+/// ASSERTS:  Supervisor updates `session_tasks.status = 'completed'` (`exit_code = 0`) and sends `VoxEvent::TaskFinished` to `vox-router`; router emits `IpcEvent::NotificationCreated` (category: "task") AND initiates a proactive turn (Ready -> Thinking -> Speaking -> Ready); TTS receives the model's spoken completion summary.
+/// CLASS:    happy-path
+/// REQUIRES: none
+/// MUTANT:   In `pipeline/assistant/tasks.rs` (`on_task_finished`), omit the proactive `execute_turn` dispatch when `state == InteractionState::Ready`.
+#[tokio::test]
+async fn task_finished_in_ready_within_active_window_triggers_proactive_spoken_turn() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let task_id = "task-proactive-007";
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        rig.state
+            .pipeline
+            .last_user_activity_ms
+            .store(now - 10_000, Ordering::Relaxed);
+        rig.state.pipeline.set_state(InteractionState::Ready);
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token(
+                "Your build completed successfully with exit code 0.".to_string(),
+            ));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        rig.send_event(VoxEvent::TaskFinished {
+            task_id: task_id.to_string(),
+            session_id: rig.session_id,
+            status: vox_lib::core::events::TaskStatus::Completed {
+                exit_code: 0,
+                duration_ms: 1500,
+                completed_at: now,
+            },
+        });
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut heard_speech = false;
+        while std::time::Instant::now() < deadline {
+            let cmds = rig.drain_tts_commands();
+            if cmds.iter().any(|cmd| {
+                if let TtsCommand::Generate { text, .. } = cmd {
+                    text.contains("completed successfully")
+                } else {
+                    false
+                }
+            }) {
+                heard_speech = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        assert!(
+            heard_speech,
+            "Router must dispatch proactive spoken turn when task finishes within active user window (<5m) in Ready"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch unsolicited voice wake-ups when a background task finishes after the user has been quiet for >5 minutes in Ready or while the session is Paused.
+/// SCENARIO: Set `last_user_activity_ms` to now - 6 minutes in `InteractionState::Ready` (and repeat in `InteractionState::Paused`). Trigger `VoxEvent::TaskFinished` through `vox-router`.
+/// ASSERTS:  `session_tasks` row is updated to 'completed'; `IpcEvent::NotificationCreated` is emitted; pipeline state remains in Ready (or Paused) with zero LLM dispatches (`llm_dispatch_count == 0`) and zero TTS commands dispatched.
+/// CLASS:    suppression
+/// REQUIRES: none
+/// MUTANT:   In `pipeline/assistant/tasks.rs`, bypass the 5-minute `last_user_activity_ms` check in Ready (or allow proactive turn dispatch in Paused).
+#[tokio::test]
+async fn task_finished_in_ready_after_quiet_window_or_in_paused_suppresses_speech_and_emits_notification_only() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let task_id = "task-quiet-008";
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        // Part 1: Quiet window (>5 minutes) in Ready state
+        rig.state
+            .pipeline
+            .last_user_activity_ms
+            .store(now - 6 * 60 * 1000, Ordering::Relaxed);
+        rig.state.pipeline.set_state(InteractionState::Ready);
+
+        let initial_dispatches = rig.dispatch_count();
+
+        rig.send_event(VoxEvent::TaskFinished {
+            task_id: format!("{}-ready", task_id),
+            session_id: rig.session_id,
+            status: vox_lib::core::events::TaskStatus::Completed {
+                exit_code: 0,
+                duration_ms: 3000,
+                completed_at: now,
+            },
+        });
+
+        // Quiescence barrier: wait for event processing
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        // Verify session_tasks row updated to 'completed'
+        let conn = rig.state.db.connect().expect("db connect");
+        let mut rows = conn
+            .query(
+                "SELECT status FROM session_tasks WHERE task_id = ?;",
+                (format!("{}-ready", task_id),),
+            )
+            .await
+            .expect("query session_tasks");
+        let row = rows.next().await.unwrap().expect("session_tasks row must exist");
+        let status: String = row.get(0).unwrap();
+        assert_eq!(
+            status, "completed",
+            "session_tasks status must be updated to 'completed' on TaskFinished"
+        );
+
+        assert_eq!(
+            rig.state.pipeline.state(),
+            InteractionState::Ready,
+            "Pipeline must remain in Ready without transitioning to Thinking"
+        );
+        assert_eq!(
+            rig.dispatch_count(),
+            initial_dispatches,
+            "Zero LLM dispatches must occur when user is quiet >5m"
+        );
+        let tts_cmds = rig.drain_tts_commands();
+        assert!(
+            tts_cmds.is_empty(),
+            "Zero TTS speech commands must be dispatched when user is quiet >5m"
+        );
+
+        // Part 2: Session in Paused state
+        rig.state.pipeline.set_state(InteractionState::Paused);
+        rig.state
+            .pipeline
+            .last_user_activity_ms
+            .store(now, Ordering::Relaxed);
+
+        rig.send_event(VoxEvent::TaskFinished {
+            task_id: format!("{}-paused", task_id),
+            session_id: rig.session_id,
+            status: vox_lib::core::events::TaskStatus::Completed {
+                exit_code: 0,
+                duration_ms: 4000,
+                completed_at: now,
+            },
+        });
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        assert_eq!(
+            rig.state.pipeline.state(),
+            InteractionState::Paused,
+            "Pipeline must remain Paused when task finishes"
+        );
+        assert_eq!(
+            rig.dispatch_count(),
+            initial_dispatches,
+            "Zero LLM dispatches must occur while Paused"
+        );
+        assert!(
+            rig.drain_tts_commands().is_empty(),
+            "Zero TTS commands must be dispatched while Paused"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch premature step-boundary release (`speech_hold_active` clobber) when a background task finishes while a foreground tool is running AND the user is mid-speech (`Listening`).
+/// SCENARIO: Step 0 runs a tool in Working; user starts speaking (SpeechStart engages `inbox.engage_speech_hold()` and transitions to Listening); while `speech_hold_active == true`, a background task finishes (`VoxEvent::TaskFinished`), and then the user finishes speaking (`TranscriptFinal("Also check the logs")`).
+/// ASSERTS:  When `VoxEvent::TaskFinished` arrives, `inbox.is_speech_held()` remains true (step boundary does NOT advance before TranscriptFinal); once TranscriptFinal arrives, Step 1 LLM request contains BOTH the background task completion notice AND the user's steering message "Also check the logs".
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   In `pipeline/assistant/tasks.rs`, call `inbox.push(...)` (which sets `speech_hold_active = false`) instead of `inbox.push_task_notification(...)`.
+#[tokio::test]
+async fn task_finished_in_working_buffers_in_step_inbox_without_releasing_active_speech_hold() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 5009;
+
+        rig.state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
+        rig.state.pipeline.set_state(InteractionState::Working);
+
+        let inbox = Arc::clone(rig.state.harness.lock().as_ref().unwrap().inbox());
+
+        // 1. User starts speaking mid-tool: router handles SpeechStart and engages speech hold
+        rig.send_event(VoxEvent::SpeechStart {
+            owner: InteractionOwner::Assistant,
+        });
+
+        assert!(
+            rig.wait_for_state(InteractionState::Listening, Duration::from_millis(500)).await,
+            "SpeechStart must transition state to Listening"
+        );
+        assert!(
+            inbox.is_speech_held(),
+            "Speech hold must be active after SpeechStart"
+        );
+
+        // 2. Background task finishes via router while speech is held
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        rig.send_event(VoxEvent::TaskFinished {
+            task_id: "task-009".to_string(),
+            session_id: rig.session_id,
+            status: vox_lib::core::events::TaskStatus::Completed {
+                exit_code: 0,
+                duration_ms: 1200,
+                completed_at: now,
+            },
+        });
+
+        // Quiescence wait for router
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Invariant check: TaskFinished MUST NOT release speech hold!
+        assert!(
+            inbox.is_speech_held(),
+            "speech_hold_active must remain TRUE after TaskFinished while user speaks (anti-clobber invariant)"
+        );
+
+        // 3. User finishes speaking via router: TranscriptFinal pushes steering message and releases hold
+        rig.send_event(VoxEvent::TranscriptFinal {
+            turn_id,
+            text: "Also check the logs".to_string(),
+            owner: InteractionOwner::Assistant,
+        });
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while std::time::Instant::now() < deadline && inbox.is_speech_held() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        assert!(
+            !inbox.is_speech_held(),
+            "Speech hold must be released when user finishes speaking"
+        );
+
+        // 4. Drain immediate inbox messages: must contain BOTH task notification and user message
+        let drained = inbox.drain_immediate();
+        assert_eq!(drained.len(), 2, "Inbox must buffer both messages");
+        assert!(
+            drained.iter().any(|m| m.text.contains("task-009") && m.text.contains("completed")),
+            "Inbox must contain background task notification"
+        );
+        assert!(
+            drained.iter().any(|m| m.text.contains("Also check the logs")),
+            "Inbox must contain user steering message"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch premature model weight offload (`Sleeping`) while background tasks are running (`RULE-EVT-12`) or unconfirmed session teardown leaving orphan processes (`RULE-EVT-13`).
+/// SCENARIO: Start `spawn_idle_monitor_with_timeouts` with `paused_timeout = Duration::from_millis(60)`. Promote a long-running background task (recording `grandchild.pid`), pause session (`VoxEvent::PauseSession`), and wait 120ms past `paused_timeout`. Then resume to Ready, send `VoxEvent::EndSession { force: false }`, verify rejection, and send `VoxEvent::EndSession { force: true }`.
+/// ASSERTS:  While the background task is running, pipeline remains in Paused past 120ms and NEVER transitions to Sleeping; in Ready, EndSession { force: false } leaves pipeline in Ready with task still running; EndSession { force: true } kills the process group (`libc::kill(grandchild_pid, 0) == -1`), marks the task killed, and transitions pipeline to Idle.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   In `lifecycle.rs`, remove the `!state.tasks.has_running_tasks()` guard before transitioning to `InteractionState::Sleeping` (or in `session.rs` `on_end`, ignore `force == false` when active tasks exist).
+#[tokio::test]
+async fn running_background_task_inhibits_paused_to_sleeping_offload_and_disengage_enforces_force_guard() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let rig = Rig::new().await;
+        let turn_id = 5010;
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness mounted");
+            harness.auto_promote_timeout = Duration::from_millis(50);
+        }
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pid_file = tmp.path().join("grandchild_5010.pid");
+
+        let cmd = format!(
+            "sh -c 'sleep 60 & echo $! > \"{}\"; wait'",
+            pid_file.display()
+        );
+
+        rig.scripted_llm.push_step({
+            let cmd_clone = cmd.clone();
+            move |tx| {
+                let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                    id: "call-bash-task10".to_string(),
+                    name: "bash".to_string(),
+                    arguments: serde_json::json!({
+                        "command": cmd_clone,
+                        "run_in_background": true,
+                    }),
+                }));
+                let _ = tx.send(LlmResponse::Finished);
+            }
+        });
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Task running in background.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Start task", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+        assert!(matches!(outcome, TurnOutcome::Completed { .. }));
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        let mut grandchild_pid: i32 = 0;
+        while std::time::Instant::now() < deadline {
+            if pid_file.exists() {
+                if let Ok(content) = std::fs::read_to_string(&pid_file) {
+                    if let Ok(pid) = content.trim().parse::<i32>() {
+                        grandchild_pid = pid;
+                        break;
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(grandchild_pid > 0, "grandchild PID must be written and parsed");
+
+        // Start idle monitor with 60ms timeout
+        vox_lib::pipeline::lifecycle::spawn_idle_monitor_with_timeouts(
+            rig.app.clone(),
+            Arc::clone(&rig.state),
+            Duration::from_millis(100),
+            Duration::from_millis(60),
+        );
+
+        // Pause session
+        rig.send_event(VoxEvent::PauseSession);
+        assert!(
+            rig.wait_for_state(InteractionState::Paused, Duration::from_millis(500)).await,
+            "Session must transition to Paused"
+        );
+
+        // Wait 150ms (> 2x paused_timeout of 60ms)
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // RULE-EVT-12: Background task must inhibit transition to Sleeping!
+        assert_eq!(
+            rig.state.pipeline.state(),
+            InteractionState::Paused,
+            "Background task must inhibit Paused -> Sleeping transition (RULE-EVT-12)"
+        );
+
+        // Resume to Ready
+        rig.send_event(VoxEvent::ResumeSession);
+        assert!(
+            rig.wait_for_state(InteractionState::Ready, Duration::from_millis(500)).await,
+            "Session must resume to Ready"
+        );
+
+        // RULE-EVT-13 Backend Force Guard: EndSession { force: false } must be rejected while tasks run!
+        rig.send_event(VoxEvent::EndSession { force: false });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        assert_eq!(
+            rig.state.pipeline.state(),
+            InteractionState::Ready,
+            "Unforced EndSession must be rejected while background tasks run (RULE-EVT-13)"
+        );
+        assert_eq!(
+            rig.state.tasks.active_tasks_count(rig.session_id),
+            1,
+            "Task must still be running after rejected unforced EndSession"
+        );
+
+        // Confirmed force teardown: EndSession { force: true }
+        rig.send_event(VoxEvent::EndSession { force: true });
+        assert!(
+            rig.wait_for_state(InteractionState::Idle, Duration::from_millis(500)).await,
+            "Forced EndSession must transition pipeline to Idle"
+        );
+
+        assert_eq!(
+            rig.state.tasks.active_tasks_count(rig.session_id),
+            0,
+            "Active tasks count must be 0 after forced EndSession"
+        );
+
+        let kill_deadline = std::time::Instant::now() + Duration::from_secs(3);
+        let mut grandchild_dead = false;
+        while std::time::Instant::now() < kill_deadline {
+            if unsafe { libc::kill(grandchild_pid, 0) } == -1 {
+                grandchild_dead = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(
+            grandchild_dead,
+            "Process group must be killed on forced EndSession"
         );
     })
     .await
