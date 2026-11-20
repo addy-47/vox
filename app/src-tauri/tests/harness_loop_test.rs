@@ -3630,23 +3630,24 @@ async fn bash_tool_executes_fast_command_synchronously_without_backgrounding() {
             other => panic!("Expected Completed outcome, got {:?}", other),
         }
 
-        let guard = rig.state.harness.lock();
-        let harness = guard.as_ref().expect("Harness must be mounted");
-        let tool_obs = harness
-            .messages()
-            .iter()
-            .find(|m| m.role == Role::Tool)
-            .expect("Tool observation must be committed to history");
-        assert!(
-            tool_obs.content.contains("FAST_SYNC_OK"),
-            "Committed Tool observation must contain FAST_SYNC_OK stdout, got: {}",
-            tool_obs.content
-        );
-        assert!(
-            !tool_obs.content.contains("running_in_background"),
-            "Tool observation must not indicate running_in_background"
-        );
-        drop(guard);
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().expect("Harness must be mounted");
+            let tool_obs = harness
+                .messages()
+                .iter()
+                .find(|m| m.role == Role::Tool)
+                .expect("Tool observation must be committed to history");
+            assert!(
+                tool_obs.content.contains("FAST_SYNC_OK"),
+                "Committed Tool observation must contain FAST_SYNC_OK stdout, got: {}",
+                tool_obs.content
+            );
+            assert!(
+                !tool_obs.content.contains("running_in_background"),
+                "Tool observation must not indicate running_in_background"
+            );
+        }
 
         assert_eq!(
             rig.state.tasks.active_tasks_count(rig.session_id),
@@ -3717,55 +3718,78 @@ async fn bash_tool_auto_promotes_long_running_command_to_background_without_guar
             other => panic!("Expected Completed outcome on auto-promotion, got {:?}", other),
         }
 
-        let guard = rig.state.harness.lock();
-        let harness = guard.as_ref().expect("Harness must be mounted");
-        let tool_obs = harness
-            .messages()
-            .iter()
-            .find(|m| m.role == Role::Tool)
-            .expect("Tool observation must be committed to history");
-        let parsed: serde_json::Value = serde_json::from_str(&tool_obs.content)
-            .expect("Tool observation for promoted task must parse as valid JSON");
-        assert_eq!(
-            parsed["status"], "running_in_background",
-            "Observation status must be running_in_background"
-        );
-        let task_id = parsed["task_id"]
-            .as_str()
-            .expect("task_id must be non-empty string");
-        assert!(!task_id.is_empty(), "task_id must not be empty");
-        let log_path_str = parsed["log_path"]
-            .as_str()
-            .expect("log_path must be string");
-        let log_path = std::path::PathBuf::from(log_path_str);
-        assert!(log_path.exists(), "task log file must exist on disk");
-        drop(guard);
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().expect("Harness must be mounted");
+            let tool_obs = harness
+                .messages()
+                .iter()
+                .find(|m| m.role == Role::Tool)
+                .expect("Tool observation must be committed to history");
+            let parsed: serde_json::Value = serde_json::from_str(&tool_obs.content)
+                .expect("Tool observation for promoted task must parse as valid JSON");
+            assert_eq!(
+                parsed["status"], "running_in_background",
+                "Observation status must be running_in_background"
+            );
+            let task_id = parsed["task_id"]
+                .as_str()
+                .expect("task_id must be non-empty string");
+            assert!(!task_id.is_empty(), "task_id must not be empty");
+            let log_path_str = parsed["log_path"]
+                .as_str()
+                .expect("log_path must be string");
+            let log_path = std::path::PathBuf::from(log_path_str);
+            assert!(log_path.exists(), "task log file must exist on disk");
+        }
 
-        // Assert 0 guardrail strikes and is_error == 0
+        // Assert 0 guardrail strikes and is_error == 0 (bounded poll for async persistence)
         let conn = rig.state.db.connect().expect("db connect");
-        let mut step_rows = conn
-            .query(
-                "SELECT guardrail_strike FROM session_steps WHERE session_id = ? AND turn_id = ?;",
-                (rig.session_id, turn_id),
-            )
-            .await
-            .expect("query session_steps");
-        if let Some(row) = step_rows.next().await.unwrap() {
-            let strikes: i64 = row.get(0).unwrap();
-            assert_eq!(strikes, 0, "guardrail_strike must be 0 for auto-promoted tool");
+        let persistence_deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut strikes = None;
+        let mut tool_is_error = None;
+        while std::time::Instant::now() < persistence_deadline
+            && (strikes.is_none() || tool_is_error.is_none())
+        {
+            let mut step_rows = conn
+                .query(
+                    "SELECT guardrail_strike FROM session_steps WHERE session_id = ? AND turn_id = ?;",
+                    (rig.session_id, turn_id),
+                )
+                .await
+                .expect("query session_steps");
+            if let Some(row) = step_rows.next().await.expect("fetch session_steps row") {
+                let value: i64 = row.get(0).expect("guardrail_strike");
+                strikes = Some(value);
+            }
+
+            let mut tool_rows = conn
+                .query(
+                    "SELECT is_error FROM session_tool_calls WHERE session_id = ? AND turn_id = ?;",
+                    (rig.session_id, turn_id),
+                )
+                .await
+                .expect("query session_tool_calls");
+            if let Some(row) = tool_rows.next().await.expect("fetch session_tool_calls row") {
+                let value: i64 = row.get(0).expect("is_error");
+                tool_is_error = Some(value);
+            }
+
+            if strikes.is_none() || tool_is_error.is_none() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
         }
 
-        let mut tool_rows = conn
-            .query(
-                "SELECT is_error FROM session_tool_calls WHERE session_id = ? AND turn_id = ?;",
-                (rig.session_id, turn_id),
-            )
-            .await
-            .expect("query session_tool_calls");
-        if let Some(row) = tool_rows.next().await.unwrap() {
-            let is_error: i64 = row.get(0).unwrap();
-            assert_eq!(is_error, 0, "is_error must be 0 for auto-promoted tool call");
-        }
+        assert_eq!(
+            strikes.expect("session_steps row must be persisted within deadline"),
+            0,
+            "guardrail_strike must be 0 for auto-promoted tool"
+        );
+        assert_eq!(
+            tool_is_error.expect("session_tool_calls row must be persisted within deadline"),
+            0,
+            "is_error must be 0 for auto-promoted tool call"
+        );
 
         assert_eq!(
             rig.state.tasks.active_tasks_count(rig.session_id),
@@ -3927,18 +3951,19 @@ async fn background_task_streams_stdout_and_stderr_directly_to_disk_log_without_
         let outcome = Harness::execute_turn(&rig.state.harness, req).await;
         assert!(matches!(outcome, TurnOutcome::Completed { .. }));
 
-        let guard = rig.state.harness.lock();
-        let harness = guard.as_ref().expect("Harness mounted");
-        let tool_obs = harness
-            .messages()
-            .iter()
-            .find(|m| m.role == Role::Tool)
-            .expect("Tool observation");
-        let parsed: serde_json::Value = serde_json::from_str(&tool_obs.content)
-            .expect("Valid JSON observation");
-        let log_path_str = parsed["log_path"].as_str().expect("log_path string");
-        let log_path = std::path::PathBuf::from(log_path_str);
-        drop(guard);
+        let log_path = {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().expect("Harness mounted");
+            let tool_obs = harness
+                .messages()
+                .iter()
+                .find(|m| m.role == Role::Tool)
+                .expect("Tool observation");
+            let parsed: serde_json::Value = serde_json::from_str(&tool_obs.content)
+                .expect("Valid JSON observation");
+            let log_path_str = parsed["log_path"].as_str().expect("log_path string");
+            std::path::PathBuf::from(log_path_str)
+        };
 
         // Poll log file on disk while process is held by flag_path
         let deadline = std::time::Instant::now() + Duration::from_secs(3);

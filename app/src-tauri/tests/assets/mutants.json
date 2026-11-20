@@ -4069,6 +4069,126 @@
         "filter": "sub_300ms_cough_recovers_to_ready_without_deadlock"
       },
       "expected": "Sub-300 ms bursts emit no empty TranscriptFinal, so the pipeline stays in Thinking and the Ready recovery assertion fails."
+    },
+    {
+      "id": "D5-M01",
+      "name": "Promote every fast bash command by replacing the completion receiver with a permanently pending one",
+      "file": "src/harness/tools/bash.rs",
+      "target": "            let mut completion_rx = handle.completion_rx;",
+      "replacement": "            let (_pending_tx, pending_rx) = tokio::sync::oneshot::channel::<TaskStatus>();\n            let mut completion_rx = pending_rx;",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "bash_tool_executes_fast_command_synchronously_without_backgrounding"
+      },
+      "expected": "The fast printf command never reports completion, so the promotion branch returns a running_in_background observation and the no-background assertion fails."
+    },
+    {
+      "id": "D5-M02",
+      "name": "Mark successful auto-promoted tool outcome as an error",
+      "file": "src/harness/tools/executor.rs",
+      "target": "                    Ok(result) => (result, false),",
+      "replacement": "                    Ok(result) => (result, true),",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "bash_tool_auto_promotes_long_running_command_to_background_without_guardrail_strike"
+      },
+      "expected": "The promoted bash call is recorded with is_error=1 and a guardrail strike, failing the is_error==0 and guardrail_strike==0 assertions."
+    },
+    {
+      "id": "D5-M03",
+      "name": "Ignore run_in_background false and always apply the auto-promote window",
+      "file": "src/harness/tools/bash.rs",
+      "target": "            let timeout_duration = if run_in_background {\n                ctx.auto_promote_timeout\n            } else {\n                ctx.foreground_hard_timeout\n            };",
+      "replacement": "            let timeout_duration = ctx.auto_promote_timeout;",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "bash_tool_foreground_override_waits_past_auto_promote_window_until_completion"
+      },
+      "expected": "The foreground override promotes at 50ms instead of waiting for the 150ms command, so the elapsed-time and no-background assertions fail."
+    },
+    {
+      "id": "D5-M04",
+      "name": "Redirect promoted task stderr to null instead of the disk log",
+      "file": "src/services/tasks/manager.rs",
+      "target": "        cmd.args(args)\n            .stdin(std::process::Stdio::null())\n            .stdout(std::process::Stdio::from(log_file))\n            .stderr(std::process::Stdio::from(log_file_err));",
+      "replacement": "        cmd.args(args)\n            .stdin(std::process::Stdio::null())\n            .stdout(std::process::Stdio::from(log_file))\n            .stderr(std::process::Stdio::null());\n        let _ = log_file_err;",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "background_task_streams_stdout_and_stderr_directly_to_disk_log_without_buffering"
+      },
+      "expected": "The on-disk log contains STDOUT_LINE_1 but not STDERR_LINE_1, failing the stderr disk-stream assertion."
+    },
+    {
+      "id": "D5-M05",
+      "name": "Return log head instead of tail for manage_task status",
+      "file": "src/services/tasks/manager.rs",
+      "target": "        let start = lines.len().saturating_sub(max_lines);\n        Ok(lines[start..].join(\"\\n\"))",
+      "replacement": "        let end = max_lines.min(lines.len());\n        Ok(lines[..end].join(\"\\n\"))",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "manage_task_list_and_status_read_live_state_and_log_tail_from_disk"
+      },
+      "expected": "status returns LINE_001 instead of LINE_120, failing the tail-content assertion."
+    },
+    {
+      "id": "D5-M06",
+      "name": "Kill only the parent shell PID instead of the whole process group",
+      "file": "src/services/tasks/manager.rs",
+      "target": "            libc::kill(-(pid as i32), libc::SIGKILL);",
+      "replacement": "            libc::kill(pid as i32, libc::SIGKILL);",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "manage_task_kill_terminates_entire_process_group_including_grandchildren"
+      },
+      "expected": "The grandchild survives the kill, so the ESRCH grandchild-dead assertion fails."
+    },
+    {
+      "id": "D5-M07",
+      "name": "Suppress proactive turn dispatch in Ready state",
+      "file": "src/pipeline/assistant/tasks.rs",
+      "target": "            let is_active = now.saturating_sub(last_activity) < 5 * 60 * 1000;",
+      "replacement": "            let is_active = now.saturating_sub(last_activity) >= 5 * 60 * 1000;",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "task_finished_in_ready_within_active_window_triggers_proactive_spoken_turn"
+      },
+      "expected": "Ready TaskFinished returns without staging a proactive turn, so no TTS speech is emitted and the heard_speech assertion fails."
+    },
+    {
+      "id": "D5-M08",
+      "name": "Bypass the five-minute quiet-window check in Ready",
+      "file": "src/pipeline/assistant/tasks.rs",
+      "target": "            let is_active = now.saturating_sub(last_activity) < 5 * 60 * 1000;",
+      "replacement": "            let is_active = now.saturating_sub(last_activity) <= 600 * 60 * 1000;",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "task_finished_in_ready_after_quiet_window_or_in_paused_suppresses_speech_and_emits_notification_only"
+      },
+      "expected": "A task finishing after six minutes of quiet still dispatches a turn, failing the zero-dispatch and zero-TTS assertions."
+    },
+    {
+      "id": "D5-M09",
+      "name": "Use inbox.push so TaskFinished releases the active speech hold",
+      "file": "src/pipeline/assistant/tasks.rs",
+      "target": "                harness.inbox().push_task_notification(msg);",
+      "replacement": "                harness.inbox().push(msg);",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "task_finished_in_working_buffers_in_step_inbox_without_releasing_active_speech_hold"
+      },
+      "expected": "The speech hold is cleared while the user is still speaking, failing the anti-clobber is_speech_held assertion."
+    },
+    {
+      "id": "D5-M10",
+      "name": "Remove RULE-EVT-12 guard so Paused offloads to Sleeping while tasks run",
+      "file": "src/pipeline/lifecycle.rs",
+      "target": "                            if state.tasks.has_running_tasks(session_id) {\n                                log::info!(\"[Pipeline] Inactive sleep suppressed by RULE-EVT-12: background tasks running\");\n                                continue;\n                            }",
+      "replacement": "                            if false && state.tasks.has_running_tasks(session_id) {\n                                log::info!(\"[Pipeline] Inactive sleep suppressed by RULE-EVT-12: background tasks running\");\n                                continue;\n                            }",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "running_background_task_inhibits_paused_to_sleeping_offload_and_disengage_enforces_force_guard"
+      },
+      "expected": "The idle monitor transitions Paused to Sleeping despite the running task, failing the sleep-inhibition assertion."
     }
   ]
 }
