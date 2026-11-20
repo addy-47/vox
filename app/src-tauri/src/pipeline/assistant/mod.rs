@@ -185,7 +185,7 @@ pub fn handle_event<R: tauri::Runtime + 'static>(
         }
         VoxEvent::PauseSession => session::on_pause(app, state, ctx),
         VoxEvent::ResumeSession => session::on_resume(app, state, ctx),
-        VoxEvent::EndSession => session::on_end(app, state, ctx),
+        VoxEvent::EndSession { force: _ } => session::on_end(app, state, ctx),
         VoxEvent::StopTurn => session::on_stop_turn(app, state, ctx),
 
         VoxEvent::PttStart {

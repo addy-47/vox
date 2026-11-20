@@ -362,6 +362,18 @@ pub fn session_tool_outputs_dir(session_id: i64) -> PathBuf {
     tool_outputs_dir().join(session_id.to_string())
 }
 
+pub fn tasks_dir() -> PathBuf {
+    cache_dir().join("tasks")
+}
+
+pub fn session_tasks_dir(session_id: i64) -> PathBuf {
+    tasks_dir().join(session_id.to_string())
+}
+
+pub fn task_log_path(session_id: i64, task_id: &str) -> PathBuf {
+    session_tasks_dir(session_id).join(format!("{}.log", task_id))
+}
+
 pub fn data_dir() -> PathBuf {
     get().data.clone()
 }

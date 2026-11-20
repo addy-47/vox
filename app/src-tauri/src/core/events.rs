@@ -29,6 +29,44 @@ pub enum InteractionMode {
     PTT,
 }
 
+/// Canonical execution status for background tasks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum TaskStatus {
+    Running {
+        pid: u32,
+        started_at: u64,
+    },
+    Completed {
+        exit_code: i32,
+        duration_ms: u64,
+        completed_at: u64,
+    },
+    Failed {
+        error: String,
+        duration_ms: u64,
+        failed_at: u64,
+    },
+    Killed {
+        killed_at: u64,
+    },
+}
+
+impl TaskStatus {
+    pub fn is_terminal(&self) -> bool {
+        !matches!(self, TaskStatus::Running { .. })
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Running { .. } => "running",
+            Self::Completed { .. } => "completed",
+            Self::Failed { .. } => "failed",
+            Self::Killed { .. } => "killed",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum VoxEvent {
     SessionStart {
@@ -37,7 +75,9 @@ pub enum VoxEvent {
     },
     PauseSession,
     ResumeSession,
-    EndSession,
+    EndSession {
+        force: bool,
+    },
     StopTurn,
     PttStart {
         owner: InteractionOwner,
@@ -74,6 +114,11 @@ pub enum VoxEvent {
     Cancelled {
         turn_id: u32,
         owner: InteractionOwner,
+    },
+    TaskFinished {
+        task_id: String,
+        session_id: i64,
+        status: TaskStatus,
     },
     Error(PipelineError),
     Shutdown,
@@ -205,6 +250,22 @@ pub struct TurnMetricsPayload {
 pub struct EngineRestartStatePayload {
     pub restarting: bool,
     pub target: Option<String>,
+}
+
+/// Strongly-typed task DTO projected to frontend UI and remote clients.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskDto {
+    pub task_id: String,
+    pub session_id: i64,
+    pub command: String,
+    pub status: String,
+    pub exit_code: Option<i32>,
+    pub error: Option<String>,
+    pub log_path: String,
+    pub started_at: u64,
+    pub completed_at: Option<u64>,
+    pub duration_ms: Option<u64>,
 }
 
 /// Strongly-typed universal Tauri IPC event enum.

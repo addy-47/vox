@@ -40,7 +40,8 @@ pub async fn dispatch_command(
             Ok(serde_json::json!({ "status": "ok" }))
         }
         "end_session" => {
-            pipeline::end_session(app.clone(), st).await?;
+            let force = args.get("force").and_then(|v| v.as_bool());
+            pipeline::end_session(app.clone(), st, force).await?;
             Ok(serde_json::json!({ "status": "ok" }))
         }
         "pause_session" => {

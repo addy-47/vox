@@ -1,4 +1,7 @@
-use std::sync::{mpsc, Arc};
+use std::{
+    sync::{mpsc, Arc},
+    time::Duration,
+};
 
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -33,6 +36,12 @@ use crate::{
     },
 };
 
+/// Time to await tool completion synchronously before auto-promoting to background.
+pub const HARNESS_AUTO_PROMOTE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Hard safety ceiling for foreground execution when run_in_background is false.
+pub const HARNESS_FOREGROUND_HARD_TIMEOUT: Duration = Duration::from_secs(120);
+
 /// The session-scoped conversational orchestrator and stage chassis.
 pub struct Harness {
     pub(crate) session_id: Option<i64>,
@@ -57,6 +66,8 @@ pub struct Harness {
     pub(crate) guardrails_state: TurnGuardrailsState,
     pub(crate) inbox: Arc<StepInbox>,
     pub(crate) pending_user_query: Option<(u32, String)>,
+    pub auto_promote_timeout: Duration,
+    pub foreground_hard_timeout: Duration,
 }
 
 /// Dynamic per-model execution parameters resolved from database models table.
@@ -130,6 +141,8 @@ impl Harness {
             guardrails_state: TurnGuardrailsState::default(),
             inbox: Arc::new(StepInbox::new()),
             pending_user_query: None,
+            auto_promote_timeout: HARNESS_AUTO_PROMOTE_TIMEOUT,
+            foreground_hard_timeout: HARNESS_FOREGROUND_HARD_TIMEOUT,
         }
     }
 
@@ -172,6 +185,8 @@ impl Harness {
             guardrails_state: TurnGuardrailsState::default(),
             inbox: Arc::new(StepInbox::new()),
             pending_user_query: None,
+            auto_promote_timeout: HARNESS_AUTO_PROMOTE_TIMEOUT,
+            foreground_hard_timeout: HARNESS_FOREGROUND_HARD_TIMEOUT,
         }
     }
 

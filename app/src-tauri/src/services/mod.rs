@@ -8,6 +8,7 @@ pub mod realtime;
 pub mod remote;
 pub mod sidecar;
 pub mod stt;
+pub mod tasks;
 pub mod translit;
 pub mod tts;
 pub mod vad;

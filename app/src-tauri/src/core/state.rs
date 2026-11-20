@@ -39,6 +39,7 @@ use crate::{
             security::{PairingCoordinator, PairingPrompt, TrustStore},
             session::{RemoteLinkState, RemoteSessionManager, SessionRole, StateChangeCallback},
         },
+        tasks::BackgroundTaskManager,
     },
     setup::{manifest::VoxManifest, model_manager::ModelManager},
 };
@@ -208,6 +209,7 @@ pub struct AppState {
     pub pairing_coordinator: Arc<PairingCoordinator>,
     pub pending_pairing: Arc<ParkingMutex<Option<PendingPairingState>>>,
     pub trust_store: Arc<TrustStore>,
+    pub tasks: Arc<BackgroundTaskManager>,
 }
 
 impl AppState {
@@ -357,6 +359,7 @@ impl AppState {
             pairing_coordinator: Arc::new(PairingCoordinator::new()),
             pending_pairing: Arc::new(ParkingMutex::new(None)),
             trust_store,
+            tasks: Arc::new(BackgroundTaskManager::new(db.clone(), None)),
         }
     }
 

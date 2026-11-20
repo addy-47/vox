@@ -57,6 +57,13 @@ impl StepInbox {
         self.notify.notify_waiters();
     }
 
+    /// Pushes a task completion notification into the inbox without releasing speech_hold_active.
+    /// This prevents mid-speech speech-hold clobber when background tasks finish while the user speaks.
+    pub fn push_task_notification(&self, message: InboxMessage) {
+        self.messages.lock().push(message);
+        self.notify.notify_waiters();
+    }
+
     /// Engages the step-boundary hold when SpeechStart/PttStart occurs during Working.
     pub fn engage_speech_hold(&self) {
         self.speech_hold_active.store(true, Ordering::Release);

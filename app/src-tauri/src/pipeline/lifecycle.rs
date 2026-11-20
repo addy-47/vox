@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use tauri::AppHandle;
 
@@ -14,6 +14,21 @@ use crate::{
 /// Spawns an idle observer for the assistant pipeline that auto-pauses after 7 minutes of Ready
 /// and reclaims model RAM after 5 minutes of sustained Paused state.
 pub fn spawn_idle_monitor<R: tauri::Runtime>(app: AppHandle<R>, state: Arc<AppState>) {
+    spawn_idle_monitor_with_timeouts(
+        app,
+        state,
+        INACTIVITY_READY_TIMEOUT,
+        INACTIVITY_PAUSED_TIMEOUT,
+    );
+}
+
+/// Spawns an idle observer for the assistant pipeline with configurable inactivity timeouts.
+pub fn spawn_idle_monitor_with_timeouts<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    state: Arc<AppState>,
+    ready_timeout: Duration,
+    paused_timeout: Duration,
+) {
     tauri::async_runtime::spawn(async move {
         let mut state_rx = state.pipeline.subscribe_state();
         loop {
@@ -27,9 +42,9 @@ pub fn spawn_idle_monitor<R: tauri::Runtime>(app: AppHandle<R>, state: Arc<AppSt
 
             if current == InteractionState::Ready {
                 tokio::select! {
-                    _ = tokio::time::sleep(INACTIVITY_READY_TIMEOUT) => {
+                    _ = tokio::time::sleep(ready_timeout) => {
                         if state.pipeline.state() == InteractionState::Ready {
-                            log::info!("[Pipeline] Auto-pausing session after 7 minutes of idle Ready state.");
+                            log::info!("[Pipeline] Auto-pausing session after idle Ready timeout.");
                             let event_tx_opt = state.event_tx.lock().clone();
                             if let Some(tx) = event_tx_opt {
                                 if let Err(e) = tx.send(VoxEvent::PauseSession) {
@@ -46,9 +61,9 @@ pub fn spawn_idle_monitor<R: tauri::Runtime>(app: AppHandle<R>, state: Arc<AppSt
                 }
             } else if current == InteractionState::Paused {
                 tokio::select! {
-                    _ = tokio::time::sleep(INACTIVITY_PAUSED_TIMEOUT) => {
+                    _ = tokio::time::sleep(paused_timeout) => {
                         if state.pipeline.state() == InteractionState::Paused {
-                            log::info!("[Pipeline] Offloading idle models after 5 minutes of sustained Paused state.");
+                            log::info!("[Pipeline] Offloading idle models after sustained Paused timeout.");
                             let mut lock = state.engine.lock().await;
                             if let Some(ref mut engine) = *lock {
                                 cool_down_llm(&mut engine.llm_tx, Some(&state.llm_provider));

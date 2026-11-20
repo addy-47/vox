@@ -1,6 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use super::{
+    bash::BashTool,
+    manage_task::ManageTaskTool,
     search_memory::MemorySearchTool,
     set_title::{SetSessionTitleTool, SetTitleTool},
     web_search::WebSearchTool,
@@ -38,6 +40,8 @@ impl ToolRegistry {
         reg.register(Arc::new(SetSessionTitleTool));
         reg.register(Arc::new(MemorySearchTool));
         reg.register(Arc::new(WebSearchTool));
+        reg.register(Arc::new(BashTool));
+        reg.register(Arc::new(ManageTaskTool));
         reg
     }
 

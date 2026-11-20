@@ -8,13 +8,17 @@ use crate::{
     services::llm::CanonicalToolDefinition,
 };
 
+pub mod bash;
 pub mod executor;
+pub mod manage_task;
 pub mod registry;
 pub mod search_memory;
 pub mod set_title;
 pub mod web_search;
 
+pub use bash::BashTool;
 pub use executor::{ToolExecutionOutcome, ToolExecutor};
+pub use manage_task::ManageTaskTool;
 pub use registry::{ToolFilter, ToolRegistry};
 pub use search_memory::MemorySearchTool;
 pub use set_title::{SetSessionTitleTool, SetTitleTool};
@@ -210,6 +214,11 @@ pub trait ToolDefinition: Send + Sync {
 
     /// Whether this tool manages its own internal timeout promotion (e.g. bash auto-backgrounding).
     fn handles_own_timeout(&self) -> bool {
+        false
+    }
+
+    /// Whether this tool supports background promotion if execution takes time.
+    fn supports_background_promotion(&self) -> bool {
         false
     }
 

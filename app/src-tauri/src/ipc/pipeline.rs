@@ -135,6 +135,7 @@ pub async fn start_session<R: tauri::Runtime>(
 pub async fn end_session<R: tauri::Runtime>(
     _app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
+    force: Option<bool>,
 ) -> Result<(), VoxIpcError> {
     let event_tx = state
         .event_tx
@@ -143,7 +144,9 @@ pub async fn end_session<R: tauri::Runtime>(
         .ok_or_else(|| VoxIpcError::Engine("Event router is not active".into()))?;
 
     event_tx
-        .send(VoxEvent::EndSession)
+        .send(VoxEvent::EndSession {
+            force: force.unwrap_or(false),
+        })
         .map_err(|e| VoxIpcError::Engine(format!("Failed to send EndSession: {}", e)))?;
 
     Ok(())

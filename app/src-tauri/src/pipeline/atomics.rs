@@ -29,6 +29,7 @@ pub struct PipelineAtomics {
     pub llm_done: Arc<AtomicBool>,
     pub engine_shutdown: Arc<AtomicBool>,
     pub current_activity: Arc<parking_lot::RwLock<Option<ActivityEnvelope>>>,
+    pub last_user_activity_ms: Arc<AtomicU64>,
 }
 
 impl Default for PipelineAtomics {
@@ -41,6 +42,10 @@ impl PipelineAtomics {
     /// Initializes all pipeline atomics, watch channels, and cancellation tokens to idle defaults.
     pub fn new() -> Self {
         let (state_tx, state_rx) = tokio::sync::watch::channel(InteractionState::Idle);
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
 
         Self {
             turn_id: Arc::new(AtomicU32::new(0)),
@@ -66,6 +71,7 @@ impl PipelineAtomics {
             llm_done: Arc::new(AtomicBool::new(false)),
             engine_shutdown: Arc::new(AtomicBool::new(false)),
             current_activity: Arc::new(parking_lot::RwLock::new(None)),
+            last_user_activity_ms: Arc::new(AtomicU64::new(now_ms)),
         }
     }
 
@@ -235,5 +241,24 @@ impl PipelineAtomics {
     /// Sets the currently active non-terminal activity envelope.
     pub fn set_current_activity(&self, activity: Option<&ActivityEnvelope>) {
         *self.current_activity.write() = activity.cloned();
+    }
+
+    /// Records user activity by updating `last_user_activity_ms` to the current epoch ms.
+    pub fn record_user_activity(&self) {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        self.last_user_activity_ms.store(now_ms, Ordering::Release);
+    }
+
+    /// Sets the user activity timestamp to an explicit epoch ms value.
+    pub fn set_last_user_activity_ms(&self, timestamp_ms: u64) {
+        self.last_user_activity_ms.store(timestamp_ms, Ordering::Release);
+    }
+
+    /// Returns the timestamp in epoch ms of the most recent user activity.
+    pub fn last_user_activity_ms(&self) -> u64 {
+        self.last_user_activity_ms.load(Ordering::Acquire)
     }
 }
