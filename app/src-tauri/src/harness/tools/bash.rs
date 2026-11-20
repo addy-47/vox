@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use futures_util::future::{BoxFuture, FutureExt};
 use serde_json::{json, Value};
 
@@ -5,7 +7,10 @@ use super::{
     ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolExecutionMode, ToolResult,
     TruncationPolicy,
 };
-use crate::core::events::{PipelineMode, TaskStatus};
+use crate::{
+    core::events::{PipelineMode, TaskStatus},
+    services::tasks::PromotionOutcome,
+};
 
 /// Built-in tool that executes OS shell commands in an isolated process group.
 pub struct BashTool;
@@ -110,30 +115,13 @@ impl ToolDefinition for BashTool {
                 }
                 status_res = &mut completion_rx => {
                     match status_res {
-                        Ok(TaskStatus::Completed { exit_code, .. }) => {
-                            let tail = ctx
-                                .app_state
-                                .tasks
-                                .read_log_tail(&log_path, 50)
-                                .unwrap_or_default();
-                            ctx.app_state.tasks.prune_unpromoted(&task_id);
-                            if exit_code == 0 {
-                                Ok(ToolResult::new(format!("Exit code: 0\nOutput:\n{}", tail)))
-                            } else {
-                                Err(ToolError::ExecutionFailed(format!(
-                                    "Exit code: {}\nOutput:\n{}",
-                                    exit_code, tail
-                                )))
+                        Ok(status) => {
+                            if !matches!(status, TaskStatus::Killed { .. }) {
+                                ctx.app_state.tasks.prune_unpromoted(&task_id);
                             }
+                            terminal_result(ctx, &status, &log_path).await
                         }
-                        Ok(TaskStatus::Failed { error, .. }) => {
-                            ctx.app_state.tasks.prune_unpromoted(&task_id);
-                            Err(ToolError::ExecutionFailed(format!("Execution failed: {}", error)))
-                        }
-                        Ok(TaskStatus::Killed { .. }) => {
-                            Err(ToolError::ExecutionFailed("Process was terminated".to_string()))
-                        }
-                        _ => {
+                        Err(_) => {
                             ctx.app_state.tasks.prune_unpromoted(&task_id);
                             Err(ToolError::ExecutionFailed(
                                 "Execution channel closed unexpectedly".to_string(),
@@ -142,40 +130,79 @@ impl ToolDefinition for BashTool {
                     }
                 }
                 _ = tokio::time::sleep(timeout_duration) => {
-                    if run_in_background {
+                    let message = if run_in_background {
                         log::info!(
                             "[BashTool] Exceeded {:?}; auto-promoting task {}",
                             timeout_duration,
                             task_id
                         );
-                        ctx.app_state.tasks.mark_promoted(&task_id).await;
-                        let payload = json!({
-                            "status": "running_in_background",
-                            "task_id": task_id,
-                            "command": command,
-                            "log_path": log_path.to_string_lossy(),
-                            "message": "Process running in background. Use manage_task to monitor or kill."
-                        });
-                        Ok(ToolResult::new(payload.to_string()))
+                        "Process running in background. Use manage_task to monitor or kill."
                     } else {
                         log::warn!(
                             "[BashTool] Exceeded {:?} foreground ceiling; promoting task {}",
                             timeout_duration,
                             task_id
                         );
-                        ctx.app_state.tasks.mark_promoted(&task_id).await;
-                        let payload = json!({
-                            "status": "running_in_background",
-                            "task_id": task_id,
-                            "command": command,
-                            "log_path": log_path.to_string_lossy(),
-                            "message": "Process exceeded foreground ceiling and was promoted to background."
-                        });
-                        Ok(ToolResult::new(payload.to_string()))
+                        "Process exceeded foreground ceiling and was promoted to background."
+                    };
+
+                    match ctx.app_state.tasks.mark_promoted(&task_id).await {
+                        PromotionOutcome::Promoted => {
+                            let payload = json!({
+                                "status": "running_in_background",
+                                "task_id": task_id,
+                                "command": command,
+                                "log_path": log_path.to_string_lossy(),
+                                "message": message
+                            });
+                            Ok(ToolResult::new(payload.to_string()))
+                        }
+                        PromotionOutcome::AlreadyFinished(status) => {
+                            ctx.app_state.tasks.prune_unpromoted(&task_id);
+                            terminal_result(ctx, &status, &log_path).await
+                        }
+                        PromotionOutcome::Gone => Err(ToolError::ExecutionFailed(
+                            "Task is no longer running".to_string(),
+                        )),
                     }
                 }
             }
         }
         .boxed()
+    }
+}
+
+/// Formats a supervised child's terminal status as the tool observation.
+async fn terminal_result(
+    ctx: &ToolExecutionContext,
+    status: &TaskStatus,
+    log_path: &Path,
+) -> Result<ToolResult, ToolError> {
+    match status {
+        TaskStatus::Completed { exit_code, .. } => {
+            let tail = ctx
+                .app_state
+                .tasks
+                .read_log_tail(log_path, 50)
+                .await
+                .unwrap_or_default();
+            if *exit_code == 0 {
+                Ok(ToolResult::new(format!("Exit code: 0\nOutput:\n{}", tail)))
+            } else {
+                Err(ToolError::ExecutionFailed(format!(
+                    "Exit code: {}\nOutput:\n{}",
+                    exit_code, tail
+                )))
+            }
+        }
+        TaskStatus::Failed { error, .. } => {
+            Err(ToolError::ExecutionFailed(format!("Execution failed: {}", error)))
+        }
+        TaskStatus::Killed { .. } => {
+            Err(ToolError::ExecutionFailed("Process was terminated".to_string()))
+        }
+        TaskStatus::Running { .. } => {
+            Err(ToolError::ExecutionFailed("Task is still running".to_string()))
+        }
     }
 }

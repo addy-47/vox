@@ -7,11 +7,12 @@ use tauri::{AppHandle, Manager, Runtime};
 
 use crate::{
     core::{
-        events::{emit_ipc, IpcEvent, NotificationRecord, Severity, TaskStatus},
+        events::{Severity, TaskStatus},
         state::{AppState, InteractionState},
     },
     harness::stages::inbox::{InboxMessage, QueuedMessageDelivery},
     pipeline::{transition, RoutingContext},
+    services::notifications::{notify, Action, NotificationCategory, NotificationParams},
 };
 
 /// Handles incoming background task finished notifications according to the 9-state matrix.
@@ -44,27 +45,44 @@ pub fn on_task_finished<R: Runtime + 'static>(
         }
     });
 
-    // 2. Emit NotificationCreated event (OS toast and drawer card)
-    let record = NotificationRecord {
-        id: format!("notif_{}", &uuid::Uuid::new_v4().to_string()[..8]),
-        group_key: format!("task:{}", task_id),
-        category: "task".to_string(),
-        severity: Severity::Info,
-        action_type: "receipt".to_string(),
-        action_payload: "{}".to_string(),
-        title: format!("Task {}", status.as_str()),
-        message: format!(
+    // 2. Route through the universal alert front door: OS toast + group-keyed drawer card.
+    let notify_app = app.clone();
+    let notify_db = Arc::clone(&state.db);
+    let notify_task_id = task_id.clone();
+    let notify_status = status.clone();
+    tauri::async_runtime::spawn(async move {
+        let title = format!("Task {}", notify_status.as_str());
+        let message = format!(
             "Background task {} finished with status {}",
-            task_id,
-            status.as_str()
-        ),
-        status: "unread".to_string(),
-        session_id: Some(session_id),
-        metadata: "{}".to_string(),
-        created_at: now as i64,
-        updated_at: now as i64,
-    };
-    let _ = emit_ipc(app, IpcEvent::NotificationCreated(record));
+            notify_task_id,
+            notify_status.as_str()
+        );
+        let group_key = format!("task:{}", notify_task_id);
+        if let Err(e) = notify(
+            &notify_app,
+            &notify_db,
+            NotificationParams {
+                group_key: Some(&group_key),
+                category: NotificationCategory::Task,
+                severity: Severity::Info,
+                impact: None,
+                action: Action::Receipt,
+                title: &title,
+                message: &message,
+                session_id: Some(session_id),
+                metadata: None,
+                duration_ms: None,
+            },
+        )
+        .await
+        {
+            log::warn!(
+                "[Pipeline::Tasks] Task notification delivery failed for {}: {}",
+                notify_task_id,
+                e
+            );
+        }
+    });
 
     // 3. Evaluate 9-state handling matrix
     let current_state = state.pipeline.state();
@@ -85,54 +103,85 @@ pub fn on_task_finished<R: Runtime + 'static>(
                 task_id,
                 status.as_str()
             );
-            let active_count = state.tasks.active_tasks_count(session_id);
-            let app_clone = app.clone();
+
+            // Single writer for Ready -> Thinking. Competing events are buffered for the
+            // next inbox drain instead of spawning a second proactive turn.
+            if state
+                .pipeline
+                .proactive_turn_in_flight
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
+                buffer_task_notification(&task_id, &status, now, state);
+                return;
+            }
+
+            if state.pipeline.state() != InteractionState::Ready {
+                state
+                    .pipeline
+                    .proactive_turn_in_flight
+                    .store(false, Ordering::Release);
+                return;
+            }
+
             let state_arc = match app.try_state::<Arc<AppState>>() {
                 Some(st) => Arc::clone(st.inner()),
-                None => return,
-            };
-            let ctx_clone = ctx.clone();
-
-            tauri::async_runtime::spawn(async move {
-                if active_count > 0 {
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                }
-                if state_arc.pipeline.state() != InteractionState::Ready {
+                None => {
+                    state
+                        .pipeline
+                        .proactive_turn_in_flight
+                        .store(false, Ordering::Release);
                     return;
                 }
+            };
+            let app_clone = app.clone();
+            let ctx_clone = ctx.clone();
+            let should_coalesce = state.tasks.active_tasks_count(session_id) > 0;
 
-                let (new_turn_id, _) = state_arc.pipeline.next_turn();
-                state_arc.pipeline_accumulator.lock().clear();
-                state_arc.turn_metrics.start_turn(new_turn_id);
-                state_arc.turn_metrics.record_speech_end();
+            let (new_turn_id, _) = state.pipeline.next_turn();
+            state.pipeline_accumulator.lock().clear();
+            state.turn_metrics.start_turn(new_turn_id);
+            state.turn_metrics.record_speech_end();
 
-                {
-                    let mut guard = state_arc.harness.lock();
-                    if let Some(ref mut harness) = *guard {
-                        harness.stage_user_query(new_turn_id, query.clone());
-                    }
+            {
+                let mut guard = state.harness.lock();
+                if let Some(ref mut harness) = *guard {
+                    harness.stage_user_query(new_turn_id, query.clone());
+                }
+            }
+            state
+                .pipeline_accumulator
+                .lock()
+                .set_user_transcript(query.clone());
+            state.turn_metrics.record_transcript_final();
+
+            transition(InteractionState::Thinking, None, ctx, app, state);
+
+            tauri::async_runtime::spawn(async move {
+                if should_coalesce {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+                let still_valid = state_arc.pipeline.state() == InteractionState::Thinking
+                    && state_arc.pipeline.peek_turn_id() == new_turn_id
+                    && !state_arc.pipeline.is_turn_cancelled();
+                if still_valid {
+                    super::transcript::spawn_harness_turn_task(
+                        new_turn_id,
+                        query,
+                        &app_clone,
+                        &state_arc,
+                        &ctx_clone,
+                    );
+                } else {
+                    log::info!(
+                        "[Pipeline::Tasks] Proactive turn {} superseded after coalescing wait",
+                        new_turn_id
+                    );
                 }
                 state_arc
-                    .pipeline_accumulator
-                    .lock()
-                    .set_user_transcript(query.clone());
-                state_arc.turn_metrics.record_transcript_final();
-
-                transition(
-                    InteractionState::Thinking,
-                    None,
-                    &ctx_clone,
-                    &app_clone,
-                    &state_arc,
-                );
-
-                super::transcript::spawn_harness_turn_task(
-                    new_turn_id,
-                    query,
-                    &app_clone,
-                    &state_arc,
-                    &ctx_clone,
-                );
+                    .pipeline
+                    .proactive_turn_in_flight
+                    .store(false, Ordering::Release);
             });
         }
         InteractionState::Listening
@@ -250,4 +299,21 @@ pub fn check_and_dispatch_inbox_tasks<R: Runtime + 'static>(
             &ctx_clone,
         );
     });
+}
+
+/// Buffers a task completion for the next inbox drain without spawning a turn.
+fn buffer_task_notification(task_id: &str, status: &TaskStatus, now: u64, state: &AppState) {
+    let guard = state.harness.lock();
+    if let Some(ref harness) = *guard {
+        let msg = InboxMessage::new(
+            format!(
+                "[Background Task Finished] task_id={} status={}",
+                task_id,
+                status.as_str()
+            ),
+            QueuedMessageDelivery::Immediate,
+            now,
+        );
+        harness.inbox().push_task_notification(msg);
+    }
 }

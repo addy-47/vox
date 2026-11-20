@@ -20,7 +20,7 @@ impl ToolDefinition for ManageTaskTool {
     }
 
     fn truncation_policy(&self) -> TruncationPolicy {
-        TruncationPolicy::TailHeavy { tail_ratio: 0.8 }
+        TruncationPolicy::None
     }
 
     fn execution_mode(&self, args: &Value) -> ToolExecutionMode {
@@ -107,6 +107,7 @@ impl ToolDefinition for ManageTaskTool {
                         .app_state
                         .tasks
                         .read_log_tail(&log_path, 50)
+                        .await
                         .map_err(|e| {
                             ToolError::ExecutionFailed(format!(
                                 "Failed to read task log tail: {}",
@@ -114,16 +115,28 @@ impl ToolDefinition for ManageTaskTool {
                             ))
                         })?;
 
-                    Ok(ToolResult::new(format!(
-                        "Task: {}\nStatus: {}\nTail:\n{}",
-                        task_id,
-                        if ctx.app_state.tasks.has_running_tasks(ctx.session_id) {
-                            "running"
-                        } else {
-                            "unknown"
-                        },
-                        tail
-                    )))
+                    let status = ctx
+                        .app_state
+                        .tasks
+                        .task_status(&task_id, ctx.session_id)
+                        .await;
+                    let mut lines = vec![format!("Task: {}", task_id)];
+                    match status {
+                        Some(dto) => {
+                            lines.push(format!("Status: {}", dto.status));
+                            if let Some(exit_code) = dto.exit_code {
+                                lines.push(format!("Exit code: {}", exit_code));
+                            }
+                            if let Some(error) = dto.error {
+                                lines.push(format!("Error: {}", error));
+                            }
+                        }
+                        None => lines.push("Status: unknown".to_string()),
+                    }
+                    lines.push("Tail:".to_string());
+                    lines.push(tail);
+
+                    Ok(ToolResult::new(lines.join("\n")))
                 }
                 "kill" => {
                     let task_id = args

@@ -2,7 +2,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use turso::Connection;
 
-use crate::core::{error::PersistenceError, events::TaskStatus};
+use crate::core::{
+    error::PersistenceError,
+    events::{TaskDto, TaskStatus},
+};
 
 /// Inserts or replaces a task record when it is promoted to the background.
 pub async fn record_task_promoted(
@@ -87,6 +90,41 @@ pub async fn record_task_finished(
     }
 
     Ok(())
+}
+
+/// Fetches a single persisted task, scoped to a session, for terminal status read-through.
+pub async fn fetch_task_by_id(
+    conn: &Connection,
+    task_id: &str,
+    session_id: i64,
+) -> Result<Option<TaskDto>, PersistenceError> {
+    let mut rows = conn
+        .query(
+            "SELECT task_id, session_id, command, status, exit_code, error,
+                    log_path, started_at, completed_at, duration_ms
+             FROM session_tasks
+             WHERE task_id = ? AND session_id = ?",
+            (task_id.to_string(), session_id),
+        )
+        .await?;
+
+    if let Some(row) = rows.next().await? {
+        let status: String = row.get(3)?;
+        Ok(Some(TaskDto {
+            task_id: row.get(0)?,
+            session_id: row.get(1)?,
+            command: row.get(2)?,
+            status,
+            exit_code: row.get(4).ok(),
+            error: row.get(5).ok(),
+            log_path: row.get(6)?,
+            started_at: row.get(7).unwrap_or(0),
+            completed_at: row.get(8).ok(),
+            duration_ms: row.get(9).ok(),
+        }))
+    } else {
+        Ok(None)
+    }
 }
 
 /// Marks a specific task as `killed`.

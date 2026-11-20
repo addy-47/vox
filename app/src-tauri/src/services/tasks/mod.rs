@@ -2,4 +2,4 @@
 
 pub mod manager;
 
-pub use manager::{ActiveTaskRecord, BackgroundTaskManager};
+pub use manager::{ActiveTaskRecord, BackgroundTaskManager, PromotionOutcome};

@@ -21,6 +21,7 @@ pub enum NotificationCategory {
     Hardware,
     Models,
     Storage,
+    Task,
 }
 
 impl NotificationCategory {
@@ -33,6 +34,7 @@ impl NotificationCategory {
             Self::Hardware => "hardware",
             Self::Models => "models",
             Self::Storage => "storage",
+            Self::Task => "task",
         }
     }
 }
@@ -47,6 +49,7 @@ impl From<&str> for NotificationCategory {
             "hardware" => Self::Hardware,
             "models" => Self::Models,
             "storage" => Self::Storage,
+            "task" => Self::Task,
             _ => Self::Pipeline,
         }
     }
@@ -128,4 +131,20 @@ pub fn resolve_channel(
             _ => DeliveryChannel::NotificationOnly,
         },
     }
+}
+
+/// Resolves the front-door channel with the closed category taxonomy applied first.
+///
+/// Task completions are routed to `ToastAndNotification` by the domain-5 9-state
+/// matrix, independently of the 3D truth table. No severity or impact is forged.
+pub fn resolve_channel_for_category(
+    category: NotificationCategory,
+    impact: Option<PipelineImpact>,
+    severity: Severity,
+    action: &Action,
+) -> DeliveryChannel {
+    if category == NotificationCategory::Task {
+        return DeliveryChannel::ToastAndNotification;
+    }
+    resolve_channel(impact, severity, action)
 }

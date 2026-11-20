@@ -30,6 +30,8 @@ pub struct PipelineAtomics {
     pub engine_shutdown: Arc<AtomicBool>,
     pub current_activity: Arc<parking_lot::RwLock<Option<ActivityEnvelope>>>,
     pub last_user_activity_ms: Arc<AtomicU64>,
+    /// Single-flight latch for router-owned proactive turns (one writer at a time).
+    pub proactive_turn_in_flight: Arc<AtomicBool>,
 }
 
 impl Default for PipelineAtomics {
@@ -72,6 +74,7 @@ impl PipelineAtomics {
             engine_shutdown: Arc::new(AtomicBool::new(false)),
             current_activity: Arc::new(parking_lot::RwLock::new(None)),
             last_user_activity_ms: Arc::new(AtomicU64::new(now_ms)),
+            proactive_turn_in_flight: Arc::new(AtomicBool::new(false)),
         }
     }
 

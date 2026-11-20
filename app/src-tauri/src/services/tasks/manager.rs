@@ -1,5 +1,7 @@
 use std::{
     collections::HashMap,
+    fs::File,
+    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     sync::{mpsc::Sender, Arc},
     time::{SystemTime, UNIX_EPOCH},
@@ -13,6 +15,8 @@ use crate::{
     persistence::VoxDb,
 };
 
+const LOG_TAIL_CHUNK_SIZE: u64 = 4096;
+
 /// Active task record tracking runtime process group metadata and cancellation tokens.
 #[derive(Debug, Clone)]
 pub struct ActiveTaskRecord {
@@ -24,6 +28,8 @@ pub struct ActiveTaskRecord {
     pub log_path: PathBuf,
     pub started_at: u64,
     pub is_promoted: bool,
+    /// Set once the supervisor has reaped the child, so promotion can observe it atomically.
+    pub terminal_status: Option<TaskStatus>,
     pub cancel_token: CancellationToken,
 }
 
@@ -34,6 +40,17 @@ pub struct SupervisedTaskHandle {
     pub command: String,
     pub log_path: PathBuf,
     pub completion_rx: tokio::sync::oneshot::Receiver<TaskStatus>,
+}
+
+/// Outcome of the single-lock promotion decision at the completion boundary.
+#[derive(Debug, Clone)]
+pub enum PromotionOutcome {
+    /// The record was still live; the running row was persisted.
+    Promoted,
+    /// The supervisor already reaped the child; this is its real terminal status.
+    AlreadyFinished(TaskStatus),
+    /// The record was removed by a concurrent kill; no promotion was possible.
+    Gone,
 }
 
 /// Resolves the canonical shell and argument vectors across supported platforms.
@@ -113,7 +130,7 @@ impl BackgroundTaskManager {
         self.active_tasks
             .read()
             .values()
-            .filter(|t| t.session_id == session_id)
+            .filter(|t| t.session_id == session_id && t.terminal_status.is_none())
             .count()
     }
 
@@ -122,7 +139,54 @@ impl BackgroundTaskManager {
         self.active_tasks
             .read()
             .values()
-            .any(|t| t.session_id == session_id)
+            .any(|t| t.session_id == session_id && t.terminal_status.is_none())
+    }
+
+    /// Returns the status of one task: in-memory while running, persisted row once terminal.
+    pub async fn task_status(&self, task_id: &str, session_id: i64) -> Option<TaskDto> {
+        {
+            let tasks = self.active_tasks.read();
+            if let Some(task) = tasks.get(task_id) {
+                if task.session_id == session_id && task.terminal_status.is_none() {
+                    return Some(TaskDto {
+                        task_id: task.task_id.clone(),
+                        session_id: task.session_id,
+                        command: task.command.clone(),
+                        status: "running".to_string(),
+                        exit_code: None,
+                        error: None,
+                        log_path: task.log_path.to_string_lossy().to_string(),
+                        started_at: task.started_at,
+                        completed_at: None,
+                        duration_ms: None,
+                    });
+                }
+            }
+        }
+
+        match self.db.connect() {
+            Ok(conn) => match crate::persistence::tasks::fetch_task_by_id(&conn, task_id, session_id)
+                .await
+            {
+                Ok(record) => record,
+                Err(e) => {
+                    log::warn!(
+                        "[Tasks::Manager] Failed to read status for {}: {}",
+                        task_id,
+                        e
+                    );
+                    None
+                }
+            },
+            Err(e) => {
+                log::warn!(
+                    "[Tasks::Manager] Failed to connect for task status {}: {}",
+                    task_id,
+                    e
+                );
+                None
+            }
+        }
     }
 
     /// Spawns an isolated child process group and attaches a Tokio supervisor task.
@@ -158,7 +222,9 @@ impl BackgroundTaskManager {
         #[cfg(unix)]
         unsafe {
             cmd.pre_exec(|| {
-                libc::setpgid(0, 0);
+                if libc::setpgid(0, 0) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
                 Ok(())
             });
         }
@@ -186,6 +252,7 @@ impl BackgroundTaskManager {
             log_path: log_path.clone(),
             started_at: now,
             is_promoted: false,
+            terminal_status: None,
             cancel_token: cancel_token.clone(),
         };
         self.active_tasks.write().insert(task_id.clone(), record);
@@ -234,12 +301,20 @@ impl BackgroundTaskManager {
                 }
             };
 
+            // Reaping and the promotion decision share one lock acquisition. An unpromoted
+            // reaped record stays in the map so a racing promotion observes the real status.
             let is_promoted = {
                 let mut tasks = active_tasks_clone.write();
-                if let Some(t) = tasks.remove(&task_id_clone) {
-                    t.is_promoted
-                } else {
-                    false
+                match tasks.get_mut(&task_id_clone) {
+                    Some(task) => {
+                        let promoted = task.is_promoted;
+                        task.terminal_status = Some(status.clone());
+                        if promoted {
+                            tasks.remove(&task_id_clone);
+                        }
+                        promoted
+                    }
+                    None => false,
                 }
             };
 
@@ -315,27 +390,39 @@ impl BackgroundTaskManager {
         });
     }
 
-    /// Marks an active task as promoted to the background and persists its initial running state.
-    pub async fn mark_promoted(&self, task_id: &str) {
-        let record_opt = {
+    /// Atomically promotes a live task, or reports the real status of one already reaped.
+    pub async fn mark_promoted(&self, task_id: &str) -> PromotionOutcome {
+        let (finished_status, promoted_record) = {
             let mut tasks = self.active_tasks.write();
+            let mut finished_status = None;
+            let mut promoted_record = None;
             if let Some(task) = tasks.get_mut(task_id) {
-                task.is_promoted = true;
-                Some((
-                    task.task_id.clone(),
-                    task.session_id,
-                    task.tool_call_id.clone(),
-                    task.command.clone(),
-                    task.log_path.to_string_lossy().to_string(),
-                    task.started_at as i64,
-                ))
-            } else {
-                None
+                if let Some(status) = task.terminal_status.take() {
+                    finished_status = Some(status);
+                } else {
+                    task.is_promoted = true;
+                    promoted_record = Some((
+                        task.task_id.clone(),
+                        task.session_id,
+                        task.tool_call_id.clone(),
+                        task.command.clone(),
+                        task.log_path.to_string_lossy().to_string(),
+                        task.started_at as i64,
+                    ));
+                }
             }
+            if finished_status.is_some() {
+                tasks.remove(task_id);
+            }
+            (finished_status, promoted_record)
         };
 
+        if let Some(status) = finished_status {
+            return PromotionOutcome::AlreadyFinished(status);
+        }
+
         if let Some((task_id_str, session_id, tool_call_id, command, log_path, started_at)) =
-            record_opt
+            promoted_record
         {
             if let Ok(conn) = self.db.connect() {
                 let _ = crate::persistence::tasks::record_task_promoted(
@@ -349,18 +436,16 @@ impl BackgroundTaskManager {
                 )
                 .await;
             }
+            return PromotionOutcome::Promoted;
         }
+
+        PromotionOutcome::Gone
     }
 
-    /// Reads up to `max_lines` from the tail of a task log file.
-    pub fn read_log_tail(&self, log_path: &Path, max_lines: usize) -> anyhow::Result<String> {
-        if !log_path.exists() {
-            return Ok(String::new());
-        }
-        let content = std::fs::read_to_string(log_path)?;
-        let lines: Vec<&str> = content.lines().collect();
-        let start = lines.len().saturating_sub(max_lines);
-        Ok(lines[start..].join("\n"))
+    /// Reads the final `max_lines` lines off the async worker via a bounded backward seek.
+    pub async fn read_log_tail(&self, log_path: &Path, max_lines: usize) -> anyhow::Result<String> {
+        let path = log_path.to_path_buf();
+        tokio::task::spawn_blocking(move || read_log_tail_sync(&path, max_lines)).await?
     }
 
     /// Prunes an unpromoted task from the active registry without firing TaskFinished.
@@ -378,7 +463,9 @@ impl BackgroundTaskManager {
         self.active_tasks
             .read()
             .values()
-            .filter(|t| session_id.is_none_or(|sid| t.session_id == sid))
+            .filter(|t| {
+                t.terminal_status.is_none() && session_id.is_none_or(|sid| t.session_id == sid)
+            })
             .map(|t| TaskDto {
                 task_id: t.task_id.clone(),
                 session_id: t.session_id,
@@ -393,4 +480,45 @@ impl BackgroundTaskManager {
             })
             .collect()
     }
+}
+
+/// Reads only the final `max_lines` lines, scanning backwards in fixed-size chunks.
+fn read_log_tail_sync(path: &Path, max_lines: usize) -> anyhow::Result<String> {
+    if max_lines == 0 || !path.exists() {
+        return Ok(String::new());
+    }
+
+    let mut file = File::open(path)?;
+    let file_len = file.metadata()?.len();
+    if file_len == 0 {
+        return Ok(String::new());
+    }
+
+    let mut boundaries = Vec::new();
+    let mut cursor = file_len;
+    while cursor > 0 && boundaries.len() < max_lines {
+        let chunk_len = cursor.min(LOG_TAIL_CHUNK_SIZE);
+        cursor -= chunk_len;
+        file.seek(SeekFrom::Start(cursor))?;
+        let mut buf = vec![0_u8; chunk_len as usize];
+        file.read_exact(&mut buf)?;
+        for (i, byte) in buf.iter().enumerate().rev() {
+            let absolute = cursor + i as u64;
+            if *byte == b'\n' && absolute + 1 != file_len {
+                boundaries.push(absolute);
+                if boundaries.len() == max_lines {
+                    break;
+                }
+            }
+        }
+    }
+
+    let start = boundaries.get(max_lines - 1).map_or(0, |pos| pos + 1);
+    file.seek(SeekFrom::Start(start))?;
+    let mut tail = vec![0_u8; (file_len - start) as usize];
+    file.read_exact(&mut tail)?;
+    Ok(String::from_utf8_lossy(&tail)
+        .lines()
+        .collect::<Vec<_>>()
+        .join("\n"))
 }

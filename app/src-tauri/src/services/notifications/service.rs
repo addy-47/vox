@@ -4,7 +4,8 @@ use tauri::AppHandle;
 use turso::Connection;
 
 use super::{
-    deliver_transient, resolve_channel, Action, DeliveryChannel, NotificationParams, TransientAlert,
+    deliver_transient, resolve_channel_for_category, Action, DeliveryChannel, NotificationParams,
+    TransientAlert,
 };
 use crate::{
     core::events::{emit_ipc, IpcEvent},
@@ -24,7 +25,12 @@ pub async fn notify<R: tauri::Runtime>(
     db: &VoxDb,
     params: NotificationParams<'_>,
 ) -> anyhow::Result<Option<String>> {
-    let channel = resolve_channel(params.impact, params.severity, &params.action);
+    let channel = resolve_channel_for_category(
+        params.category,
+        params.impact,
+        params.severity,
+        &params.action,
+    );
 
     if channel == DeliveryChannel::ToastOnly || channel == DeliveryChannel::ToastAndNotification {
         let outcome = dispatch_toast(app, &params);
