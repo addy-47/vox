@@ -3593,10 +3593,10 @@ async fn tool_active_false_barge_in_restores_working_with_intact_activity() {
 
 /// PURPOSE:  Catch premature background promotion or dropped stdout when a fast shell command completes within the auto-promotion window.
 /// SCENARIO: Model invokes `bash({"command": "printf 'FAST_SYNC_OK'", "run_in_background": true})` on a Harness with default 5s auto-promote timeout; command exits in <20ms with code 0.
-/// ASSERTS:  Committed `Role::Tool` observation contains "FAST_SYNC_OK" and exit code 0, and does NOT contain "running_in_background"; `state.tasks.active_tasks_count(session_id) == 0`; `SELECT COUNT(*) FROM session_tasks WHERE status = 'running'` is 0; `TurnOutcome::Completed` returns final spoken response.
+/// ASSERTS:  The terminal tool observation arrives within a 2s per-stage ceiling (well inside the 5s promotion window, not via the timeout fallback); it contains "FAST_SYNC_OK" and exit code 0 and does NOT contain "running_in_background"; `state.tasks.active_tasks_count(session_id) == 0`; `SELECT COUNT(*) FROM session_tasks WHERE status = 'running'` is 0; `TurnOutcome::Completed` returns final spoken response.
 /// CLASS:    happy-path
 /// REQUIRES: none
-/// MUTANT:   In `BashTool::execute` / `BackgroundTaskManager`, promote all commands unconditionally without awaiting the synchronous `auto_promote_timeout` window.
+/// MUTANT:   In `BashTool::execute`, replace `handle.completion_rx` with a permanently pending channel so the fast command always takes the 5s promotion-timeout fallback.
 #[tokio::test]
 async fn bash_tool_executes_fast_command_synchronously_without_backgrounding() {
     tokio::time::timeout(Duration::from_secs(15), async {
@@ -3621,7 +3621,17 @@ async fn bash_tool_executes_fast_command_synchronously_without_backgrounding() {
         });
 
         let req = rig.turn_request("Run fast sync command", turn_id);
-        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+        // Per-stage first-output ceiling (testing-style-guide §5.4): a fast command
+        // must yield its terminal tool observation well inside the 5s auto-promotion
+        // window. A permanently-pending completion receiver forces the 5s promotion
+        // timeout fallback; mark_promoted then compensates with AlreadyFinished and
+        // emits an identical observation, so the stall itself is the observable.
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(2),
+            Harness::execute_turn(&rig.state.harness, req),
+        )
+        .await
+        .expect("fast command must complete within the auto-promotion window, not via the promotion-timeout fallback");
 
         match &outcome {
             TurnOutcome::Completed { assistant_response, .. } => {
@@ -3998,7 +4008,7 @@ async fn background_task_streams_stdout_and_stderr_directly_to_disk_log_without_
 
 /// PURPOSE:  Catch stale task status reporting or full-file memory reads when inspecting a multi-hundred-line background task log via `manage_task`.
 /// SCENARIO: Promote a `bash` command that writes 120 numbered lines (LINE_001 .. LINE_120) to its log file and stays running; in the next step, model calls `manage_task({"action": "list"})` and `manage_task({"action": "status", "task_id": task_id})` in a single parallel wave.
-/// ASSERTS:  Both `manage_task` calls execute in `ToolExecutionMode::Parallel`; `list` returns the active `task_id` with `status: "running"`; `status` returns the last 50 lines (containing "LINE_120" and "LINE_071", excluding "LINE_001").
+/// ASSERTS:  Both `manage_task` calls execute in `ToolExecutionMode::Parallel`; `list` returns the active `task_id` with `status: "running"`; `status` returns the last 50 lines (containing "LINE_120" and "LINE_071", excluding "LINE_001") AND reports the requested task's own `running` status, not a session-wide boolean.
 /// CLASS:    happy-path
 /// REQUIRES: none
 /// MUTANT:   In `ManageTaskTool`, return only the first 50 lines (head) instead of seeking the last 50 lines (tail) of `log_path`.
@@ -4108,6 +4118,14 @@ async fn manage_task_list_and_status_read_live_state_and_log_tail_from_disk() {
         assert!(
             !status_obs.content.contains("LINE_001"),
             "Tail must NOT contain line 001 (head line outside last 50)"
+        );
+        assert!(
+            status_obs.content.contains(&task_id),
+            "status observation must name the requested task_id"
+        );
+        assert!(
+            status_obs.content.contains("running"),
+            "status observation must report the requested task's own 'running' status, not a session-wide boolean"
         );
 
         let list_obs = tool_observations
@@ -4240,18 +4258,36 @@ async fn manage_task_kill_terminates_entire_process_group_including_grandchildre
             "active_tasks_count must be 0 after kill"
         );
 
+        // Quiescence: kill() persists the terminal status asynchronously. Require
+        // the row to exist (and reach 'killed') within a bounded deadline; never
+        // skip the assertion when the row is absent.
         let conn = rig.state.db.connect().expect("db connect");
-        let mut rows = conn
-            .query(
-                "SELECT status FROM session_tasks WHERE task_id = ?;",
-                (task_id,),
-            )
-            .await
-            .expect("query session_tasks");
-        if let Some(row) = rows.next().await.unwrap() {
-            let status: String = row.get(0).unwrap();
-            assert_eq!(status, "killed", "task status in DB must be 'killed'");
+        let db_deadline = std::time::Instant::now() + Duration::from_secs(3);
+        let mut killed_status: Option<String> = None;
+        while std::time::Instant::now() < db_deadline {
+            let mut rows = conn
+                .query(
+                    "SELECT status FROM session_tasks WHERE task_id = ?;",
+                    (task_id.clone(),),
+                )
+                .await
+                .expect("query session_tasks");
+            let status: Option<String> = rows
+                .next()
+                .await
+                .expect("read session_tasks row")
+                .map(|row| row.get::<String>(0).expect("status column"));
+            if status.as_deref() == Some("killed") {
+                killed_status = status;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
+        assert_eq!(
+            killed_status.as_deref(),
+            Some("killed"),
+            "kill must persist a session_tasks row with status='killed' within the deadline"
+        );
 
         let kill_deadline = std::time::Instant::now() + Duration::from_secs(3);
         let mut grandchild_dead = false;
@@ -4337,15 +4373,107 @@ async fn task_finished_in_ready_within_active_window_triggers_proactive_spoken_t
     .expect("test timed out");
 }
 
+/// Quiescence proof for a suppressed `VoxEvent::TaskFinished` (testing-style-guide §5.1).
+///
+/// The negative assertions (zero LLM dispatch, zero TTS commands) are valid only
+/// after the producer is proven finished. No bare sleep is used as that proof:
+///  1. the Rig event tap (installed in `Rig::new`, before any event is sent)
+///     captures the `TaskFinished` — the ack that it entered vox-router's channel;
+///  2. a FIFO `LlmFinished` sentinel sent immediately after proves the router
+///     progressed past `TaskFinished` in its single-threaded event pump;
+///  3. the `session_tasks` terminal row is a positive barrier proving
+///     `on_task_finished` actually ran;
+///  4. a bounded state-invariant watch then proves no later transition can stage
+///     a proactive turn (every proactive dispatch transitions to Thinking first).
+async fn assert_task_finished_suppressed_after_router_ack(
+    rig: &Rig,
+    task_id: &str,
+    expected_state: InteractionState,
+    baseline_dispatches: usize,
+    sentinel_turn_id: u32,
+) {
+    // (1) Ack at the router seam: the tap records every event before forwarding
+    // it to vox-router, so TaskFinished entered the router channel by this point.
+    rig.wait_for_event(
+        |ev| matches!(ev, VoxEvent::TaskFinished { task_id: id, .. } if id.as_str() == task_id),
+        Duration::from_secs(5),
+    )
+    .await
+    .expect("TaskFinished must be captured at the router seam");
+
+    // (2) FIFO sentinel: the tap forwards to the router in send order, so seeing
+    // this event after TaskFinished proves the router consumed the former first.
+    rig.send_event(VoxEvent::LlmFinished {
+        turn_id: sentinel_turn_id,
+    });
+    rig.wait_for_event(
+        |ev| matches!(ev, VoxEvent::LlmFinished { turn_id: tid } if *tid == sentinel_turn_id),
+        Duration::from_secs(5),
+    )
+    .await
+    .expect("FIFO sentinel must be captured after TaskFinished");
+
+    // (3) Positive barrier: on_task_finished persisted the terminal task state.
+    let conn = rig.state.db.connect().expect("db connect");
+    let db_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut saw_completed = false;
+    while tokio::time::Instant::now() < db_deadline {
+        let mut rows = conn
+            .query(
+                "SELECT status FROM session_tasks WHERE task_id = ?;",
+                (task_id.to_string(),),
+            )
+            .await
+            .expect("query session_tasks");
+        let status: Option<String> = rows
+            .next()
+            .await
+            .expect("read session_tasks row")
+            .map(|row| row.get::<String>(0).expect("status column"));
+        if status.as_deref() == Some("completed") {
+            saw_completed = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        saw_completed,
+        "on_task_finished must persist status='completed' for task {}",
+        task_id
+    );
+
+    // (4) A suppressed TaskFinished never transitions out of the expected state.
+    // A late proactive dispatch must transition to Thinking before dispatching,
+    // so a stable state over the watch window proves no turn can be staged.
+    common::harness::assert_pipeline_state_stable(
+        || rig.state.pipeline.state(),
+        expected_state,
+        Duration::from_millis(1000),
+        "suppressed TaskFinished must not transition the pipeline",
+    )
+    .await;
+
+    // Negative assertions are valid only after the quiescence proof above.
+    assert_eq!(
+        rig.dispatch_count(),
+        baseline_dispatches,
+        "a suppressed TaskFinished must produce zero LLM dispatches"
+    );
+    assert!(
+        rig.drain_tts_commands().is_empty(),
+        "a suppressed TaskFinished must produce zero TTS commands"
+    );
+}
+
 /// PURPOSE:  Catch unsolicited voice wake-ups when a background task finishes after the user has been quiet for >5 minutes in Ready or while the session is Paused.
 /// SCENARIO: Set `last_user_activity_ms` to now - 6 minutes in `InteractionState::Ready` (and repeat in `InteractionState::Paused`). Trigger `VoxEvent::TaskFinished` through `vox-router`.
-/// ASSERTS:  `session_tasks` row is updated to 'completed'; `IpcEvent::NotificationCreated` is emitted; pipeline state remains in Ready (or Paused) with zero LLM dispatches (`llm_dispatch_count == 0`) and zero TTS commands dispatched.
+/// ASSERTS:  The router consumes each `TaskFinished` (tap ack + FIFO sentinel + `session_tasks` 'completed' barrier); pipeline state stays in Ready (or Paused) across a bounded invariant watch; zero LLM dispatches (`llm_dispatch_count == 0`) and zero TTS commands are dispatched.
 /// CLASS:    suppression
 /// REQUIRES: none
 /// MUTANT:   In `pipeline/assistant/tasks.rs`, bypass the 5-minute `last_user_activity_ms` check in Ready (or allow proactive turn dispatch in Paused).
 #[tokio::test]
 async fn task_finished_in_ready_after_quiet_window_or_in_paused_suppresses_speech_and_emits_notification_only() {
-    tokio::time::timeout(Duration::from_secs(15), async {
+    tokio::time::timeout(Duration::from_secs(20), async {
         let rig = Rig::new().await;
         let task_id = "task-quiet-008";
         let now = std::time::SystemTime::now()
@@ -4361,6 +4489,7 @@ async fn task_finished_in_ready_after_quiet_window_or_in_paused_suppresses_speec
         rig.state.pipeline.set_state(InteractionState::Ready);
 
         let initial_dispatches = rig.dispatch_count();
+        let _ = rig.drain_tts_commands();
 
         rig.send_event(VoxEvent::TaskFinished {
             task_id: format!("{}-ready", task_id),
@@ -4372,40 +4501,14 @@ async fn task_finished_in_ready_after_quiet_window_or_in_paused_suppresses_speec
             },
         });
 
-        // Quiescence barrier: wait for event processing
-        tokio::time::sleep(Duration::from_millis(300)).await;
-
-        // Verify session_tasks row updated to 'completed'
-        let conn = rig.state.db.connect().expect("db connect");
-        let mut rows = conn
-            .query(
-                "SELECT status FROM session_tasks WHERE task_id = ?;",
-                (format!("{}-ready", task_id),),
-            )
-            .await
-            .expect("query session_tasks");
-        let row = rows.next().await.unwrap().expect("session_tasks row must exist");
-        let status: String = row.get(0).unwrap();
-        assert_eq!(
-            status, "completed",
-            "session_tasks status must be updated to 'completed' on TaskFinished"
-        );
-
-        assert_eq!(
-            rig.state.pipeline.state(),
+        assert_task_finished_suppressed_after_router_ack(
+            &rig,
+            &format!("{}-ready", task_id),
             InteractionState::Ready,
-            "Pipeline must remain in Ready without transitioning to Thinking"
-        );
-        assert_eq!(
-            rig.dispatch_count(),
             initial_dispatches,
-            "Zero LLM dispatches must occur when user is quiet >5m"
-        );
-        let tts_cmds = rig.drain_tts_commands();
-        assert!(
-            tts_cmds.is_empty(),
-            "Zero TTS speech commands must be dispatched when user is quiet >5m"
-        );
+            8_008_001,
+        )
+        .await;
 
         // Part 2: Session in Paused state
         rig.state.pipeline.set_state(InteractionState::Paused);
@@ -4413,6 +4516,9 @@ async fn task_finished_in_ready_after_quiet_window_or_in_paused_suppresses_speec
             .pipeline
             .last_user_activity_ms
             .store(now, Ordering::Relaxed);
+
+        let paused_dispatches = rig.dispatch_count();
+        let _ = rig.drain_tts_commands();
 
         rig.send_event(VoxEvent::TaskFinished {
             task_id: format!("{}-paused", task_id),
@@ -4424,22 +4530,14 @@ async fn task_finished_in_ready_after_quiet_window_or_in_paused_suppresses_speec
             },
         });
 
-        tokio::time::sleep(Duration::from_millis(300)).await;
-
-        assert_eq!(
-            rig.state.pipeline.state(),
+        assert_task_finished_suppressed_after_router_ack(
+            &rig,
+            &format!("{}-paused", task_id),
             InteractionState::Paused,
-            "Pipeline must remain Paused when task finishes"
-        );
-        assert_eq!(
-            rig.dispatch_count(),
-            initial_dispatches,
-            "Zero LLM dispatches must occur while Paused"
-        );
-        assert!(
-            rig.drain_tts_commands().is_empty(),
-            "Zero TTS commands must be dispatched while Paused"
-        );
+            paused_dispatches,
+            8_008_002,
+        )
+        .await;
     })
     .await
     .expect("test timed out");

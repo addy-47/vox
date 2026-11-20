@@ -4122,8 +4122,8 @@
       "id": "D5-M05",
       "name": "Return log head instead of tail for manage_task status",
       "file": "src/services/tasks/manager.rs",
-      "target": "        let start = lines.len().saturating_sub(max_lines);\n        Ok(lines[start..].join(\"\\n\"))",
-      "replacement": "        let end = max_lines.min(lines.len());\n        Ok(lines[..end].join(\"\\n\"))",
+      "target": "    file.seek(SeekFrom::Start(start))?;",
+      "replacement": "    file.seek(SeekFrom::Start(0))?;",
       "test": {
         "binary": "harness_loop_test",
         "filter": "manage_task_list_and_status_read_live_state_and_log_tail_from_disk"
@@ -4170,8 +4170,8 @@
       "id": "D5-M09",
       "name": "Use inbox.push so TaskFinished releases the active speech hold",
       "file": "src/pipeline/assistant/tasks.rs",
-      "target": "                harness.inbox().push_task_notification(msg);",
-      "replacement": "                harness.inbox().push(msg);",
+      "target": "                harness.inbox().push_task_notification(msg);\n                log::info!(",
+      "replacement": "                harness.inbox().push(msg);\n                log::info!(",
       "test": {
         "binary": "harness_loop_test",
         "filter": "task_finished_in_working_buffers_in_step_inbox_without_releasing_active_speech_hold"
