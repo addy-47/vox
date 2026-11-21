@@ -4,6 +4,7 @@ import { AppearanceCard } from "@/shared/components/settings/appearance/Appearan
 import { useSettingsStore } from "@/store/settingsStore";
 import { resetThemeStateForTests } from "@/shared/theme";
 import { minimalSettings } from "../harness/settingsFixtures";
+import { APPEARANCE_COPY } from "@/data/settingsCopy";
 
 describe("AppearanceCard DOM tests", () => {
   beforeEach(() => {
@@ -68,11 +69,16 @@ describe("AppearanceCard DOM tests", () => {
 
     // Expect breadcrumb title "Custom Palette" and segmented buttons
     expect(screen.getByText("Custom Palette")).toBeTruthy();
-    expect(screen.getByText("Accent Color")).toBeTruthy();
-    expect(screen.getByText("Background Tone")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: APPEARANCE_COPY.segmentedAccent })
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: APPEARANCE_COPY.segmentedBackground })
+    ).toBeTruthy();
 
-    // Theme toggle button should now be present in header in custom view
-    expect(screen.getByRole("button", { name: /switch to (light|dark) mode/i })).toBeTruthy();
+    // Theme navigation controls are present in the header in custom view.
+    expect(screen.getByRole("button", { name: "Previous mode" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Next mode" })).toBeTruthy();
 
     // Click accent swatch (#CBA6F7 - Astral Mauve)
     const mauveSwatch = screen.getByRole("button", { name: /select accent #cba6f7/i });
@@ -90,8 +96,10 @@ describe("AppearanceCard DOM tests", () => {
     // Navigate to Custom Palette
     fireEvent.click(screen.getByText("Customise"));
 
-    // Click Background Tone segmented button
-    fireEvent.click(screen.getByText("Background Tone"));
+    // Click the Background segmented button, using the current production copy
+    fireEvent.click(
+      screen.getByRole("button", { name: APPEARANCE_COPY.segmentedBackground })
+    );
 
     // Click OLED Black background preset
     const oledBlackBtn = screen.getByRole("button", { name: /oled black/i });
