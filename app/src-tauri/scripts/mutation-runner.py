@@ -12,7 +12,8 @@ Modes:
 
 Every mutant is applied as an exact one-line source edit, the bound test runs in release
 mode, and the original bytes are restored in a finally block. A mutant that fails to
-revert aborts the campaign. Results are written to docs/tests/mutation_report.md.
+revert aborts the campaign. Each completed campaign appends a dated section to
+docs/tests/mutation_report.md; earlier campaigns are never overwritten.
 """
 
 import argparse
@@ -23,6 +24,7 @@ import shlex
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -128,8 +130,9 @@ def display_path(path: Path) -> str:
 
 
 def write_report(results, mode, mutants_path, smoke, phase=None):
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines = [
-        "# Vox Mutation Report",
+        f"## Campaign — {stamp}",
         "",
         "**Status:** " + (phase or ("SMOKE TEST ONLY — not a full campaign" if smoke else "FULL CAMPAIGN")),
         f"**Mode:** {mode}  ",
@@ -182,8 +185,23 @@ def write_report(results, mode, mutants_path, smoke, phase=None):
         "",
     ]
     DEFAULT_REPORT.parent.mkdir(parents=True, exist_ok=True)
-    DEFAULT_REPORT.write_text("\n".join(lines), encoding="utf-8")
-    log(f"report written to {DEFAULT_REPORT}")
+    work_report = DEFAULT_REPORT.with_name(DEFAULT_REPORT.name + ".inprogress")
+
+    if phase:
+        # Live progress during a campaign. Keep it outside the permanent report.
+        work_report.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return
+
+    if DEFAULT_REPORT.is_file():
+        previous = DEFAULT_REPORT.read_text(encoding="utf-8").rstrip("\n")
+    else:
+        previous = "# Vox Mutation Report"
+    DEFAULT_REPORT.write_text(
+        previous + "\n\n---\n\n" + "\n".join(lines) + "\n", encoding="utf-8"
+    )
+    if work_report.exists():
+        work_report.unlink()
+    log(f"campaign section appended to {DEFAULT_REPORT}")
 
 
 def main():

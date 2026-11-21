@@ -125,6 +125,11 @@ impl BackgroundTaskManager {
         *self.event_tx.lock() = Some(event_tx);
     }
 
+    /// Clears the pipeline event transmitter on audio-engine shutdown.
+    pub fn clear_event_tx(&self) {
+        *self.event_tx.lock() = None;
+    }
+
     /// Returns the number of active background tasks for the specified session.
     pub fn active_tasks_count(&self, session_id: i64) -> usize {
         self.active_tasks

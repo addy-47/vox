@@ -382,10 +382,6 @@ pub fn logs_dir() -> PathBuf {
     get().logs.clone()
 }
 
-pub fn crashes_dir() -> PathBuf {
-    get().crashes.clone()
-}
-
 pub fn run_dir() -> PathBuf {
     get().run.clone()
 }

@@ -74,11 +74,6 @@ export function recordVoiceUsed(voiceId: string): Promise<void> {
   return invoke("record_voice_used", { voiceId });
 }
 
-/** Sets active voice in runtime and updates persisted settings. */
-export function setActiveVoice(voiceId: string): Promise<void> {
-  return invoke("set_active_voice", { voiceId });
-}
-
 /** Starts microphone recording in backend for voice cloning. */
 export function startBackendRecording(): Promise<void> {
   return invoke("start_backend_recording");
@@ -108,16 +103,6 @@ export function addVoiceFromRecording(
     pcmF32,
     sampleRate,
   });
-}
-
-/** Deletes a custom cloned voice. */
-export function deleteVoice(id: string): Promise<void> {
-  return invoke("delete_voice", { id });
-}
-
-/** Renames a custom cloned voice. */
-export function renameVoice(id: string, name: string): Promise<void> {
-  return invoke("rename_voice", { id, name });
 }
 
 /** Converts a backend absolute preview path into a browser-playable asset URL. */

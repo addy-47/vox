@@ -255,11 +255,6 @@ impl PipelineAtomics {
         self.last_user_activity_ms.store(now_ms, Ordering::Release);
     }
 
-    /// Sets the user activity timestamp to an explicit epoch ms value.
-    pub fn set_last_user_activity_ms(&self, timestamp_ms: u64) {
-        self.last_user_activity_ms.store(timestamp_ms, Ordering::Release);
-    }
-
     /// Returns the timestamp in epoch ms of the most recent user activity.
     pub fn last_user_activity_ms(&self) -> u64 {
         self.last_user_activity_ms.load(Ordering::Acquire)

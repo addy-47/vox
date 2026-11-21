@@ -53,10 +53,6 @@ pub enum TaskStatus {
 }
 
 impl TaskStatus {
-    pub fn is_terminal(&self) -> bool {
-        !matches!(self, TaskStatus::Running { .. })
-    }
-
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Running { .. } => "running",

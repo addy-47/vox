@@ -125,21 +125,3 @@ pub fn is_command_permitted(
     }
 }
 
-/// Enforces `RULE-RC-GUARD` by returning `Ok(())` if permitted, or `Err(GuardError)` if blocked.
-pub fn ensure_command_permitted(
-    origin: ControlOrigin,
-    command: &str,
-    domain: Option<&str>,
-    key: Option<&str>,
-    state: &RemoteLinkState,
-) -> Result<(), GuardError> {
-    if is_command_permitted(origin, command, domain, key, state) {
-        Ok(())
-    } else {
-        Err(GuardError {
-            command: command.to_string(),
-            domain: domain.map(str::to_string),
-            key: key.map(str::to_string),
-        })
-    }
-}

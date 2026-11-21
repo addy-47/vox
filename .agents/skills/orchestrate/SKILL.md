@@ -51,7 +51,9 @@ When the orchestrator hands off work between lifecycle roles (e.g., Backend Engi
 
 ## 3. Dynamic Schedule & Proactive Cron Check-Ins (`schedule` tool)
 
-Do not leave subagents unmonitored, and **never use shell sleep or busy polling loops** to wait on subagents or cargo compilations. Instead, act like an engineering lead with scheduled check-ins calibrated to estimated task horizons:
+Do not leave subagents unmonitored, and **never use shell sleep or busy polling loops** to wait on subagents or cargo compilations. Instead, act like an engineering lead with scheduled check-ins calibrated to estimated task horizons.
+
+Use the `schedule` tool if the active harness provides it. Otherwise use the harness's native equivalent — a cron tool, a background command with completion notification, or reactive subagent wakeups. Pick whichever the current harness supports; never block on a missing tool.
 
 ### 3.1 Horizon-Calibrated Check-In Intervals
 
@@ -138,5 +140,5 @@ The orchestrator must strictly enforce the following execution rules across all 
 
 The Reviewer subagent is the final quality gate before milestone completion:
 - **Independent Context**: The Reviewer must be an independent subagent with fresh eyes, having zero prior conversational involvement with the implementation subagent.
-- **Diff & Invariant Audit Only**: The Reviewer's input is `git diff origin/main...HEAD`. It audits code hygiene, architectural invariants, and test validity (`create-test` intent blocks, no false-greens, no white-box hacks).
+- **Full-File & Caller Audit**: The Reviewer uses `git diff` only to identify changed files. It reads every changed file in full, then enumerates upstream callers and downstream consumers across the repository. Event producers must have a verified live consumer and registration site. It audits code hygiene, architectural invariants, and test validity (`create-test` intent blocks, no false-greens, no white-box hacks).
 - **No Redundant Re-Compiles**: If the Test Engineer has already verified compilation and passed all tests, the Reviewer MUST NOT re-run `./scripts/verify-targets.sh` or full test suites unless validating an identified defect.

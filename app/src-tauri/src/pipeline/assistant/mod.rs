@@ -157,11 +157,6 @@ impl TurnAccumulator {
         self.user_transcript = text;
     }
 
-    /// Extracts the recognized user transcript, leaving an empty string in place.
-    pub fn take_user_transcript(&mut self) -> String {
-        take(&mut self.user_transcript)
-    }
-
     /// Extracts the full assistant response, leaving an empty string in place.
     pub fn take_assistant_response(&mut self) -> String {
         take(&mut self.assistant_response)

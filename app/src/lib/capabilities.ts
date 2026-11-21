@@ -17,18 +17,3 @@ export function isCoarsePointer(): boolean {
   }
 }
 
-export function isTouch(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return (
-      (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0) ||
-      isCoarsePointer()
-    );
-  } catch {
-    return false;
-  }
-}
-
-export function isDesktop(): boolean {
-  return !isCoarsePointer() && !isTouch();
-}

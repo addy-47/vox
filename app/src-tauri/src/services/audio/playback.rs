@@ -339,11 +339,6 @@ impl PlaybackEngine {
         self.current_turn_id.load(Ordering::Relaxed)
     }
 
-    /// Returns a clone of the current turn ID atomic handle.
-    pub fn current_turn_atomic(&self) -> Arc<AtomicU32> {
-        Arc::clone(&self.current_turn_id)
-    }
-
     /// Cancels active playback and flushes buffers without mutating the hardware cancel flag.
     pub fn cancel(&self) {
         self.discard_request.store(true, Ordering::Relaxed);

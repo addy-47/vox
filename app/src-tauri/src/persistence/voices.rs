@@ -319,59 +319,6 @@ pub async fn record_recent(conn: &Connection, voice_id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Executes a bulk upsert of voices in a single Turso transaction.
-pub async fn batch_upsert_voices(conn: &Connection, entries: &[VoiceEntry]) -> Result<()> {
-    if entries.is_empty() {
-        return Ok(());
-    }
-    conn.execute("BEGIN TRANSACTION;", ()).await?;
-    for e in entries {
-        conn.execute(
-            "INSERT INTO voices (
-                id, provider_id, name, source_kind, slug, gender, locale, accent,
-                description, tags, sample_text, wav_path, voice_dir, preview_wav,
-                is_favorite, last_used_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                provider_id = excluded.provider_id,
-                name = excluded.name,
-                source_kind = excluded.source_kind,
-                slug = excluded.slug,
-                gender = excluded.gender,
-                locale = excluded.locale,
-                accent = excluded.accent,
-                description = excluded.description,
-                tags = excluded.tags,
-                sample_text = excluded.sample_text,
-                wav_path = excluded.wav_path,
-                voice_dir = excluded.voice_dir,
-                preview_wav = excluded.preview_wav",
-            params![
-                e.id.clone(),
-                e.provider_id.clone(),
-                e.name.clone(),
-                e.source_kind.as_str().to_string(),
-                e.slug.clone(),
-                e.gender.clone(),
-                e.locale.clone(),
-                e.accent.clone(),
-                e.description.clone(),
-                e.tags.clone(),
-                e.sample_text.clone(),
-                e.wav_path.clone(),
-                e.voice_dir.clone(),
-                e.preview_wav.clone(),
-                if e.is_favorite { 1 } else { 0 },
-                e.last_used_at,
-                e.created_at,
-            ],
-        )
-        .await?;
-    }
-    conn.execute("COMMIT;", ()).await?;
-    Ok(())
-}
-
 pub async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
     let models_dir = match paths::try_get() {
         Some(p) => p.models,

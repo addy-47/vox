@@ -176,15 +176,6 @@ impl ToolResult {
         }
     }
 
-    /// Constructs a tool result with a specific control flow action.
-    pub fn with_control(content: impl Into<String>, control: ToolControlAction) -> Self {
-        Self {
-            content: content.into(),
-            control,
-            truncated: false,
-            spillover_path: None,
-        }
-    }
 }
 
 /// Normalized errors encountered during tool execution.

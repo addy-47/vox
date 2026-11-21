@@ -419,10 +419,6 @@ impl Harness {
         &self.history
     }
 
-    pub fn history_mut(&mut self) -> &mut ConversationHistoryStage {
-        &mut self.history
-    }
-
     pub fn supports_tools(&self) -> bool {
         self.supports_tools
     }

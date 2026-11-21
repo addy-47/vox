@@ -78,10 +78,6 @@ export interface TaskRecordDto {
   durationMs?: number | null;
 }
 
-export function listTasks(sessionId?: number | null): Promise<TaskRecordDto[]> {
-  return invoke("list_tasks", { sessionId: sessionId ?? null });
-}
-
 export function stopTurn(): Promise<void> {
   return invoke("stop_turn");
 }

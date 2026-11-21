@@ -38,17 +38,6 @@ export function updateSetting(
   return invoke<SettingUpdateResult>("update_setting", { domain, key, value });
 }
 
-export function setAppearance(options: {
-  theme?: string;
-  preset?: string;
-  dark_accent?: string;
-  light_accent?: string;
-  dark_bg?: string;
-  light_bg?: string;
-}): Promise<SettingUpdateResult> {
-  return invoke<SettingUpdateResult>("set_appearance", options);
-}
-
 export function applySettingsPatch(patch: Record<string, unknown>): Promise<SettingUpdateResult> {
   return invoke<SettingUpdateResult>("apply_settings_patch", { patch });
 }

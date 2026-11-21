@@ -21,16 +21,6 @@ export interface CapabilityCacheRead {
   cache_error: string | null;
 }
 
-export async function checkLlmProviderHealth(
-  provider?: LlmProviderConfig
-): Promise<ProviderHealthCheckResult> {
-  return invoke<ProviderHealthCheckResult>("check_provider_health", { kind: "llm", provider });
-}
-
-export async function checkTtsProviderHealth(): Promise<ProviderHealthCheckResult> {
-  return invoke<ProviderHealthCheckResult>("check_provider_health", { kind: "tts" });
-}
-
 export function requestModelCatalog(): Promise<ModelCatalog> {
   return invoke("get_model_catalog");
 }
@@ -108,16 +98,6 @@ export interface RemoteServerConfig {
   identityKeyPath: string | null;
   remotePath: string;
   serverPort: number;
-}
-
-export function setupRemoteServer(config: RemoteServerConfig): Promise<void> {
-  return invoke("setup_remote_server", {
-    connection_string: config.connectionString,
-    ssh_port: config.sshPort,
-    identity_key_path: config.identityKeyPath,
-    remote_path: config.remotePath,
-    server_port: config.serverPort,
-  });
 }
 
 export function listFavoriteModels(): Promise<string[]> {

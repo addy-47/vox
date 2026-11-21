@@ -1641,3 +1641,17 @@
 - **Non-blocking follow-ups (not handoff blockers):** N1 dead frontend store field; N4 idempotent double terminal DB write; N5 prior 339-mutant report history replaced and D5-M01 note in `mutation_report.md` still carries the old narrative; N6 drain path untested by seams; N7 disengage UI TOCTOU; add a future mutant for the M4 latch.
 - **Next:** generate `changes.diff` for the Domain 5 Lead; await explicit user sign-off; only then message the parent coordinator (`0c12a585-e6e0-4aad-bda8-dead1cbc64a6`).
 
+
+## 2026-11-21 — Retro-Driven Tooling Fixes, Zero-Caller Gate & Dead-Code Cleanup
+
+- **Role:** System Architect / Orchestrator (lead-requested limited scope).
+- **Mutation runner:** `scripts/mutation-runner.py` now appends a dated campaign section to `docs/tests/mutation_report.md` instead of rewriting the whole file; live progress goes to a transient `.inprogress` file (gitignored). Verified with a simulated two-write campaign: historical text preserved, one appended section, temp file removed.
+- **CI workflow:** deleted `.github/workflows/quality.yml` per lead instruction. Remaining workflows are release-only.
+- **Review scope:** removed all diff-only reviewer language. `/review` Step 1 is now a full-file context pass: use `git diff` only to identify changed files, read each file in full, enumerate upstream callers and downstream consumers, and verify producer→consumer wiring. Mirrored in both `orchestrate` skill copies and repo `AGENTS.md`.
+- **Scheduling:** both `orchestrate` copies now state: use `schedule` if the harness provides it, otherwise use the harness-native equivalent (cron tool, background completion notification, or reactive wakeups).
+- **Stale pointer:** `AGENTS.md §4.2 item 4` named the deleted `scripts/remote-mutate.py`; replaced with `scripts/mutation-runner.py --mode remote` / `--mode local`.
+- **Deterministic zero-caller gates:** `scripts/lint-arch.sh` adds RULE-ARCH-12 (public Rust functions with no call sites in src/tests/benches/evals); `app/scripts/lint-arch.mjs` adds Invariant 37 (exported TS functions/classes with no references). Both gates pass at current HEAD.
+- **Findings confirmed and fixed:** the gate caught `BackgroundTaskManager::set_event_tx` with zero call sites — confirmed real: production never wired it, so supervisor-emitted `TaskFinished` was dropped. Wired in `core/engine.rs::start_audio_engine`, added `clear_event_tx()` in `stop_audio_engine`, and wired `Rig::new()` so seam tests use the real emitter. All 23 other flagged Rust functions and 16 flagged TS exports were verified to have no callers in src, tests, benches, evals, or plugin crates; removed them. Two now-empty TS modules were deleted.
+- **Verification:** `ANDROID_HOME=/opt/android-sdk ./scripts/verify-targets.sh` exits 0 (0 warnings / 0 errors on desktop + Android); `node app/scripts/lint-arch.mjs` passes. Full suite re-run recorded separately. Frontend `pnpm build` could not run: `node_modules` absent and offline install lacks `culori` tarball — reported unverified.
+- **Full suite after cleanup:** `RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1 --no-fail-fast` → **578 tests run: 578 passed, 2 skipped (205.438s)**, exit 0. All 12 D5 seams still pass with the real supervisor→router wiring active.
+- **Next:** commit and push.

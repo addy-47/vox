@@ -48,8 +48,8 @@ Only paths with non-obvious rules that agents cannot infer from the codebase ind
    - 🛑 **HARD BAN: NEVER RUN 'cargo nextest list' UNDER ANY CIRCUMSTANCES.** It is an interactive command that hangs indefinitely in headless agent shells and halts execution.
    - **Batch First, Compile Once, Test Once:** Write all code and file changes across an entire phase before invoking `cargo`. Incremental compilation loops per file or batch are strictly forbidden. Run `./scripts/verify-targets.sh` or `cargo test --no-run --release` once at phase completion.
    - **No Single-Subtest Serial Looping:** Run the entire test binary once (`cargo test --test <binary> --release`). Never execute loops of individual `-E 'test(<name>)'` invocations across subtests.
-   - **Mutation Testing Offloading:** Owned exclusively by the Test Engineer. When `temp/server.txt` is available, prioritize offloading mutation campaigns to the remote 32-core server via `scripts/remote-mutate.py` or use local multi-mutant orthogonal batching. Sequential compile-and-revert loops of single mutants on the primary workspace are strictly forbidden.
-   - **Reviewer Compile Boundary:** Reviewers audit git diffs against specifications and style guides. Do not re-run full cross-target compiler builds that the Test Engineer already validated.
+   - **Mutation Testing Offloading:** Owned exclusively by the Test Engineer. When `temp/server.txt` is available, prioritize offloading mutation campaigns to the remote 32-core server via `scripts/mutation-runner.py --mode remote`; otherwise run `--mode local` on the remote workspace. Sequential compile-and-revert loops of single mutants on the primary workspace are strictly forbidden.
+   - **Reviewer Compile Boundary:** Reviewers use `git diff` only to identify changed files, then read those files in full and enumerate upstream callers and downstream consumers across the repository. Do not re-run full cross-target compiler builds that the Test Engineer already validated.
    - **No Rapid Polling:** Rapid Polling of cargo compilation commands is forbidden; set a minimum of 2 min cron between checks using `/schedule` tool.
 
 ---
@@ -105,7 +105,7 @@ If the failure is caused by an upstream or faulty test input, STOP immediately a
 
 Subagent lifecycle execution, delegation topologies, the anti-spoon-feeding protocol, proactive cron check-ins, and tool economy enforcement are governed by the [`/orchestrate`](.agents/skills/orchestrate/SKILL.md) skill.
 
-Every system architect and parent orchestrator MUST read and strictly enforce `/orchestrate` before spawning, delegating, or managing subagents across implementation phases. Subagents must never be spoon-fed line-by-line implementations; assign explicit boundaries, spec pointers, and verifiable completion gates. Reviewers must execute as clean-room independent subagents auditing git diffs.
+Every system architect and parent orchestrator MUST read and strictly enforce `/orchestrate` before spawning, delegating, or managing subagents across implementation phases. Subagents must never be spoon-fed line-by-line implementations; assign explicit boundaries, spec pointers, and verifiable completion gates. Reviewers must execute as clean-room independent subagents: use `git diff` to find changed files, then review each changed file in full plus its upstream callers and downstream consumers.
 
 ---
 

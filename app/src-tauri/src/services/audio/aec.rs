@@ -121,24 +121,6 @@ impl AecProcessor {
         self.stream_delay_ms
     }
 
-    /// Directly processes a 10ms render reference audio frame (160 samples @ 16kHz).
-    pub fn process_render_frame(&mut self, render_frame: &[f32]) -> Result<()> {
-        if render_frame.len() != AEC_FRAME_SAMPLES {
-            return Err(anyhow!(
-                "Render frame length mismatch: expected {}, got {}",
-                AEC_FRAME_SAMPLES,
-                render_frame.len()
-            ));
-        }
-        self.render_buf.copy_from_slice(render_frame);
-        let render_in: [&[f32]; 1] = [&self.render_buf];
-        let mut render_out: [&mut [f32]; 1] = [&mut self.render_dest];
-        self.apm
-            .process_render_f32(&render_in, &mut render_out)
-            .map_err(|e| anyhow!("AEC render processing error: {}", e))?;
-        Ok(())
-    }
-
     /// Drains available samples from the render reference queue into the internal render buffer.
     fn drain_render_reference(&mut self) {
         if let Some(ref mut cons) = self.render_consumer {
@@ -212,27 +194,6 @@ impl AecProcessor {
                 if (median - self.stream_delay_ms).abs() >= 10 {
                     let _ = self.set_stream_delay_ms(median);
                 }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Processes an arbitrary slice of 16kHz audio samples in 160-sample increments.
-    pub fn process_stream(&mut self, capture: &[f32], output: &mut Vec<f32>) -> Result<()> {
-        output.clear();
-        output.reserve(capture.len());
-        let mut out_frame = [0.0f32; AEC_FRAME_SAMPLES];
-
-        for chunk in capture.chunks(AEC_FRAME_SAMPLES) {
-            if chunk.len() == AEC_FRAME_SAMPLES {
-                self.process_frame(chunk, &mut out_frame)?;
-                output.extend_from_slice(&out_frame);
-            } else {
-                let mut padded = [0.0f32; AEC_FRAME_SAMPLES];
-                padded[..chunk.len()].copy_from_slice(chunk);
-                self.process_frame(&padded, &mut out_frame)?;
-                output.extend_from_slice(&out_frame[..chunk.len()]);
             }
         }
 

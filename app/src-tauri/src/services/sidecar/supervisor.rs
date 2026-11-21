@@ -14,7 +14,6 @@ use crate::utils::paths::get as get_paths;
 
 const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(100);
-const IDLE_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
 
 struct ActiveInstance {
     child: Child,
@@ -204,42 +203,6 @@ impl SidecarSupervisor {
 
         self.instances.lock().insert(kind, instance);
         Ok(endpoint)
-    }
-
-    /// Marks an instance as active right now.
-    pub fn touch(&self, kind: SidecarKind) {
-        let mut guard = self.instances.lock();
-        if let Some(inst) = guard.get_mut(&kind) {
-            inst.last_accessed = Instant::now();
-        }
-    }
-
-    /// Reaps processes that have been idle for more than 5 minutes.
-    pub async fn reap_idle(&self) {
-        let to_kill = {
-            let mut guard = self.instances.lock();
-            let idle_keys: Vec<_> = guard
-                .iter()
-                .filter(|(_, inst)| inst.last_accessed.elapsed() > IDLE_TIMEOUT)
-                .map(|(k, _)| *k)
-                .collect();
-            let mut removed = Vec::new();
-            for k in idle_keys {
-                if let Some(inst) = guard.remove(&k) {
-                    removed.push((k, inst));
-                }
-            }
-            removed
-        };
-
-        for (kind, mut inst) in to_kill {
-            log::info!("[Sidecar] Reaping idle sidecar {}", kind.binary_name());
-            let _ = inst.child.kill().await;
-            #[cfg(unix)]
-            if let Some(p) = inst.endpoint.socket_path {
-                let _ = std::fs::remove_file(p);
-            }
-        }
     }
 
     /// Kills all child processes cleanly on shutdown.

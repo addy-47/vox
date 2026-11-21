@@ -446,6 +446,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         orchestrator_handle: Some(orchestrator_handle),
     });
 
+    state.tasks.set_event_tx(vox_event_tx.clone());
     *state.event_tx.lock() = Some(vox_event_tx);
 
     log::info!("[Core::Engine] 3-Tier Audio Engine online");
@@ -469,6 +470,7 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
         .engine_shutdown
         .store(true, Ordering::Relaxed);
     state.pipeline.set_state(InteractionState::Idle);
+    state.tasks.clear_event_tx();
     *state.event_tx.lock() = None;
 
     let _ = engine.pipeline_tx.send(VoxEvent::Shutdown);

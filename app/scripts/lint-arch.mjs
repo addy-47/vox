@@ -415,6 +415,39 @@ function offenderPush(list, src, idx, file, frag) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Invariant 37 — No unreferenced exported functions or classes.
+// A zero-reference export is dead API surface and hides missing wiring.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const corpus = allSourceFiles(SRC_DIR)
+    .map((f) => stripComments(fs.readFileSync(f, "utf-8")))
+    .join("\n");
+  const defRegex =
+    /export\s+(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)|export\s+class\s+([A-Za-z_$][\w$]*)/g;
+  const frameworkExports = new Set([
+    "default", "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS",
+  ]);
+  const offenders = [];
+  for (const f of tsFiles) {
+    const src = stripComments(fs.readFileSync(f, "utf-8"));
+    for (const m of src.matchAll(defRegex)) {
+      const name = m[1] || m[2];
+      if (frameworkExports.has(name)) continue;
+      const usage = new RegExp(`(?<![A-Za-z0-9_$])${name.replace(/\$/g, "\\$")}(?![A-Za-z0-9_$])`, "g");
+      const count = (corpus.match(usage) || []).length;
+      if (count <= 1) {
+        offenders.push(`${rel(f)}: ${name} has no reference outside its definition`);
+      }
+    }
+  }
+  check(
+    "Invariant 37 (No unreferenced exported functions or classes)",
+    offenders.length === 0,
+    offenders.map((o) => `  ${o}`).join("\n"),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 if (failures > 0) {
   console.error(`\nlint-arch: ${failures} invariant violation${failures === 1 ? "" : "s"}`);
   process.exit(1);

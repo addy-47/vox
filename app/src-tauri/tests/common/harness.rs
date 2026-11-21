@@ -1642,6 +1642,7 @@ impl HarnessRig {
         } = setup_pipeline_channels();
 
         let (pipeline_tx, tap_rx) = mpsc::channel::<VoxEvent>();
+        state.tasks.set_event_tx(pipeline_tx.clone());
         let (router_tx, router_rx) = mpsc::channel::<VoxEvent>();
 
         let recorded_events = Arc::new(parking_lot::Mutex::new(Vec::new()));

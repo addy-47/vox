@@ -134,49 +134,6 @@ impl NetworkAudioCapture {
         self
     }
 
-    /// Ingests a raw decrypted audio WebSocket payload, checking epoch and pushing to the ring buffer.
-    pub fn ingest_payload(&self, decrypted_bytes: &[u8]) -> Result<(), ProtocolError> {
-        let is_active = self.active.load(Ordering::Relaxed);
-        let gate_open = self.ingestion_gate.load(Ordering::Relaxed);
-
-        handle_inbound_audio_payload(
-            decrypted_bytes,
-            &self.active_epoch,
-            |samples, _seq, _offset| {
-                if is_active && gate_open {
-                    let mut float_chunk = Vec::with_capacity(samples.len());
-                    for &sample in samples {
-                        let float_val = sample as f32 * PCM16_TO_F32_SCALE;
-                        float_chunk.push(float_val);
-                        let _ = self.producer.try_push(float_val);
-                    }
-                    if let Some(ref stt) = self.stt_tx {
-                        let turn_id = self
-                            .turn_id_atomic
-                            .as_ref()
-                            .map(|t| t.load(Ordering::Acquire))
-                            .unwrap_or(0);
-                        let _ = stt.send(SttCommand::StreamChunk {
-                            turn_id,
-                            utterance_id: 0,
-                            audio: float_chunk.clone(),
-                        });
-                    }
-                    self.utterance_buffer.lock().extend_from_slice(&float_chunk);
-                }
-            },
-            |ptt| {
-                self.dispatch_ptt(ptt);
-            },
-            |start| {
-                self.dispatch_speech_start(start);
-            },
-            |end| {
-                self.dispatch_speech_end(end);
-            },
-        )
-    }
-
     /// Ingests a decoded audio payload, checking epoch and pushing to the ring buffer.
     pub fn ingest(&self, payload: AudioPayload) -> Result<(), ProtocolError> {
         match payload {

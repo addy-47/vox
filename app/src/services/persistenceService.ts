@@ -139,11 +139,6 @@ export function getTurnsCacheSize(): number {
   return turnsCache.size;
 };
 
-/** Returns all cached turns synchronously if already fetched. */
-export function getCachedTurns(sessionId: number): TurnRow[] | undefined {
-  return turnsCache.get(sessionId);
-}
-
 /** Returns all turns for a session, oldest first, backed by an in-memory session cache. */
 export function getTurns(sessionId: number): Promise<TurnRow[]> {
   const cached = turnsCache.get(sessionId);

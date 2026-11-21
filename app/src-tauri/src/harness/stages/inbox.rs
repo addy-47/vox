@@ -103,10 +103,6 @@ impl StepInbox {
         immediate
     }
 
-    pub fn drain_all(&self) -> Vec<InboxMessage> {
-        self.messages.lock().drain(..).collect()
-    }
-
     pub fn clear(&self) {
         self.messages.lock().clear();
         self.speech_hold_active.store(false, Ordering::Release);

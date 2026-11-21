@@ -428,15 +428,6 @@ pub async fn check_tts_health_with_reason(
     }
 }
 
-pub async fn check_tts_health(
-    state: &Arc<AppState>,
-    provider: Option<ProviderConfigPayload>,
-) -> Result<bool, String> {
-    check_tts_health_with_reason(state, provider)
-        .await
-        .map(|(healthy, _)| healthy)
-}
-
 /// Structured outcome of probing an arbitrary provider target.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProbeProviderTargetResult {

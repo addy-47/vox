@@ -1,5 +1,4 @@
 use std::{
-    f32::consts,
     path::Path,
     sync::{
         atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering},
@@ -295,64 +294,3 @@ impl TtsProvider for KokoroEngine {
     }
 }
 
-/// Trims vocoder silence below -45 dBFS (amplitude ~0.0056) with attack/release padding,
-/// and applies a 10ms equal-power crossfade envelope at boundaries to prevent clicks.
-pub fn trim_and_fade_samples(samples: &[f32], sample_rate: usize) -> Vec<f32> {
-    if samples.is_empty() {
-        return Vec::new();
-    }
-
-    const SILENCE_THRESHOLD: f32 = 0.0056; // -45 dBFS
-    let attack_margin = (sample_rate as f32 * 0.015) as usize; // 15ms
-    let release_margin = (sample_rate as f32 * 0.040) as usize; // 40ms
-    let fade_len = (sample_rate as f32 * 0.010) as usize; // 10ms
-
-    // Find first sample above threshold
-    let start_idx = samples
-        .iter()
-        .position(|&s| s.abs() >= SILENCE_THRESHOLD)
-        .unwrap_or(0)
-        .saturating_sub(attack_margin);
-
-    // Find last sample above threshold
-    let end_idx = samples
-        .iter()
-        .rposition(|&s| s.abs() >= SILENCE_THRESHOLD)
-        .map(|idx| (idx + release_margin).min(samples.len()))
-        .unwrap_or(samples.len());
-
-    if start_idx >= end_idx {
-        return Vec::new();
-    }
-
-    let mut trimmed = samples[start_idx..end_idx].to_vec();
-    let n = trimmed.len();
-
-    // Apply 10ms equal-power fade-in (sin)
-    let actual_fade_in = fade_len.min(n / 2);
-    if actual_fade_in > 0 {
-        for (i, sample) in trimmed[..actual_fade_in].iter_mut().enumerate() {
-            let t = i as f32 / actual_fade_in as f32;
-            let gain = (t * consts::FRAC_PI_2).sin();
-            *sample *= gain;
-        }
-    }
-
-    // Apply 10ms equal-power fade-out (cos)
-    let actual_fade_out = fade_len.min(n / 2);
-    if actual_fade_out > 0 {
-        let fade_start = n - actual_fade_out;
-        for (j, sample) in trimmed[fade_start..].iter_mut().enumerate() {
-            let t = j as f32 / actual_fade_out as f32;
-            let gain = (t * consts::FRAC_PI_2).cos();
-            *sample *= gain;
-        }
-    }
-
-    // Chunker splits at sentence punctuation, so each job is trimmed edge-to-edge
-    // and concatenated gaplessly — restoring a floor pause between chunks.
-    let gap = (sample_rate as f32 * 0.15) as usize;
-    trimmed.extend(std::iter::repeat_n(0.0f32, gap));
-
-    trimmed
-}

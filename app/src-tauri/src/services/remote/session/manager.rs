@@ -263,14 +263,6 @@ impl RemoteSessionManager {
         Some(lease)
     }
 
-    /// Releases a previously reserved controller slot.
-    pub fn release_controller(&self, lease_id: u64) {
-        let mut guard = self.controller_lease.lock();
-        if guard.as_ref().map(|l| l.lease_id) == Some(lease_id) {
-            *guard = None;
-        }
-    }
-
     /// Attaches an event listener for receiving remote pipeline events and attach snapshots.
     pub fn set_on_remote_event(&self, callback: RemoteEventCallback) {
         *self.on_remote_event.lock() = Some(callback);
@@ -468,12 +460,6 @@ impl RemoteSessionManager {
     /// Returns the most recent AttachSnapshot received by this controller, if any.
     pub fn last_snapshot(&self) -> Option<AttachSnapshot> {
         self.last_snapshot.read().clone()
-    }
-
-    /// Stores an AttachSnapshot received on the controller.
-    pub fn set_last_snapshot(&self, snapshot: AttachSnapshot) {
-        let mut guard = self.last_snapshot.write();
-        *guard = Some(snapshot);
     }
 
     /// Controller-side: sends an IPC command over the control link and awaits the correlated response.

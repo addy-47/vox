@@ -14,32 +14,6 @@ export type AmbientMood =
  * Maps current interaction state and engagement flag into the ambient mood enum
  * used by orb and ambient lighting shaders.
  */
-export function toMood(state: InteractionState, isEngaged: boolean): AmbientMood {
-  if (!isEngaged) return "Dormant";
-  switch (state) {
-    case "Idle":
-      return "Idle";
-    case "Ready":
-      return "Ready";
-    case "Listening":
-      return "Listening";
-    case "Thinking":
-      return "Thinking";
-    case "Working":
-      return "Thinking";
-    case "Speaking":
-      return "Speaking";
-    case "Sleeping":
-      return "Paused";
-    case "Paused":
-      return "Paused";
-    case "Error":
-      return "Error";
-    default:
-      return "Dormant";
-  }
-}
-
 /**
  * Derives the user-facing status label displayed on the HUD/home status cluster.
  * Maps 1:1 to the pipeline state; PTT sub-states never override it.

@@ -144,27 +144,6 @@ impl ConversationHistoryStage {
         self.kv_synced_index = 0;
     }
 
-    /// Truncates oldest non-system dialogue turns by the given count.
-    pub fn truncate_oldest_turns(&mut self, count: usize) {
-        if count == 0 || self.messages.len() <= 1 {
-            return;
-        }
-
-        let has_system = self
-            .messages
-            .first()
-            .map(|m| m.role == Role::System)
-            .unwrap_or(false);
-        let start_idx = if has_system { 1 } else { 0 };
-        let drain_count = count.min(self.messages.len().saturating_sub(start_idx));
-
-        if drain_count > 0 {
-            self.messages.drain(start_idx..start_idx + drain_count);
-            self.kv_synced_index = 0;
-            log::info!("[Harness::History] Truncated {} oldest turns", drain_count);
-        }
-    }
-
     /// Truncates a specific slice of dialogue messages by index range.
     pub fn truncate_range(&mut self, range: std::ops::Range<usize>) {
         if range.start < self.messages.len()

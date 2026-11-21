@@ -27,6 +27,7 @@ python3 - << 'EOF'
 import os
 import re
 import sys
+from collections import Counter
 
 src_dir = os.path.abspath("src")
 failures = 0
@@ -394,6 +395,84 @@ for root, _, files in os.walk(src_dir):
                     "Calling `turn_cancel_token().cancel()` directly bypasses hardware cancellation atomics; "
                     "call `state.pipeline.cancel_active_turn()` instead",
                 )
+
+# ---------------------------------------------------------------------------
+# 12. RULE-ARCH-12: No unreferenced public functions
+# A public function with no call site is dead API surface. It also catches
+# wiring gaps where a setter/registration function exists but is never called.
+# ---------------------------------------------------------------------------
+
+def strip_rust_comments(text):
+    out = []
+    in_block = False
+    for line in text.splitlines():
+        cleaned = []
+        i = 0
+        while i < len(line):
+            if in_block:
+                if line.startswith("*/", i):
+                    in_block = False
+                    i += 2
+                else:
+                    i += 1
+                continue
+            if line.startswith("/*", i):
+                in_block = True
+                i += 2
+                continue
+            if line.startswith("//", i):
+                break
+            cleaned.append(line[i])
+            i += 1
+        out.append("".join(cleaned))
+    return "\n".join(out)
+
+
+def rust_files(directory):
+    for root, _, files in os.walk(directory):
+        for name in files:
+            if name.endswith(".rs"):
+                yield os.path.join(root, name)
+
+
+# Benches and evals are valid callers of public library API.
+extra_dirs = [d for d in ("tests", "benches", "evals") if os.path.isdir(d)]
+corpus = []
+for path in list(rust_files(src_dir)) + [p for d in extra_dirs for p in rust_files(d)]:
+    with open(path, "r", encoding="utf-8", errors="ignore") as fp:
+        corpus.append(strip_rust_comments(fp.read()))
+all_rust = "\n".join(corpus)
+word_counts = Counter(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", all_rust))
+
+PUB_FN_REGEX = re.compile(
+    r"(?m)^\s*pub(?:\([^)]*\))?\s+(?:async\s+)?(?:unsafe\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("
+)
+IGNORE_NAMES = {"new", "default", "drop", "main", "fmt", "from", "clone", "eq"}
+
+for path in rust_files(src_dir):
+    rel_to_src = os.path.relpath(path, src_dir)
+    if rel_to_src.replace(os.sep, "/").startswith("ipc/"):
+        continue
+    with open(path, "r", encoding="utf-8", errors="ignore") as fp:
+        lines = fp.read().splitlines()
+    for idx, line in enumerate(lines):
+        match = PUB_FN_REGEX.match(line)
+        if not match:
+            continue
+        name = match.group(1)
+        if name in IGNORE_NAMES:
+            continue
+        context = "\n".join(lines[max(0, idx - 6):idx])
+        if "tauri::command" in context or "#[cfg(test)]" in context or "mod tests" in context:
+            continue
+        if word_counts[name] <= 1:
+            report_violation(
+                "RULE-ARCH-12",
+                path,
+                idx + 1,
+                f"public function `{name}` has no call site in src/ or tests/; "
+                "wire it or remove it",
+            )
 
 print("------------------------------------------------------------------------")
 if failures > 0:

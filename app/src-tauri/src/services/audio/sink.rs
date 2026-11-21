@@ -43,13 +43,6 @@ impl PlaybackReferenceTap {
         }
     }
 
-    /// Pushes a slice of 48kHz playback samples into the reference tap.
-    pub fn push_slice_48khz(&mut self, samples: &[f32]) {
-        for &s in samples {
-            self.push_sample(s);
-        }
-    }
-
     /// Resets the internal downsampling and filter state.
     pub fn reset(&mut self) {
         self.decimator_count = 0;
