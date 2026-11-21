@@ -4248,6 +4248,8 @@ async fn manage_task_kill_terminates_entire_process_group_including_grandchildre
         }
         assert!(grandchild_pid > 0, "grandchild PID must be written and parsed");
 
+        // POSIX-only liveness proof; the crate does not link libc on Windows.
+        #[cfg(unix)]
         assert_eq!(
             unsafe { libc::kill(grandchild_pid, 0) },
             0,
@@ -4333,20 +4335,23 @@ async fn manage_task_kill_terminates_entire_process_group_including_grandchildre
             "kill must persist a session_tasks row with status='killed' within the deadline"
         );
 
-        let kill_deadline = std::time::Instant::now() + Duration::from_secs(3);
-        let mut grandchild_dead = false;
-        while std::time::Instant::now() < kill_deadline {
-            if unsafe { libc::kill(grandchild_pid, 0) } == -1 {
-                grandchild_dead = true;
-                break;
+        #[cfg(unix)]
+        {
+            let kill_deadline = std::time::Instant::now() + Duration::from_secs(3);
+            let mut grandchild_dead = false;
+            while std::time::Instant::now() < kill_deadline {
+                if unsafe { libc::kill(grandchild_pid, 0) } == -1 {
+                    grandchild_dead = true;
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
 
-        assert!(
-            grandchild_dead,
-            "grandchild process group must be terminated via SIGKILL to negative PGID"
-        );
+            assert!(
+                grandchild_dead,
+                "grandchild process group must be terminated via SIGKILL to negative PGID"
+            );
+        }
     })
     .await
     .expect("test timed out");
@@ -5022,19 +5027,22 @@ async fn running_background_task_inhibits_paused_to_sleeping_offload_and_disenga
             "forced EndSession must persist the task as killed"
         );
 
-        let kill_deadline = std::time::Instant::now() + Duration::from_secs(3);
-        let mut grandchild_dead = false;
-        while std::time::Instant::now() < kill_deadline {
-            if unsafe { libc::kill(grandchild_pid, 0) } == -1 {
-                grandchild_dead = true;
-                break;
+        #[cfg(unix)]
+        {
+            let kill_deadline = std::time::Instant::now() + Duration::from_secs(3);
+            let mut grandchild_dead = false;
+            while std::time::Instant::now() < kill_deadline {
+                if unsafe { libc::kill(grandchild_pid, 0) } == -1 {
+                    grandchild_dead = true;
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert!(
+                grandchild_dead,
+                "Process group must be killed on forced EndSession"
+            );
         }
-        assert!(
-            grandchild_dead,
-            "Process group must be killed on forced EndSession"
-        );
     })
     .await
     .expect("test timed out");
@@ -5189,6 +5197,239 @@ async fn supervised_task_natural_exit_emits_task_finished_with_completed_status_
         assert!(
             heard_speech,
             "TaskFinished from the real supervisor must dispatch a spoken completion summary"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE: Catch a dropped task result or a duplicate proactive turn when a promoted task finishes during speech without a step-boundary hold.
+/// SCENARIO: Ready with recent activity; a promoted bash task exits while the user is Listening (no hold engaged); SpeechEnd moves to Thinking; a non-empty TranscriptFinal arrives.
+/// ASSERTS: The single user LLM request's staged text carries BOTH the task result and the user words; StepInbox is empty after the fold; no second proactive dispatch occurs (tap ack + FIFO sentinel + DB barrier + watched dispatch-count invariant).
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   In `transcript.rs`, in the non-held TranscriptFinal path, replace `drain_inbox_prefix(state)` with `String::new()`.
+#[tokio::test]
+async fn task_result_without_speech_hold_folds_into_single_user_turn() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let rig = Rig::new().await;
+        let turn_id = 5012;
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness mounted");
+            harness.auto_promote_timeout = Duration::from_millis(50);
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        rig.state
+            .pipeline
+            .last_user_activity_ms
+            .store(now - 10_000, Ordering::Relaxed);
+        rig.state.pipeline.set_state(InteractionState::Ready);
+
+        // Pass 0 promotes the command; pass 1 ends the promotion turn.
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-fold-no-hold".to_string(),
+                name: "bash".to_string(),
+                arguments: serde_json::json!({
+                    "command": "sleep 0.2 && printf 'TASK_RESULT_OK'",
+                    "run_in_background": true,
+                }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Task started in background.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+        // Pass 2 is the single user turn that must carry both notices.
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Combined turn complete.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Start task then speak", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "promotion turn must complete, got {:?}",
+            outcome
+        );
+
+        let task_id = {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().expect("Harness mounted");
+            let obs = harness
+                .messages()
+                .iter()
+                .find(|m| m.role == Role::Tool)
+                .expect("promotion observation must be committed");
+            let parsed: serde_json::Value =
+                serde_json::from_str(&obs.content).expect("promotion observation must be JSON");
+            assert_eq!(parsed["status"].as_str(), Some("running_in_background"));
+            parsed["task_id"].as_str().expect("task_id").to_string()
+        };
+        let baseline_dispatches = rig.dispatch_count();
+
+        // The mock playback engine never emits PlaybackFinished, so the router
+        // stays in Speaking after the promotion turn. Establish the real scene's
+        // Ready precondition explicitly before driving SpeechStart.
+        rig.state.pipeline.set_state(InteractionState::Ready);
+
+        // Real router trigger: Ready -> Listening. SpeechStart in Ready does not
+        // engage the step-boundary hold, which is the path under test.
+        rig.send_event(VoxEvent::SpeechStart {
+            owner: InteractionOwner::Assistant,
+        });
+        assert!(
+            rig.wait_for_state(InteractionState::Listening, Duration::from_millis(500)).await,
+            "SpeechStart must transition Ready -> Listening"
+        );
+        {
+            let guard = rig.state.harness.lock();
+            assert!(
+                !guard.as_ref().expect("Harness mounted").inbox().is_speech_held(),
+                "Ready-path SpeechStart must NOT engage the step-boundary hold"
+            );
+        }
+
+        // Wait for the supervisor-emitted TaskFinished while the user is speaking.
+        rig.wait_for_event(
+            |ev| {
+                matches!(
+                    ev,
+                    VoxEvent::TaskFinished {
+                        task_id: id,
+                        status: vox_lib::core::events::TaskStatus::Completed { exit_code: 0, .. },
+                        ..
+                    } if id.as_str() == task_id
+                )
+            },
+            Duration::from_secs(8),
+        )
+        .await
+        .expect("supervisor must emit TaskFinished while the user is Listening");
+
+        // DB barrier proves on_task_finished ran and buffered the task notice.
+        let conn = rig.state.db.connect().expect("db connect");
+        let db_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut task_completed = false;
+        while tokio::time::Instant::now() < db_deadline {
+            let mut rows = conn
+                .query(
+                    "SELECT status FROM session_tasks WHERE task_id = ?;",
+                    (task_id.clone(),),
+                )
+                .await
+                .expect("query session_tasks");
+            let status: Option<String> = rows
+                .next()
+                .await
+                .expect("read session_tasks row")
+                .map(|row| row.get::<String>(0).expect("status column"));
+            if status.as_deref() == Some("completed") {
+                task_completed = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(task_completed, "supervisor must persist status='completed'");
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().expect("Harness mounted");
+            assert!(
+                !harness.inbox().is_speech_held(),
+                "task notice buffering must not engage a hold in the normal speech path"
+            );
+            assert!(
+                !harness.inbox().is_empty(),
+                "task result must be buffered in StepInbox before TranscriptFinal"
+            );
+        }
+
+        // SpeechEnd is the real Listening -> Thinking trigger before the final.
+        rig.send_event(VoxEvent::SpeechEnd {
+            owner: InteractionOwner::Assistant,
+        });
+        assert!(
+            rig.wait_for_state(InteractionState::Thinking, Duration::from_millis(500)).await,
+            "SpeechEnd must transition Listening -> Thinking"
+        );
+        rig.send_event(VoxEvent::TranscriptFinal {
+            turn_id: rig.state.pipeline.peek_turn_id(),
+            text: "and check the logs".to_string(),
+            owner: InteractionOwner::Assistant,
+        });
+
+        // Observe the staged user text on the real LLM request.
+        let prompt_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut user_prompt = None;
+        while tokio::time::Instant::now() < prompt_deadline {
+            if let Some(prompt) = rig
+                .scripted_llm
+                .prompts()
+                .into_iter()
+                .find(|p| p.contains("and check the logs"))
+            {
+                user_prompt = Some(prompt);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let prompt = user_prompt.expect("exactly one user request must carry the user words");
+        assert!(
+            prompt.contains(&task_id) && prompt.contains("completed"),
+            "single user request must carry the buffered task result, got: {}",
+            prompt
+        );
+        assert!(
+            prompt.contains("and check the logs"),
+            "single user request must carry the user words, got: {}",
+            prompt
+        );
+        {
+            let guard = rig.state.harness.lock();
+            assert!(
+                guard.as_ref().expect("Harness mounted").inbox().drain_immediate().is_empty(),
+                "inbox must be drained into the user turn, leaving nothing for a second turn"
+            );
+        }
+        assert_eq!(
+            rig.dispatch_count(),
+            baseline_dispatches + 1,
+            "one user turn must be dispatched, not a task turn plus a user turn"
+        );
+
+        // Quiescence: FIFO sentinel proves the router consumed the user turn;
+        // the mock playback engine never emits PlaybackFinished, so liveness is
+        // proven by the dispatch count staying flat across a watched window.
+        rig.send_event(VoxEvent::LlmFinished {
+            turn_id: 9_012_002,
+        });
+        rig.wait_for_event(
+            |ev| matches!(ev, VoxEvent::LlmFinished { turn_id } if *turn_id == 9_012_002),
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("FIFO sentinel must be captured after the user turn");
+        let steady_dispatches = rig.dispatch_count();
+        let watch_deadline = tokio::time::Instant::now() + Duration::from_millis(500);
+        while tokio::time::Instant::now() < watch_deadline {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            assert_eq!(
+                rig.dispatch_count(),
+                steady_dispatches,
+                "a buffered task result must not spawn a second proactive turn"
+            );
+        }
+        assert_eq!(
+            rig.dispatch_count(),
+            baseline_dispatches + 1,
+            "no second proactive turn may be dispatched after quiescence"
         );
     })
     .await

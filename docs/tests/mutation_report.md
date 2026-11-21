@@ -477,3 +477,36 @@ None in this run.
 
 All mutants were restored byte-for-byte after execution. A survivor means the test is weak or the mutant is wrong; triage before merge. RCA text is added manually after triage.
 
+---
+
+## Campaign — 2026-11-21 09:29 UTC
+
+**Status:** FULL CAMPAIGN
+**Mode:** local  
+**Mutant set:** `app/src-tauri/tests/assets/mutants.json`  
+**Runner:** `app/src-tauri/scripts/mutation-runner.py`
+
+| Mutant | Test | Killed | Seconds | Note |
+| :--- | :--- | :---: | ---: | :--- |
+| D5-M01 — Promote every fast bash command by replacing the completion receiver with a permanently pending one | `harness_loop_test` | yes | 60.9 | expected-failure: With a permanently pending completion receiver, the bash tool always takes the promotion-timeout fallb |
+| D5-M02 — Mark successful auto-promoted tool outcome as an error | `harness_loop_test` | yes | 59.0 | expected-failure: The promoted bash call is recorded with is_error=1 and a guardrail strike, failing the is_error==0 and |
+| D5-M03 — Ignore run_in_background false and always apply the auto-promote window | `harness_loop_test` | yes | 59.3 | expected-failure: The foreground override promotes at 50ms instead of waiting for the 150ms command, so the elapsed-time |
+| D5-M04 — Redirect promoted task stderr to null instead of the disk log | `harness_loop_test` | yes | 62.3 | expected-failure: The on-disk log contains STDOUT_LINE_1 but not STDERR_LINE_1, failing the stderr disk-stream assertion |
+| D5-M05 — Return log head instead of tail for manage_task status | `harness_loop_test` | yes | 59.0 | expected-failure: status returns LINE_001 instead of LINE_120, failing the tail-content assertion. |
+| D5-M06 — Kill only the parent shell PID instead of the whole process group | `harness_loop_test` | yes | 62.2 | expected-failure: The grandchild survives the kill, so the ESRCH grandchild-dead assertion fails. |
+| D5-M07 — Suppress proactive turn dispatch in Ready state | `harness_loop_test` | yes | 64.1 | expected-failure: Ready TaskFinished returns without staging a proactive turn, so no TTS speech is emitted and the heard |
+| D5-M08 — Bypass the five-minute quiet-window check in Ready | `harness_loop_test` | yes | 59.1 | expected-failure: A task finishing after six minutes of quiet still dispatches a turn, failing the zero-dispatch and zer |
+| D5-M09 — Use inbox.push so TaskFinished releases the active speech hold | `harness_loop_test` | yes | 59.1 | expected-failure: The speech hold is cleared while the user is still speaking, failing the anti-clobber is_speech_held a |
+| D5-M10 — Remove RULE-EVT-12 guard so Paused offloads to Sleeping while tasks run | `harness_loop_test` | yes | 59.1 | expected-failure: The idle monitor transitions Paused to Sleeping despite the running task, failing the sleep-inhibition |
+| D5-M11 — Remove the supervisor event emitter so promoted tasks cannot emit TaskFinished | `harness_loop_test` | yes | 67.1 | expected-failure: set_event_tx becomes a no-op, so the supervisor cannot send TaskFinished; the real-supervisor test's t |
+| D5-M12 — Route task notifications through the pipeline category instead of task | `harness_loop_test` | yes | 64.0 | expected-failure: NotificationCreated carries category 'pipeline'; the IPC capture assertion requiring 'task' fails. |
+| D5-M13 — Inject user voice into StepInbox during a held barge-in | `harness_loop_test` | yes | 12.7 | expected-failure: User speech is re-inserted into StepInbox; the strictly-non-voice inbox assertion fails. |
+
+**Mutation score:** 100.0% (13/13 killed; 0 survived; 0 skipped as unmutatable).
+
+## Surviving mutants — RCA pending
+
+None in this run.
+
+All mutants were restored byte-for-byte after execution. A survivor means the test is weak or the mutant is wrong; triage before merge. RCA text is added manually after triage.
+
