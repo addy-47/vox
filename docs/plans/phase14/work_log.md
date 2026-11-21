@@ -1670,3 +1670,18 @@
   - Frontend `npx tsc --noEmit`: exit 0; Vite build under Node 22: `✓ built in 4.30s`; Vitest: **35 files / 276 tests passed**.
   - Frontend environment note: local Node 18 cannot run jsdom 30 / Vite 7; Node 22 via `npx` used. A forced pnpm install was needed to fetch optional Tailwind oxide native bindings.
 - **Verdict:** every lead finding is closed and all gates are green. No open blockers.
+
+## 2026-11-21 — Final Lead Verdict Closure (All Findings Certified)
+
+- **Role:** System Architect / Orchestrator with persistent Backend, Frontend, and Test Engineer personas.
+- **Lead v2 verdict:** `Approve with Nits`. All 4 blockers and 5 majors from v1 were verified resolved. One remaining major (`is_held == false` path) and two nits were closed in this final batch.
+- **Remaining major fixed:** `12d233d1` — `drain_inbox_prefix(state)` in `pipeline/assistant/transcript.rs` now folds buffered task results into the user turn in both the held barge-in path and the normal `Ready -> Listening -> Thinking` path. Empty-transcript branches do not drain; user voice never enters StepInbox; step6 cannot emit a duplicate proactive turn.
+- **Nits fixed:** `e08830f6` — `RULE-ARCH-12` regex accepts generic `pub fn foo<T>(`; `0e09174e` — `libc::kill` assertions in TEST-D5-06/10 gated for Unix.
+- **Test additions:** `0e09174e` added `task_result_without_speech_hold_folds_into_single_user_turn` (real supervisor + FIFO sentinel + watched dispatch invariant); `e1391b16` replaced its single `is_empty()` sample with a 2s bounded non-destructive poll after a full-suite run exposed a router-buffering race.
+- **Review skill upgrade (global config, outside repo):** `/root/.config/opencode/skills/review/SKILL.md` Step 1 now uses the lead's exact three rules — diff as index / full files for control flow, Live-Wire Closure (producer ↔ consumer + registration, zero production call sites = blocker), and CUJ tracing across 2–3 critical journeys. `1-hop` was removed because it cannot catch missing wiring or cross-boundary split-brain.
+- **FINAL CERTIFICATION:**
+  - Compile gate `ANDROID_HOME=/opt/android-sdk ./scripts/verify-targets.sh`: exit 0, desktop + Android, 0 warnings / 0 errors.
+  - Backend full suite: **581 tests run: 581 passed, 0 failed, 2 skipped (212.223s)** — clean final run; the earlier AEC/model-manager timing flakes passed.
+  - Mutation campaign: **13/13 KILLED**, byte-exact reverts, all 13 targets revalidated byte-for-byte with no retargets, append-only report history preserved.
+  - Frontend: `tsc --noEmit` exit 0; Vite build under Node 22 `✓ built in 4.30s`; Vitest **35 files / 276 tests passed**.
+- **Verdict:** Domain 5 is complete. No blockers, majors, or open findings remain.
