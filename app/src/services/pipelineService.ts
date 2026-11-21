@@ -263,7 +263,7 @@ async function resyncFromSnapshot(confirmedState?: InteractionState): Promise<{ 
     if (!snap?.pipeline_state || !VALID_INTERACTION_STATES.has(snap.pipeline_state as InteractionState)) {
       return { success: false };
     }
-    return confirmedState === undefined || snap.pipeline_state === confirmedState;
+    return { success: confirmedState === undefined || snap.pipeline_state === confirmedState };
   } catch {
     return { success: false };
   }
