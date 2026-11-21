@@ -110,6 +110,7 @@
   --notif-hardware: 249, 149, 77;
   --notif-models: 205, 249, 77;
   --notif-storage: 77, 249, 115;
+  --notif-task: 77, 249, 198;
 
   --connection-glow: rgba(var(--accent), 0.15);
   --connection-core: rgba(var(--accent), 0.45);
@@ -199,6 +200,7 @@ body:not(.is-tray) {
   --notif-hardware: 211, 127, 13;
   --notif-models: 129, 211, 13;
   --notif-storage: 13, 211, 88;
+  --notif-task: 13, 211, 152;
 }
 
 @layer base {

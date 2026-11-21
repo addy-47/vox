@@ -11,7 +11,8 @@ export type NotificationCategory =
   | "dictation"
   | "hardware"
   | "models"
-  | "storage";
+  | "storage"
+  | "task";
 
 export const KNOWN_CATEGORIES: readonly NotificationCategory[] = [
   "session_compaction",
@@ -21,6 +22,7 @@ export const KNOWN_CATEGORIES: readonly NotificationCategory[] = [
   "hardware",
   "models",
   "storage",
+  "task",
 ];
 
 export interface NotificationFilter {

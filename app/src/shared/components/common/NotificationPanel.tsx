@@ -113,6 +113,14 @@ const CATEGORY_VISUALS: Record<NotificationCategory, CategoryVisual> = {
     actionWorking:
       "border-[rgba(var(--notif-storage),0.4)] bg-[rgba(var(--notif-storage),0.15)] text-[rgb(var(--notif-storage))] cursor-wait",
   },
+  task: {
+    icon: Loader2,
+    accent: "text-[rgb(var(--notif-task))]",
+    action:
+      "border-[rgba(var(--notif-task),0.35)] bg-[rgba(var(--notif-task),0.10)] text-[rgb(var(--notif-task))] hover:bg-[rgba(var(--notif-task),0.20)] hover:border-[rgba(var(--notif-task),0.5)] active:scale-95",
+    actionWorking:
+      "border-[rgba(var(--notif-task),0.4)] bg-[rgba(var(--notif-task),0.15)] text-[rgb(var(--notif-task))] cursor-wait",
+  },
 };
 
 function formatClockTime(timestampMs: number): string {

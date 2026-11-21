@@ -27,6 +27,7 @@ const HUE_OFFSETS: Record<NotificationCategory, number> = {
   hardware: 0.56,
   models: 0.7,
   storage: 0.86,
+  task: 0.94,
 };
 
 export const NOTIFICATION_CATEGORIES = Object.keys(
@@ -44,7 +45,7 @@ const TOKEN_PROP: Record<NotificationCategory, string> = NOTIFICATION_CATEGORIES
   {} as Record<NotificationCategory, string>
 );
 
-/** The seven `--notif-*` property names, in a stable order. Shared with the
+/** The `--notif-*` property names, in a stable order. Shared with the
  *  flip interpolation so a category token is treated like any other theme
  *  token: masked at its start value, then written once per interpolated frame. */
 export const NOTIFICATION_TOKEN_PROPS: string[] = NOTIFICATION_CATEGORIES.map(
@@ -94,7 +95,7 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
 /* ── Derivation ───────────────────────────────────────────────────────── */
 
 /**
- * Derives the seven category triplets from an accent triplet (`"r, g, b"`).
+ * Derives the category triplets from an accent triplet (`"r, g, b"`).
  * Near-monochrome accents fall back to a pleasant base hue and desaturate
  * toward the accent instead of exploding to full saturation (same guard the
  * legend palette applies).

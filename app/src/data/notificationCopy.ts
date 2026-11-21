@@ -47,6 +47,7 @@ export const NOTIFICATION_COPY = {
     hardware: "Hardware",
     models: "Models",
     storage: "Storage",
+    task: "Background task",
   },
   categoryBlurb: {
     session_compaction: "unsaved memories from this session",
@@ -56,5 +57,6 @@ export const NOTIFICATION_COPY = {
     hardware: "hardware alert",
     models: "model asset alert",
     storage: "storage health",
+    task: "background task update",
   },
 } as const;
