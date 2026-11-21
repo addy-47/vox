@@ -137,6 +137,14 @@ pub async fn end_session<R: tauri::Runtime>(
     state: State<'_, Arc<AppState>>,
     force: Option<bool>,
 ) -> Result<(), VoxIpcError> {
+    let force = force.unwrap_or(false);
+    let session_id = state.conversation_id.load(Ordering::Relaxed) as i64;
+    if !force && state.tasks.active_tasks_count(session_id) > 0 {
+        return Err(VoxIpcError::InvalidState(
+            "Active background tasks running; force=true required to end session".into(),
+        ));
+    }
+
     let event_tx = state
         .event_tx
         .lock()
@@ -144,9 +152,7 @@ pub async fn end_session<R: tauri::Runtime>(
         .ok_or_else(|| VoxIpcError::Engine("Event router is not active".into()))?;
 
     event_tx
-        .send(VoxEvent::EndSession {
-            force: force.unwrap_or(false),
-        })
+        .send(VoxEvent::EndSession { force })
         .map_err(|e| VoxIpcError::Engine(format!("Failed to send EndSession: {}", e)))?;
 
     Ok(())
