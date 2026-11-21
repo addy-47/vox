@@ -1,5 +1,29 @@
 # Vox Pipeline Refactor — Test Baseline & Remediation Report
 
+## Domain 5 Final Certification — 2026-11-21
+
+This section is additive. It records the final Domain 5 certification and preserves the 2026-11-19 certification and every historical checkpoint below verbatim.
+
+**Full suite re-run at final HEAD.** The entire test suite was re-run end-to-end after all Domain 5 production and test fixes landed — not just the two seam binaries. Command and result, exactly as executed:
+
+```bash
+cd /opt/vox/app/src-tauri
+RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1 --no-fail-fast
+EXIT_CODE=0
+     Summary [ 212.558s] 578 tests run: 578 passed, 2 skipped
+```
+
+Compile in that run: `Finished release profile [optimized] target(s) in 42.07s`.
+
+- **Full-suite result:** 578 passed, 0 failed, 2 skipped, exit code 0. This supersedes the earlier certified baseline of 566 passed / 0 failed / 2 skipped (203.8s). The delta of **+12** is exactly the 12 Domain 5 seam tests.
+- **12/12 D5 seams pass inside the full suite**, including `harness_loop_test::bash_tool_executes_fast_command_synchronously_without_backgrounding`, `harness_loop_test::task_finished_in_ready_within_active_window_triggers_proactive_spoken_turn`, and `database_persistence_boundary_test::schema_v19_persists_session_tasks_lifecycle_and_enforces_status_check_constraint`.
+- **Two skips, both §8-compliant external-dependency ignores** (unchanged set): `memory_compaction_test::compaction_slice_100_turns_against_a_remote_ollama_server` (remote Ollama hardware) and `realtime_transport_test::live_cloud_realtime_handshake` (live cloud API key). No internal or mocked test is ignored.
+- **Compile gate:** `ANDROID_HOME=/opt/android-sdk ./scripts/verify-targets.sh` exited 0 (architectural lint, desktop clippy 0 warnings / 0 errors including the strengthened tests, desktop build, Android clippy).
+- **Mutation:** 10/10 Domain 5 mutants KILLED (100%, byte-exact reverts, no markers in `src/`). The combined executable score is **327/327 killed (100%)** — pre-D5 317/317 plus D5 10/10 — with pre-D5 history preserved verbatim. `docs/tests/mutation_report.md` is the authoritative mutation record.
+- **Clean-room review verdict: PASS.** All 8 majors were resolved: production fixes M1–M8 and the test-side false-green fixes M5/M6 plus the M2 assertion strengthening.
+
+---
+
 **Date:** 2026-11-19 (post-merge verification)  
 **Role:** Senior Test Engineer  
 **Suite Status (current):** `566 tests run: 566 passed, 0 failed, 2 skipped` (203.8s, release, sequential). Verified after merging the CP5 work with the backend's TF-03/TF-04 fixes. All four `process::exit(0)` bypasses were removed from `e2e_voice_pipeline_test.rs` and the E2E binary passes 4/4 with clean teardown. TF-01 through TF-07 are CLOSED; only the two §8-compliant external-dependency tests remain ignored.  
