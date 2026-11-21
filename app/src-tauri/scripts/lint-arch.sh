@@ -445,7 +445,7 @@ all_rust = "\n".join(corpus)
 word_counts = Counter(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", all_rust))
 
 PUB_FN_REGEX = re.compile(
-    r"(?m)^\s*pub(?:\([^)]*\))?\s+(?:async\s+)?(?:unsafe\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("
+    r"(?m)^\s*pub(?:\([^)]*\))?\s+(?:async\s+)?(?:unsafe\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*[<(]"
 )
 IGNORE_NAMES = {"new", "default", "drop", "main", "fmt", "from", "clone", "eq"}
 
