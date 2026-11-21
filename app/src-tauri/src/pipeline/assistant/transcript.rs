@@ -306,20 +306,7 @@ pub fn on_transcript_final<R: tauri::Runtime>(
 
         // Task notifications buffered during the hold ride along as one user turn.
         // Voice is never re-inserted into StepInbox (RULE-EVT-08 §2b / RULE-HARN-18).
-        let held_task_text = {
-            let guard = state.harness.lock();
-            guard
-                .as_ref()
-                .map(|h| {
-                    h.inbox()
-                        .drain_immediate()
-                        .into_iter()
-                        .map(|m| m.text)
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                })
-                .unwrap_or_default()
-        };
+        let held_task_text = drain_inbox_prefix(state);
         let combined_text = if held_task_text.is_empty() {
             trimmed.clone()
         } else {
@@ -408,6 +395,19 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         return;
     }
 
+    // Buffered task results fold into this turn, so step 6 finds nothing to drain
+    // and no second proactive turn is spawned.
+    let inbox_prefix = if trimmed.is_empty() {
+        String::new()
+    } else {
+        drain_inbox_prefix(state)
+    };
+    let combined_text = if inbox_prefix.is_empty() {
+        trimmed.clone()
+    } else {
+        format!("{}\n{}", inbox_prefix, trimmed)
+    };
+
     let mut acc = state.pipeline_accumulator.lock();
     let raw_query = if trimmed.is_empty() {
         if !acc.continuation_prefix.is_empty() {
@@ -445,7 +445,7 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             return;
         }
     } else {
-        acc.resolve_merged_transcript(&trimmed)
+        acc.resolve_merged_transcript(&combined_text)
     };
     drop(acc);
 
@@ -500,6 +500,22 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             );
         }
     }
+}
+
+/// Drains buffered task notifications so they can prefix the current user turn.
+fn drain_inbox_prefix(state: &AppState) -> String {
+    let guard = state.harness.lock();
+    guard
+        .as_ref()
+        .map(|h| {
+            h.inbox()
+                .drain_immediate()
+                .into_iter()
+                .map(|m| m.text)
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default()
 }
 
 /// Returns true when the query matches the most recent user turn recorded in Harness history.
