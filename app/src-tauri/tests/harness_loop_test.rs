@@ -5338,16 +5338,37 @@ async fn task_result_without_speech_hold_folds_into_single_user_turn() {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         assert!(task_completed, "supervisor must persist status='completed'");
+        // Bounded, non-destructive quiescence poll: the tap ack and the DB row
+        // can precede the router's inbox write on a loaded machine. `is_empty`
+        // observes the buffer without consuming the notification the production
+        // fold needs later.
         {
-            let guard = rig.state.harness.lock();
-            let harness = guard.as_ref().expect("Harness mounted");
+            let inbox_ready = {
+                let guard = rig.state.harness.lock();
+                let harness = guard.as_ref().expect("Harness mounted");
+                !harness.inbox().is_speech_held() && !harness.inbox().is_empty()
+            };
+            let buffer_deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+            let mut buffered = inbox_ready;
+            while !buffered && tokio::time::Instant::now() < buffer_deadline {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                let guard = rig.state.harness.lock();
+                let harness = guard.as_ref().expect("Harness mounted");
+                buffered = !harness.inbox().is_speech_held() && !harness.inbox().is_empty();
+            }
             assert!(
-                !harness.inbox().is_speech_held(),
+                !rig.state
+                    .harness
+                    .lock()
+                    .as_ref()
+                    .expect("Harness mounted")
+                    .inbox()
+                    .is_speech_held(),
                 "task notice buffering must not engage a hold in the normal speech path"
             );
             assert!(
-                !harness.inbox().is_empty(),
-                "task result must be buffered in StepInbox before TranscriptFinal"
+                buffered,
+                "task result must be buffered in StepInbox within 2s before TranscriptFinal"
             );
         }
 
