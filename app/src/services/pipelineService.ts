@@ -215,23 +215,25 @@ export async function disengageSession(
     await invokeWithTimeout("end_session", { force }, timeoutMs);
   } catch (err: unknown) {
     if (isVoxIpcError(err) && isInvalidStateError(err)) {
-      const synced = await resyncFromSnapshot();
+      // A non-Idle snapshot means the backend refused the teardown, e.g. its
+      // active-task guard rejected force=false. Do not report that as success.
+      const synced = await resyncFromSnapshot("Idle");
       return { success: synced.success, reason: synced.success ? undefined : "invalid_state" };
     }
     const isTimeout = err instanceof Error && err.message.includes("timed out");
-    await resyncFromSnapshot();
+    await resyncFromSnapshot("Idle");
     return { success: false, reason: isTimeout ? "timeout" : "error" };
   }
 
   try {
     const reached = await waitForState("Idle", notifyState, timeoutMs);
     if (!reached) {
-      const synced = await resyncFromSnapshot();
+      const synced = await resyncFromSnapshot("Idle");
       return { success: synced.success, reason: synced.success ? undefined : "timeout" };
     }
     return { success: true };
   } catch {
-    const synced = await resyncFromSnapshot();
+    const synced = await resyncFromSnapshot("Idle");
     return { success: synced.success, reason: synced.success ? undefined : "timeout" };
   }
 }
@@ -255,13 +257,13 @@ async function waitForState(
   return reached;
 }
 
-async function resyncFromSnapshot(): Promise<{ success: boolean }> {
+async function resyncFromSnapshot(confirmedState?: InteractionState): Promise<{ success: boolean }> {
   try {
     const snap = await getRuntimeSnapshot();
-    if (snap?.pipeline_state && VALID_INTERACTION_STATES.has(snap.pipeline_state as InteractionState)) {
-      return { success: true };
+    if (!snap?.pipeline_state || !VALID_INTERACTION_STATES.has(snap.pipeline_state as InteractionState)) {
+      return { success: false };
     }
-    return { success: false };
+    return confirmedState === undefined || snap.pipeline_state === confirmedState;
   } catch {
     return { success: false };
   }

@@ -45,9 +45,6 @@ export interface SessionStoreState {
   // Compaction State
   compactingSessionId: number | null;
 
-  // Background Tasks State
-  activeTasksCount: number;
-
   // Actions
   setInteractionState: (state: InteractionState) => void;
   setInteractionMode: (mode: InteractionModeUpper) => void;
@@ -72,7 +69,6 @@ export interface SessionStoreState {
   setRestoreSignal: (signal: number) => void;
   bumpSessionListVersion: () => void;
   setCompactingSessionId: (id: number | null) => void;
-  setActiveTasksCount: (count: number) => void;
   executeCompaction: (sessionId: number) => Promise<void>;
   resetSessionState: () => void;
   /** Breadcrumb shown in layout when panel is closed: { sessionTitle, projectName } */
@@ -104,7 +100,6 @@ const INITIAL_STATE = {
   restoreSignal: 0,
   sessionListVersion: 0,
   compactingSessionId: null as number | null,
-  activeTasksCount: 0,
   activeSessionLabel: { sessionTitle: null, projectName: null },
 };
 
@@ -147,7 +142,6 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
   bumpSessionListVersion: () => set((state) => ({ sessionListVersion: state.sessionListVersion + 1 })),
   setActiveSessionLabel: (activeSessionLabel) => set({ activeSessionLabel }),
   setCompactingSessionId: (compactingSessionId) => set({ compactingSessionId }),
-  setActiveTasksCount: (activeTasksCount) => set({ activeTasksCount }),
   executeCompaction: async (sessionId: number) => {
     if (useSessionStore.getState().compactingSessionId !== null) return;
     set({ compactingSessionId: sessionId });

@@ -292,46 +292,67 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
   }, []);
 
+  const requestDisengageConfirm = useCallback(async (knownCount?: number) => {
+    let count = knownCount ?? 0;
+    if (count === 0) {
+      try {
+        count = await getActiveTasksCount();
+      } catch (err: unknown) {
+        console.debug("[VoiceSession] Active-task count unavailable; requiring force confirmation.", err);
+      }
+    }
+    setPendingTasksCount(Math.max(count, 1));
+    setConfirmDisengageOpen(true);
+  }, []);
+
   const executeDisengage = useCallback(
     async (force = false) => {
       isDisengagingRef.current = true;
-      clearTranscript();
-      const api = storeApi();
-      api.setIsLaunching(true);
-      api.setTranscript("");
-      api.setAssistantText("");
-      api.setDialogueHistory([]);
-      api.setActiveSessionId(null);
-      api.setActiveSessionLabel({ sessionTitle: null, projectName: null });
-      api.setTurnIdCounter(0);
-      api.setLatestTurnMetrics(null);
-      api.bumpSessionListVersion();
+      storeApi().setIsLaunching(true);
       try {
-        await disengageSession((state) => storeApi().setInteractionState(state), 8000, force);
-      } catch {
-        // End is best-effort; local state was already cleared.
+        const result = await disengageSession(
+          (state) => storeApi().setInteractionState(state),
+          8000,
+          force,
+        );
+        if (result.success) {
+          clearTranscript();
+          const api = storeApi();
+          api.setTranscript("");
+          api.setAssistantText("");
+          api.setDialogueHistory([]);
+          api.setActiveSessionId(null);
+          api.setActiveSessionLabel({ sessionTitle: null, projectName: null });
+          api.setTurnIdCounter(0);
+          api.setLatestTurnMetrics(null);
+          api.bumpSessionListVersion();
+          return;
+        }
+        if (result.reason === "invalid_state" && !force) {
+          await requestDisengageConfirm();
+          return;
+        }
+        console.warn("[VoiceSession] Disengage was not confirmed; local session state preserved.", result.reason);
       } finally {
-        storeApi().setActiveSessionId(null);
         storeApi().setIsLaunching(false);
         isDisengagingRef.current = false;
       }
     },
-    [clearTranscript],
+    [clearTranscript, requestDisengageConfirm],
   );
 
   const disengage = useCallback(async () => {
     try {
       const count = await getActiveTasksCount();
       if (count > 0) {
-        setPendingTasksCount(count);
-        setConfirmDisengageOpen(true);
+        await requestDisengageConfirm(count);
         return;
       }
-    } catch {
-      // Best-effort active task query fallback
+    } catch (err: unknown) {
+      console.debug("[VoiceSession] Active-task pre-check unavailable; attempting disengage.", err);
     }
     await executeDisengage(false);
-  }, [executeDisengage]);
+  }, [executeDisengage, requestDisengageConfirm]);
 
   const pause = useCallback(async () => {
     const current = storeApi().interactionState;
