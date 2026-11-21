@@ -266,9 +266,20 @@ describe("disengageSession", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(await pending).toEqual({ success: true });
-    expect(calls[0]).toEqual({ cmd: "end_session", args: undefined });
+    expect(calls[0]).toEqual({ cmd: "end_session", args: { force: false } });
     expect(notifyState).toHaveBeenCalledTimes(1);
     expect(notifyState).toHaveBeenCalledWith("Idle");
+  });
+
+  it("confirmed disengage sends force=true over IPC", async () => {
+    installTransport();
+    snapshotQueue.push({ pipeline_state: "Idle" });
+    useSessionStore.setState({ interactionState: "Working" as InteractionState });
+
+    const result = await disengageSession(vi.fn(), 100, true);
+
+    expect(result).toEqual({ success: true });
+    expect(calls[0]).toEqual({ cmd: "end_session", args: { force: true } });
   });
 
   it("NEGATIVE: no poll confirmation keeps notifyState silent even on end_session success", async () => {
@@ -306,6 +317,26 @@ describe("disengageSession", () => {
     await assertion;
     // Recovery does not notify: the UI state sync is driven by the live event
     // stream, not by the resync path.
+    expect(notifyState).not.toHaveBeenCalled();
+  });
+
+  it("NEGATIVE: a valid but non-Idle resync snapshot must not launder a timeout into success", async () => {
+    installTransport({ end_session: () => Promise.resolve(null) });
+    // Resync sees a structurally valid state that is NOT the confirmed target.
+    // The old permissive resync returned success here; the strict one must fail.
+    // Two poll answers plus the resync answer must all be non-Idle.
+    snapshotQueue.push(
+      { pipeline_state: "Working" },
+      { pipeline_state: "Working" },
+      { pipeline_state: "Working" },
+    );
+    const notifyState = vi.fn<(s: InteractionState) => void>();
+    useSessionStore.setState({ interactionState: "Working" as InteractionState });
+
+    const pending = disengageSession(notifyState, 30);
+    const assertion = expect(pending).resolves.toEqual({ success: false, reason: "timeout" });
+    await vi.advanceTimersByTimeAsync(120);
+    await assertion;
     expect(notifyState).not.toHaveBeenCalled();
   });
 

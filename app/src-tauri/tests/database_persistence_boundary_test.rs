@@ -33,6 +33,7 @@ use vox_lib::persistence::{
     projects::{delete_project, get_project_by_id},
     schema::{run_migrations, SCHEMA_VERSION},
     sessions::{create_session_with_id, delete_session},
+    tasks::record_task_promoted,
     worker::spawn_persistence_worker,
     PersistenceEvent, VoxDb,
 };
@@ -2142,6 +2143,66 @@ async fn session_hard_delete_kills_running_tasks_cascades_session_tasks_rows_and
             !orphan_dir.exists(),
             "orphan session_tasks_dir must be purged by startup sweeps"
         );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch a dropped canonical tool-call id when a promoted task is persisted.
+/// SCENARIO: Call the production promotion writer with task_id "task-call-link" and tool_call_id "call-natural-exit", then read the row back through Turso.
+/// ASSERTS:  `session_tasks.task_id == "task-call-link"` and `tool_call_id == "call-natural-exit"`; status is "running".
+/// CLASS:    contract
+/// REQUIRES: none
+/// MUTANT:   In `persistence/tasks.rs::record_task_promoted`, replace the `tool_call_id` bind with `None`.
+#[tokio::test]
+async fn session_tasks_persist_canonical_call_id_from_promotion_writer() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_task_call_link.db");
+        let db = VoxDb::open(&db_path).await.expect("open db");
+        let conn = db.connect().expect("connect db");
+        run_migrations(&conn).await.expect("run migrations");
+
+        let session_id = 91904i64;
+        let now = 1700000000000i64;
+        conn.execute(
+            "INSERT INTO sessions (id, created_at, updated_at, project_id) VALUES (?, ?, ?, 'default');",
+            (session_id, now, now),
+        )
+        .await
+        .expect("insert session");
+
+        record_task_promoted(
+            &conn,
+            "task-call-link",
+            session_id,
+            Some("call-natural-exit"),
+            "echo link",
+            "/tmp/vox/task-call-link.log",
+            now,
+        )
+        .await
+        .expect("record promoted task");
+
+        let mut rows = conn
+            .query(
+                "SELECT task_id, tool_call_id, status FROM session_tasks WHERE task_id = ?;",
+                ("task-call-link",),
+            )
+            .await
+            .expect("query task");
+        let row = rows.next().await.unwrap().expect("task row found");
+        let persisted_task_id: String = row.get(0).unwrap();
+        let persisted_call_id: Option<String> = row.get(1).unwrap();
+        let persisted_status: String = row.get(2).unwrap();
+
+        assert_eq!(persisted_task_id, "task-call-link");
+        assert_eq!(
+            persisted_call_id.as_deref(),
+            Some("call-natural-exit"),
+            "promotion writer must persist the canonical tool-call id (B4 fix)"
+        );
+        assert_eq!(persisted_status, "running");
     })
     .await
     .expect("test timed out");

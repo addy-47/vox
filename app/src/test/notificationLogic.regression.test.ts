@@ -132,6 +132,17 @@ describe("notification badge weight (spec §9.2)", () => {
     expect(toCategory("session_compaction")).toBe("session_compaction");
     expect(toCategory("some_future_category_v99")).toBe("pipeline");
   });
+
+  it("task-category completions survive the closed taxonomy into the tasks tab", () => {
+    // Backend now emits category="task" for TaskFinished (domain 5). A missing
+    // allow-list entry would silently fold it into "pipeline" and lose the tab.
+    expect(toCategory("task")).toBe("task");
+    const taskDone = makeNotif({ category: "task", action_type: "interactive", metadata: "{}" });
+    expect(countsTowardBadge(taskDone)).toBe(true);
+    const state = stateFor([taskDone]);
+    expect(selectBadgeCount(state)).toBe(1);
+    expect(selectTasksRolledUp(state).map((g) => g.latest.id)).toContain(taskDone.id);
+  });
 });
 
 describe("notification rollup + tasks/updates split", () => {

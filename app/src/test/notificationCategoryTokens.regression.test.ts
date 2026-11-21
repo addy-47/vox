@@ -9,7 +9,7 @@ import {
  *
  * Phase 1 — Production Path Trace
  * -------------------------------
- * SUT: accent-derived `--notif-<category>` family — seven harmonic
+ * SUT: accent-derived `--notif-<category>` family — eight harmonic
  * hue-rotated triplets that must never collide with `--accent` itself.
  *
  * Production Entry Seam:
@@ -18,7 +18,7 @@ import {
  *   (shared/theme/index.ts writeThemeToDom), then interpolated by the flip.
  *
  * Direction Check:
- *   Trigger-side derivation: accent triplet in, seven category triplets out.
+ *   Trigger-side derivation: accent triplet in, eight category triplets out.
  *   The test invokes the derivation, not the stylesheet writer or the flip
  *   interpolator (those are downstream sinks with their own invariants).
  *
@@ -26,7 +26,7 @@ import {
  *   user accent_seed → hexToRgb triplet → deriveNotificationCategoryTokens
  *   → stylesheet rule → flip token interpolation → kicker + action button
  *
- * Observable Exit: the seven "r, g, b" triplets.
+ * Observable Exit: the eight "r, g, b" triplets.
  *
  * Phase 2a — Testability: yes (4/4). Pure function, real signature, no
  * constructors needed, output directly observable, no mocked boundary.
@@ -40,7 +40,7 @@ import {
  * Phase 4 — Governing sentence:
  *   If the never-accent offset guard silently broke, this test would fail
  *   because the "never resolves to accent" assertion would receive the accent
- *   triplet while expecting all seven categories to differ from it.
+ *   triplet while expecting all eight categories to differ from it.
  */
 
 function parseTriplet(t: string): [number, number, number] {
@@ -54,7 +54,7 @@ function luminance([r, g, b]: [number, number, number]): number {
 }
 
 describe("notification category tokens (spec §4.7)", () => {
-  it("derives seven valid, pairwise-distinct triplets for a saturated accent", () => {
+  it("derives eight valid, pairwise-distinct triplets for a saturated accent", () => {
     const tokens = deriveNotificationCategoryTokens("0, 219, 233", false);
     expect(Object.keys(tokens).sort()).toEqual([...NOTIFICATION_CATEGORIES].sort());
     const seen = new Set<string>();
@@ -67,7 +67,7 @@ describe("notification category tokens (spec §4.7)", () => {
       }
       seen.add(tokens[category]);
     }
-    expect(seen.size).toBe(7);
+    expect(seen.size).toBe(8);
   });
 
   it("NEGATIVE: no category token may resolve to --accent itself", () => {
@@ -92,13 +92,13 @@ describe("notification category tokens (spec §4.7)", () => {
         luminance(parseTriplet(light[category]))
       );
     }
-    expect(differing).toBe(7);
+    expect(differing).toBe(8);
   });
 
   it("near-monochrome accents fall back instead of exploding (legend-palette guard)", () => {
     const tokens = deriveNotificationCategoryTokens("128, 128, 128", false);
     const distinct = new Set(Object.values(tokens));
-    expect(distinct.size).toBe(7);
+    expect(distinct.size).toBe(8);
     for (const t of Object.values(tokens)) parseTriplet(t);
   });
 
@@ -107,6 +107,14 @@ describe("notification category tokens (spec §4.7)", () => {
       deriveNotificationCategoryTokens("", false)
     ).not.toThrow();
     const tokens = deriveNotificationCategoryTokens("not-a-color", true);
-    expect(Object.keys(tokens)).toHaveLength(7);
+    expect(Object.keys(tokens)).toHaveLength(8);
+  });
+
+  it("the task category owns a valid non-accent token", () => {
+    expect(NOTIFICATION_CATEGORIES).toContain("task");
+    const accent = "0, 219, 233";
+    const tokens = deriveNotificationCategoryTokens(accent, false);
+    expect(tokens.task).not.toBe(accent);
+    parseTriplet(tokens.task);
   });
 });

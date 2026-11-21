@@ -3657,6 +3657,10 @@ async fn bash_tool_executes_fast_command_synchronously_without_backgrounding() {
                 !tool_obs.content.contains("running_in_background"),
                 "Tool observation must not indicate running_in_background"
             );
+            assert!(
+                tool_obs.content.contains("Exit code: 0"),
+                "Terminal tool observation must report exit code 0 for a synchronous command"
+            );
         }
 
         assert_eq!(
@@ -4071,6 +4075,30 @@ async fn manage_task_list_and_status_read_live_state_and_log_tail_from_disk() {
             parsed["task_id"].as_str().expect("task_id string").to_string()
         };
 
+        // Declaration-level contract: both reads must be schedulable in a parallel
+        // wave. `ToolRegistry` and `ToolDefinition` are the production schedulers.
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().expect("Harness mounted");
+            let tool = harness
+                .tool_registry()
+                .get("manage_task")
+                .expect("manage_task must be registered");
+            assert_eq!(
+                tool.execution_mode(&serde_json::json!({ "action": "list" })),
+                ToolExecutionMode::Parallel,
+                "manage_task list must declare Parallel execution mode"
+            );
+            assert_eq!(
+                tool.execution_mode(&serde_json::json!({
+                    "action": "status",
+                    "task_id": task_id.clone(),
+                })),
+                ToolExecutionMode::Parallel,
+                "manage_task status must declare Parallel execution mode"
+            );
+        }
+
         // Turn 2: Inspect via manage_task parallel wave (list + status)
         let turn_id_2 = 5006;
         rig.scripted_llm.push_step({
@@ -4252,6 +4280,22 @@ async fn manage_task_kill_terminates_entire_process_group_including_grandchildre
         let outcome2 = Harness::execute_turn(&rig.state.harness, req2).await;
         assert!(matches!(outcome2, TurnOutcome::Completed { .. }));
 
+        // The tool's own observation, not only the persisted row, must report the kill.
+        {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().expect("Harness mounted");
+            let kill_obs = harness
+                .messages()
+                .iter()
+                .rfind(|m| m.role == Role::Tool)
+                .expect("manage_task kill observation must be committed");
+            assert!(
+                kill_obs.content.contains("killed"),
+                "manage_task kill observation must report status 'killed', got: {}",
+                kill_obs.content
+            );
+        }
+
         assert_eq!(
             rig.state.tasks.active_tasks_count(rig.session_id),
             0,
@@ -4308,9 +4352,9 @@ async fn manage_task_kill_terminates_entire_process_group_including_grandchildre
     .expect("test timed out");
 }
 
-/// PURPOSE:  Catch dropped `VoxEvent::TaskFinished` events in Ready state where a background task finishes while the user is active (<5m) but the assistant stays silent.
-/// SCENARIO: Session is in `InteractionState::Ready` with `last_user_activity_ms` within 5 minutes. A promoted background task exits with code 0.
-/// ASSERTS:  Supervisor updates `session_tasks.status = 'completed'` (`exit_code = 0`) and sends `VoxEvent::TaskFinished` to `vox-router`; router emits `IpcEvent::NotificationCreated` (category: "task") AND initiates a proactive turn (Ready -> Thinking -> Speaking -> Ready); TTS receives the model's spoken completion summary.
+/// PURPOSE:  Catch a dropped proactive-turn dispatch for `TaskFinished` in Ready within the active window.
+/// SCENARIO: Router is in `InteractionState::Ready` with activity <5m; a Completed(exit 0) `TaskFinished` is injected at the router seam. Real supervisor emission is covered by `supervised_task_natural_exit_emits_task_finished_with_completed_status_and_notification`.
+/// ASSERTS:  `on_task_finished` persists `session_tasks.status = 'completed'` with `exit_code = 0`; the router emits `IpcEvent::NotificationCreated` with category "task"; TTS receives the model's spoken completion summary.
 /// CLASS:    happy-path
 /// REQUIRES: none
 /// MUTANT:   In `pipeline/assistant/tasks.rs` (`on_task_finished`), omit the proactive `execute_turn` dispatch when `state == InteractionState::Ready`.
@@ -4368,6 +4412,48 @@ async fn task_finished_in_ready_within_active_window_triggers_proactive_spoken_t
             heard_speech,
             "Router must dispatch proactive spoken turn when task finishes within active user window (<5m) in Ready"
         );
+
+        // Bounded DB barrier: on_task_finished persists the terminal state asynchronously.
+        let conn = rig.state.db.connect().expect("db connect");
+        let db_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut completed_row = None;
+        while tokio::time::Instant::now() < db_deadline {
+            let mut rows = conn
+                .query(
+                    "SELECT status, exit_code FROM session_tasks WHERE task_id = ?;",
+                    (task_id.to_string(),),
+                )
+                .await
+                .expect("query session_tasks");
+            if let Some(row) = rows.next().await.expect("read session_tasks row") {
+                let status: String = row.get(0).expect("status column");
+                let exit_code: Option<i64> = row.get(1).expect("exit_code column");
+                if status == "completed" {
+                    completed_row = Some((status, exit_code));
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let (status, exit_code) = completed_row.expect("task row must reach completed within 5s");
+        assert_eq!(status, "completed");
+        assert_eq!(exit_code, Some(0), "completed task must persist exit_code 0");
+
+        // Capture sink installed in Rig::new before any event is sent: this is the
+        // production `app.emit("notification_created", …)` boundary, not a test double.
+        let notification = rig
+            .wait_for_ipc_event(
+                |v| {
+                    v["category"].as_str() == Some("task")
+                        && v["group_key"]
+                            .as_str()
+                            .is_some_and(|key| key.contains(task_id))
+                },
+                Duration::from_secs(5),
+            )
+            .await
+            .expect("NotificationCreated(category=task) must be emitted at the IPC boundary");
+        assert_eq!(notification["category"].as_str(), Some("task"));
     })
     .await
     .expect("test timed out");
@@ -4383,7 +4469,9 @@ async fn task_finished_in_ready_within_active_window_triggers_proactive_spoken_t
 ///     progressed past `TaskFinished` in its single-threaded event pump;
 ///  3. the `session_tasks` terminal row is a positive barrier proving
 ///     `on_task_finished` actually ran;
-///  4. a bounded state-invariant watch then proves no later transition can stage
+///  4. the `notification_created` IPC payload is captured at the production emit
+///     boundary, proving the notification-only half of the contract;
+///  5. a bounded state-invariant watch then proves no later transition can stage
 ///     a proactive turn (every proactive dispatch transitions to Thinking first).
 async fn assert_task_finished_suppressed_after_router_ack(
     rig: &Rig,
@@ -4442,7 +4530,22 @@ async fn assert_task_finished_suppressed_after_router_ack(
         task_id
     );
 
-    // (4) A suppressed TaskFinished never transitions out of the expected state.
+    // (4) Notification is mandatory even when speech is suppressed.
+    let notification = rig
+        .wait_for_ipc_event(
+            |v| {
+                v["category"].as_str() == Some("task")
+                    && v["group_key"]
+                        .as_str()
+                        .is_some_and(|key| key.contains(task_id))
+            },
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("NotificationCreated(category=task) must be emitted even when speech is suppressed");
+    assert_eq!(notification["category"].as_str(), Some("task"));
+
+    // (5) A suppressed TaskFinished never transitions out of the expected state.
     // A late proactive dispatch must transition to Thinking before dispatching,
     // so a stable state over the watch window proves no turn can be staged.
     common::harness::assert_pipeline_state_stable(
@@ -4467,7 +4570,7 @@ async fn assert_task_finished_suppressed_after_router_ack(
 
 /// PURPOSE:  Catch unsolicited voice wake-ups when a background task finishes after the user has been quiet for >5 minutes in Ready or while the session is Paused.
 /// SCENARIO: Set `last_user_activity_ms` to now - 6 minutes in `InteractionState::Ready` (and repeat in `InteractionState::Paused`). Trigger `VoxEvent::TaskFinished` through `vox-router`.
-/// ASSERTS:  The router consumes each `TaskFinished` (tap ack + FIFO sentinel + `session_tasks` 'completed' barrier); pipeline state stays in Ready (or Paused) across a bounded invariant watch; zero LLM dispatches (`llm_dispatch_count == 0`) and zero TTS commands are dispatched.
+/// ASSERTS:  The router consumes each `TaskFinished` (tap ack + FIFO sentinel + `session_tasks` 'completed' barrier); `IpcEvent::NotificationCreated` carries category "task"; pipeline state stays in Ready (or Paused) across a bounded invariant watch; zero LLM dispatches (`llm_dispatch_count == 0`) and zero TTS commands are dispatched.
 /// CLASS:    suppression
 /// REQUIRES: none
 /// MUTANT:   In `pipeline/assistant/tasks.rs`, bypass the 5-minute `last_user_activity_ms` check in Ready (or allow proactive turn dispatch in Paused).
@@ -4543,9 +4646,9 @@ async fn task_finished_in_ready_after_quiet_window_or_in_paused_suppresses_speec
     .expect("test timed out");
 }
 
-/// PURPOSE:  Catch premature step-boundary release (`speech_hold_active` clobber) when a background task finishes while a foreground tool is running AND the user is mid-speech (`Listening`).
-/// SCENARIO: Step 0 runs a tool in Working; user starts speaking (SpeechStart engages `inbox.engage_speech_hold()` and transitions to Listening); while `speech_hold_active == true`, a background task finishes (`VoxEvent::TaskFinished`), and then the user finishes speaking (`TranscriptFinal("Also check the logs")`).
-/// ASSERTS:  When `VoxEvent::TaskFinished` arrives, `inbox.is_speech_held()` remains true (step boundary does NOT advance before TranscriptFinal); once TranscriptFinal arrives, Step 1 LLM request contains BOTH the background task completion notice AND the user's steering message "Also check the logs".
+/// PURPOSE:  Catch premature step-boundary release when TaskFinished arrives during a held voice turn, and voice leaking into StepInbox.
+/// SCENARIO: A tool step commits in Working; the user speaks (hold engaged); a task finishes; TranscriptFinal("Also check the logs") rides both notices into one staged user turn.
+/// ASSERTS:  After tap ack + FIFO sentinel + DB barrier the hold is still active; the next LLM request's staged user text contains BOTH the task notice ("task-009"/"completed") and "Also check the logs"; StepInbox holds no voice text; the hold is released.
 /// CLASS:    regression
 /// REQUIRES: none
 /// MUTANT:   In `pipeline/assistant/tasks.rs`, call `inbox.push(...)` (which sets `speech_hold_active = false`) instead of `inbox.push_task_notification(...)`.
@@ -4555,31 +4658,75 @@ async fn task_finished_in_working_buffers_in_step_inbox_without_releasing_active
         let rig = Rig::new().await;
         let turn_id = 5009;
 
+        // Commit real tool work so the barge-in path sees a non-empty history.
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness mounted");
+            harness.register_tool(Arc::new(SimpleTestTool {
+                name: "step_tool".to_string(),
+            }));
+        }
         rig.state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
         rig.state.pipeline.set_state(InteractionState::Working);
 
-        let inbox = Arc::clone(rig.state.harness.lock().as_ref().unwrap().inbox());
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-step-009".to_string(),
+                name: "step_tool".to_string(),
+                arguments: serde_json::json!({}),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Steering handled.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
 
-        // 1. User starts speaking mid-tool: router handles SpeechStart and engages speech hold
+        let inbox = Arc::clone(rig.state.harness.lock().as_ref().unwrap().inbox());
+        // Engage before spawn: the coordinator parks at the step boundary, so the
+        // second pass cannot consume the steering step before the user speaks.
+        inbox.engage_speech_hold();
+
+        let req = rig.turn_request("Working tool turn", turn_id);
+        let harness_arc = Arc::clone(&rig.state.harness);
+        let turn_handle = tokio::spawn(async move {
+            Harness::execute_turn(&harness_arc, req).await
+        });
+
+        let tool_deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            // Inner scope: the guard-derived borrow must die before the await below.
+            let committed = {
+                let guard = rig.state.harness.lock();
+                guard
+                    .as_ref()
+                    .is_some_and(|h| h.messages().iter().any(|m| m.role == Role::Tool))
+            };
+            if committed {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < tool_deadline,
+                "Step 0 tool observation must commit before barge-in"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        // 1. Router receives SpeechStart and engages the hold.
         rig.send_event(VoxEvent::SpeechStart {
             owner: InteractionOwner::Assistant,
         });
-
         assert!(
             rig.wait_for_state(InteractionState::Listening, Duration::from_millis(500)).await,
             "SpeechStart must transition state to Listening"
         );
-        assert!(
-            inbox.is_speech_held(),
-            "Speech hold must be active after SpeechStart"
-        );
+        assert!(inbox.is_speech_held(), "Speech hold must be active after SpeechStart");
 
-        // 2. Background task finishes via router while speech is held
+        // 2. Background task finishes through the router while the hold is active.
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
-
         rig.send_event(VoxEvent::TaskFinished {
             task_id: "task-009".to_string(),
             session_id: rig.session_id,
@@ -4590,42 +4737,111 @@ async fn task_finished_in_working_buffers_in_step_inbox_without_releasing_active
             },
         });
 
-        // Quiescence wait for router
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // Quiescence: tap ack proves the event entered the router channel; the FIFO
+        // sentinel proves the router consumed it; the DB row proves on_task_finished ran.
+        rig.wait_for_event(
+            |ev| matches!(ev, VoxEvent::TaskFinished { task_id: id, .. } if id == "task-009"),
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("TaskFinished must be captured at the router seam");
+        rig.send_event(VoxEvent::LlmFinished {
+            turn_id: 9_009_001,
+        });
+        rig.wait_for_event(
+            |ev| matches!(ev, VoxEvent::LlmFinished { turn_id } if *turn_id == 9_009_001),
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("FIFO sentinel must be captured after TaskFinished");
+        let conn = rig.state.db.connect().expect("db connect");
+        let db_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut saw_completed = false;
+        while tokio::time::Instant::now() < db_deadline {
+            let mut rows = conn
+                .query(
+                    "SELECT status FROM session_tasks WHERE task_id = ?;",
+                    ("task-009".to_string(),),
+                )
+                .await
+                .expect("query session_tasks");
+            let status: Option<String> = rows
+                .next()
+                .await
+                .expect("read session_tasks row")
+                .map(|row| row.get::<String>(0).expect("status column"));
+            if status.as_deref() == Some("completed") {
+                saw_completed = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(saw_completed, "on_task_finished must persist status='completed'");
 
-        // Invariant check: TaskFinished MUST NOT release speech hold!
         assert!(
             inbox.is_speech_held(),
             "speech_hold_active must remain TRUE after TaskFinished while user speaks (anti-clobber invariant)"
         );
 
-        // 3. User finishes speaking via router: TranscriptFinal pushes steering message and releases hold
+        // 3. TranscriptFinal rides the held task notice and the voice into one turn.
         rig.send_event(VoxEvent::TranscriptFinal {
             turn_id,
             text: "Also check the logs".to_string(),
             owner: InteractionOwner::Assistant,
         });
 
-        let deadline = std::time::Instant::now() + Duration::from_secs(3);
-        while std::time::Instant::now() < deadline && inbox.is_speech_held() {
+        let hold_deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        while tokio::time::Instant::now() < hold_deadline && inbox.is_speech_held() {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-
         assert!(
             !inbox.is_speech_held(),
             "Speech hold must be released when user finishes speaking"
         );
 
-        // 4. Drain immediate inbox messages: must contain BOTH task notification and user message
-        let drained = inbox.drain_immediate();
-        assert_eq!(drained.len(), 2, "Inbox must buffer both messages");
+        // Observe the staged user text on the real LLM request, not a downstream buffer.
+        let prompt_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut steering_prompt = None;
+        while tokio::time::Instant::now() < prompt_deadline {
+            if let Some(prompt) = rig
+                .scripted_llm
+                .prompts()
+                .into_iter()
+                .find(|p| p.contains("Also check the logs"))
+            {
+                steering_prompt = Some(prompt);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let prompt = steering_prompt.expect("staged LLM request must carry the steering message");
         assert!(
-            drained.iter().any(|m| m.text.contains("task-009") && m.text.contains("completed")),
-            "Inbox must contain background task notification"
+            prompt.contains("task-009") && prompt.contains("completed"),
+            "staged request must carry the background task notice, got: {}",
+            prompt
         );
         assert!(
-            drained.iter().any(|m| m.text.contains("Also check the logs")),
-            "Inbox must contain user steering message"
+            prompt.contains("Also check the logs"),
+            "staged request must carry the user steering message, got: {}",
+            prompt
+        );
+
+        // RULE-HARN-18: voice must never be re-inserted into StepInbox.
+        let remaining = inbox.drain_immediate();
+        assert!(
+            remaining.iter().all(|m| !m.text.contains("Also check the logs")),
+            "StepInbox is strictly non-voice; user speech must never be injected"
+        );
+        assert!(
+            remaining.is_empty(),
+            "the held task notice must be consumed into the staged turn, not left buffered"
+        );
+
+        let outcome = turn_handle.await.expect("turn worker panicked");
+        assert!(
+            matches!(outcome, TurnOutcome::Cancelled { .. }),
+            "non-empty barge-in must cancel the prior turn, got {:?}",
+            outcome
         );
     })
     .await
@@ -4712,15 +4928,16 @@ async fn running_background_task_inhibits_paused_to_sleeping_offload_and_disenga
             "Session must transition to Paused"
         );
 
-        // Wait 150ms (> 2x paused_timeout of 60ms)
-        tokio::time::sleep(Duration::from_millis(150)).await;
-
-        // RULE-EVT-12: Background task must inhibit transition to Sleeping!
-        assert_eq!(
-            rig.state.pipeline.state(),
+        // RULE-EVT-12: watch the full horizon (> 2x paused_timeout of 60ms) instead
+        // of sleeping then sampling once. A watched invariant catches a transient
+        // Paused -> Sleeping -> Paused flapping that a single sample would miss.
+        common::harness::assert_pipeline_state_stable(
+            || rig.state.pipeline.state(),
             InteractionState::Paused,
-            "Background task must inhibit Paused -> Sleeping transition (RULE-EVT-12)"
-        );
+            Duration::from_millis(150),
+            "background task must inhibit Paused -> Sleeping (RULE-EVT-12)",
+        )
+        .await;
 
         // Resume to Ready
         rig.send_event(VoxEvent::ResumeSession);
@@ -4731,13 +4948,32 @@ async fn running_background_task_inhibits_paused_to_sleeping_offload_and_disenga
 
         // RULE-EVT-13 Backend Force Guard: EndSession { force: false } must be rejected while tasks run!
         rig.send_event(VoxEvent::EndSession { force: false });
-        tokio::time::sleep(Duration::from_millis(100)).await;
 
-        assert_eq!(
-            rig.state.pipeline.state(),
+        // Quiescence: tap ack + FIFO sentinel prove the router consumed EndSession
+        // before the invariant watch begins; no bare sleep asserts absence.
+        rig.wait_for_event(
+            |ev| matches!(ev, VoxEvent::EndSession { force: false }),
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("unforced EndSession must be captured at the router seam");
+        rig.send_event(VoxEvent::LlmFinished {
+            turn_id: 10_010_001,
+        });
+        rig.wait_for_event(
+            |ev| matches!(ev, VoxEvent::LlmFinished { turn_id } if *turn_id == 10_010_001),
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("FIFO sentinel must be captured after unforced EndSession");
+
+        common::harness::assert_pipeline_state_stable(
+            || rig.state.pipeline.state(),
             InteractionState::Ready,
-            "Unforced EndSession must be rejected while background tasks run (RULE-EVT-13)"
-        );
+            Duration::from_millis(200),
+            "unforced EndSession must be rejected while background tasks run (RULE-EVT-13)",
+        )
+        .await;
         assert_eq!(
             rig.state.tasks.active_tasks_count(rig.session_id),
             1,
@@ -4757,6 +4993,35 @@ async fn running_background_task_inhibits_paused_to_sleeping_offload_and_disenga
             "Active tasks count must be 0 after forced EndSession"
         );
 
+        // The kill is persisted asynchronously: require the terminal row, never skip it.
+        let conn = rig.state.db.connect().expect("db connect");
+        let status_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut killed_status = None;
+        while tokio::time::Instant::now() < status_deadline {
+            let mut rows = conn
+                .query(
+                    "SELECT status FROM session_tasks WHERE session_id = ? ORDER BY started_at DESC LIMIT 1;",
+                    (rig.session_id,),
+                )
+                .await
+                .expect("query session_tasks");
+            let status: Option<String> = rows
+                .next()
+                .await
+                .expect("read session_tasks row")
+                .map(|row| row.get::<String>(0).expect("status column"));
+            if status.as_deref() == Some("killed") {
+                killed_status = status;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(
+            killed_status.as_deref(),
+            Some("killed"),
+            "forced EndSession must persist the task as killed"
+        );
+
         let kill_deadline = std::time::Instant::now() + Duration::from_secs(3);
         let mut grandchild_dead = false;
         while std::time::Instant::now() < kill_deadline {
@@ -4769,6 +5034,161 @@ async fn running_background_task_inhibits_paused_to_sleeping_offload_and_disenga
         assert!(
             grandchild_dead,
             "Process group must be killed on forced EndSession"
+        );
+    })
+    .await
+    .expect("test timed out");
+}
+
+/// PURPOSE:  Catch a silent supervisor-to-router handoff when a promoted task exits on its own.
+/// SCENARIO: A bash command outlives the 80ms auto-promotion window, is promoted, then exits with code 0. No TaskFinished is injected by the test.
+/// ASSERTS:  The supervisor emits VoxEvent::TaskFinished(Completed, exit_code 0) at the tap; `session_tasks` persists status='completed', exit_code=0 and tool_call_id="call-natural-exit"; IpcEvent::NotificationCreated(category="task") is emitted; TTS receives the spoken completion summary.
+/// CLASS:    regression
+/// REQUIRES: none
+/// MUTANT:   In `services/tasks/manager.rs`, delete the `tx.send(VoxEvent::TaskFinished { ... })` call in the supervisor's `is_promoted` branch.
+#[tokio::test]
+async fn supervised_task_natural_exit_emits_task_finished_with_completed_status_and_notification() {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let rig = Rig::new().await;
+        let turn_id = 5011;
+
+        {
+            let mut guard = rig.state.harness.lock();
+            let harness = guard.as_mut().expect("Harness mounted");
+            harness.auto_promote_timeout = Duration::from_millis(80);
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        rig.state
+            .pipeline
+            .last_user_activity_ms
+            .store(now - 10_000, Ordering::Relaxed);
+        rig.state.pipeline.set_state(InteractionState::Ready);
+
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::ToolCall(CanonicalToolCall {
+                id: "call-natural-exit".to_string(),
+                name: "bash".to_string(),
+                arguments: serde_json::json!({
+                    "command": "sleep 0.3 && printf 'NATURAL_EXIT_OK'",
+                    "run_in_background": true,
+                }),
+            }));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+        rig.scripted_llm.push_step(|tx| {
+            let _ = tx.send(LlmResponse::Token("Your task completed successfully.".to_string()));
+            let _ = tx.send(LlmResponse::Finished);
+        });
+
+        let req = rig.turn_request("Promote task then let it exit", turn_id);
+        let outcome = Harness::execute_turn(&rig.state.harness, req).await;
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "promotion turn must complete, got {:?}",
+            outcome
+        );
+
+        // Read the task id from the real promotion observation. Do NOT inject an event.
+        let task_id = {
+            let guard = rig.state.harness.lock();
+            let harness = guard.as_ref().expect("Harness mounted");
+            let obs = harness
+                .messages()
+                .iter()
+                .find(|m| m.role == Role::Tool)
+                .expect("promotion observation must be committed");
+            let parsed: serde_json::Value =
+                serde_json::from_str(&obs.content).expect("promotion observation must be JSON");
+            assert_eq!(parsed["status"].as_str(), Some("running_in_background"));
+            parsed["task_id"].as_str().expect("task_id").to_string()
+        };
+
+        // Tap ack: only the supervisor can emit this event in this test.
+        rig.wait_for_event(
+            |ev| {
+                matches!(
+                    ev,
+                    VoxEvent::TaskFinished {
+                        task_id: id,
+                        status: vox_lib::core::events::TaskStatus::Completed { exit_code: 0, .. },
+                        ..
+                    } if id.as_str() == task_id
+                )
+            },
+            Duration::from_secs(8),
+        )
+        .await
+        .expect("supervisor must emit TaskFinished(Completed, exit_code=0) without test injection");
+
+        // Bounded DB barrier: supervisor writes the terminal row itself.
+        let conn = rig.state.db.connect().expect("db connect");
+        let db_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut terminal_row = None;
+        while tokio::time::Instant::now() < db_deadline {
+            let mut rows = conn
+                .query(
+                    "SELECT status, exit_code, tool_call_id FROM session_tasks WHERE task_id = ?;",
+                    (task_id.clone(),),
+                )
+                .await
+                .expect("query session_tasks");
+            if let Some(row) = rows.next().await.expect("read session_tasks row") {
+                let status: String = row.get(0).expect("status column");
+                if status == "completed" {
+                    let exit_code: Option<i64> = row.get(1).expect("exit_code column");
+                    let tool_call_id: Option<String> = row.get(2).expect("tool_call_id column");
+                    terminal_row = Some((status, exit_code, tool_call_id));
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let (status, exit_code, tool_call_id) =
+            terminal_row.expect("supervisor must persist a completed task row within 5s");
+        assert_eq!(status, "completed");
+        assert_eq!(exit_code, Some(0));
+        assert_eq!(
+            tool_call_id.as_deref(),
+            Some("call-natural-exit"),
+            "BashTool must pass the canonical call id through to session_tasks"
+        );
+
+        // Notification is emitted on the real app.emit boundary, not a test double.
+        let notification = rig
+            .wait_for_ipc_event(
+                |v| {
+                    v["category"].as_str() == Some("task")
+                        && v["group_key"]
+                            .as_str()
+                            .is_some_and(|key| key.contains(&task_id))
+                },
+                Duration::from_secs(5),
+            )
+            .await
+            .expect("NotificationCreated(category=task) must be emitted for the natural exit");
+        assert_eq!(notification["category"].as_str(), Some("task"));
+
+        // Router must turn the supervisor event into a proactive spoken turn.
+        let tts_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut heard_speech = false;
+        while tokio::time::Instant::now() < tts_deadline {
+            if rig
+                .drain_tts_commands()
+                .iter()
+                .any(|cmd| matches!(cmd, TtsCommand::Generate { text, .. } if text.contains("completed successfully")))
+            {
+                heard_speech = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(
+            heard_speech,
+            "TaskFinished from the real supervisor must dispatch a spoken completion summary"
         );
     })
     .await

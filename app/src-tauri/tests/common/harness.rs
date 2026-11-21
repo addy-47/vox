@@ -17,7 +17,7 @@ use ringbuf::{
     wrap::caching::Caching,
     HeapCons, HeapRb,
 };
-use tauri::AppHandle;
+use tauri::{AppHandle, Listener};
 use vox_lib::{
     core::events::{InteractionOwner, VoxEvent},
     services::{
@@ -1457,6 +1457,8 @@ pub type ScriptStep =
 pub struct ScriptedLlmWorker {
     pub queue: parking_lot::Mutex<Vec<ScriptStep>>,
     pub requests: parking_lot::Mutex<Vec<(u32, bool)>>,
+    /// Staged user text of every dispatch, captured from the real GenerationRequest.
+    pub prompts: parking_lot::Mutex<Vec<String>>,
 }
 
 impl ScriptedLlmWorker {
@@ -1464,6 +1466,7 @@ impl ScriptedLlmWorker {
         Self {
             queue: parking_lot::Mutex::new(Vec::new()),
             requests: parking_lot::Mutex::new(Vec::new()),
+            prompts: parking_lot::Mutex::new(Vec::new()),
         }
     }
 
@@ -1481,6 +1484,11 @@ impl ScriptedLlmWorker {
     pub fn dispatch_count(&self) -> usize {
         self.requests.lock().len()
     }
+
+    /// Returns the staged user text of every LLM dispatch in arrival order.
+    pub fn prompts(&self) -> Vec<String> {
+        self.prompts.lock().clone()
+    }
 }
 
 pub fn run_scripted_worker(llm_rx: mpsc::Receiver<LlmCommand>, scripted: Arc<ScriptedLlmWorker>) {
@@ -1492,6 +1500,15 @@ pub fn run_scripted_worker(llm_rx: mpsc::Receiver<LlmCommand>, scripted: Arc<Scr
                 cancel,
                 response_tx,
             } => {
+                let user_text = request
+                    .input
+                    .messages
+                    .iter()
+                    .rev()
+                    .find(|m| m.role == vox_lib::harness::Role::User)
+                    .map(|m| m.content.clone())
+                    .unwrap_or_default();
+                scripted.prompts.lock().push(user_text);
                 let offers_tools = request
                     .tools
                     .as_ref()
@@ -1548,6 +1565,9 @@ pub struct HarnessRig {
     pub pipeline_tx: mpsc::Sender<VoxEvent>,
     pub recorded_events: Arc<parking_lot::Mutex<Vec<VoxEvent>>>,
     pub event_notify: Arc<tokio::sync::Notify>,
+    /// Canonical IPC notification payloads captured at the production `app.emit` boundary.
+    pub recorded_ipc_events: Arc<parking_lot::Mutex<Vec<serde_json::Value>>>,
+    pub ipc_event_notify: Arc<tokio::sync::Notify>,
     pub persist_notify: Arc<tokio::sync::Notify>,
     pub session_id: i64,
     router_join: Option<std::thread::JoinHandle<()>>,
@@ -1648,6 +1668,21 @@ impl HarnessRig {
         let recorded_events = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let event_notify = Arc::new(tokio::sync::Notify::new());
 
+        // Capture sink installed before any production emit. `emit_ipc` broadcasts via
+        // `app.emit`, which reaches `AppHandle::listen` registrations (Tauri 2 event bus).
+        let recorded_ipc_events = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let ipc_event_notify = Arc::new(tokio::sync::Notify::new());
+        {
+            let ipc_events = Arc::clone(&recorded_ipc_events);
+            let ipc_notify = Arc::clone(&ipc_event_notify);
+            app.listen("notification_created", move |event| {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+                    ipc_events.lock().push(value);
+                    ipc_notify.notify_waiters();
+                }
+            });
+        }
+
         let rec_clone = Arc::clone(&recorded_events);
         let notify_clone = Arc::clone(&event_notify);
         let router_tx_clone = router_tx.clone();
@@ -1718,6 +1753,8 @@ impl HarnessRig {
             pipeline_tx,
             recorded_events,
             event_notify,
+            recorded_ipc_events,
+            ipc_event_notify,
             persist_notify,
             session_id,
             router_join: Some(router_join),
@@ -1796,6 +1833,35 @@ impl HarnessRig {
             let _ = tokio::time::timeout(
                 remaining.min(Duration::from_millis(50)),
                 self.event_notify.notified(),
+            )
+            .await;
+        }
+    }
+
+    /// Waits for a canonical IPC notification payload captured at the emit boundary.
+    pub async fn wait_for_ipc_event<F>(
+        &self,
+        predicate: F,
+        timeout: Duration,
+    ) -> Option<serde_json::Value>
+    where
+        F: Fn(&serde_json::Value) -> bool,
+    {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            {
+                let events = self.recorded_ipc_events.lock();
+                if let Some(ev) = events.iter().find(|e| predicate(e)) {
+                    return Some((*ev).clone());
+                }
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return None;
+            }
+            let remaining = deadline - tokio::time::Instant::now();
+            let _ = tokio::time::timeout(
+                remaining.min(Duration::from_millis(50)),
+                self.ipc_event_notify.notified(),
             )
             .await;
         }

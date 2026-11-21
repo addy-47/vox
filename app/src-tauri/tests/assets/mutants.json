@@ -4189,6 +4189,42 @@
         "filter": "running_background_task_inhibits_paused_to_sleeping_offload_and_disengage_enforces_force_guard"
       },
       "expected": "The idle monitor transitions Paused to Sleeping despite the running task, failing the sleep-inhibition assertion."
+    },
+    {
+      "id": "D5-M11",
+      "name": "Remove the supervisor event emitter so promoted tasks cannot emit TaskFinished",
+      "file": "src/services/tasks/manager.rs",
+      "target": "        *self.event_tx.lock() = Some(event_tx);",
+      "replacement": "        let _ = &event_tx;",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "supervised_task_natural_exit_emits_task_finished_with_completed_status_and_notification"
+      },
+      "expected": "set_event_tx becomes a no-op, so the supervisor cannot send TaskFinished; the real-supervisor test's tap-ack assertion times out."
+    },
+    {
+      "id": "D5-M12",
+      "name": "Route task notifications through the pipeline category instead of task",
+      "file": "src/pipeline/assistant/tasks.rs",
+      "target": "                category: NotificationCategory::Task,",
+      "replacement": "                category: NotificationCategory::Pipeline,",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "task_finished_in_ready_within_active_window_triggers_proactive_spoken_turn"
+      },
+      "expected": "NotificationCreated carries category 'pipeline'; the IPC capture assertion requiring 'task' fails."
+    },
+    {
+      "id": "D5-M13",
+      "name": "Inject user voice into StepInbox during a held barge-in",
+      "file": "src/pipeline/assistant/transcript.rs",
+      "target": "        let combined_text = if held_task_text.is_empty() {",
+      "replacement": "        let _ = state.harness.lock().as_ref().map(|h| h.inbox().push_task_notification(crate::harness::stages::inbox::InboxMessage::new(trimmed.clone(), crate::harness::stages::inbox::QueuedMessageDelivery::Immediate, now))); let combined_text = if held_task_text.is_empty() {",
+      "test": {
+        "binary": "harness_loop_test",
+        "filter": "task_finished_in_working_buffers_in_step_inbox_without_releasing_active_speech_hold"
+      },
+      "expected": "User speech is re-inserted into StepInbox; the strictly-non-voice inbox assertion fails."
     }
   ]
 }
