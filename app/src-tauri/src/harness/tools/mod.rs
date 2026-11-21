@@ -83,6 +83,8 @@ pub struct ToolExecutionContext {
     pub app_state: Arc<AppState>,
     pub session_id: i64,
     pub turn_id: u32,
+    /// Canonical tool-call id from the model, distinct from the session step id.
+    pub call_id: String,
     pub step_id: String,
     pub step_index: u32,
     pub cancel: tokio_util::sync::CancellationToken,
@@ -105,6 +107,7 @@ impl ToolExecutionContext {
             app_state,
             session_id,
             turn_id,
+            call_id: String::new(),
             step_id: String::new(),
             step_index: 0,
             cancel,

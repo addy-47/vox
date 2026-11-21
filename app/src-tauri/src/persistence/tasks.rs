@@ -135,8 +135,8 @@ pub async fn mark_task_killed(conn: &Connection, task_id: &str) -> Result<(), Pe
         .as_millis() as i64;
 
     conn.execute(
-        "UPDATE session_tasks SET status = 'killed', updated_at = ? WHERE task_id = ?;",
-        (now, task_id),
+        "UPDATE session_tasks SET status = 'killed', completed_at = ?, updated_at = ? WHERE task_id = ?;",
+        (now, now, task_id),
     )
     .await?;
 
@@ -154,8 +154,8 @@ pub async fn mark_session_tasks_killed(
         .as_millis() as i64;
 
     conn.execute(
-        "UPDATE session_tasks SET status = 'killed', updated_at = ? WHERE session_id = ? AND status = 'running';",
-        (now, session_id),
+        "UPDATE session_tasks SET status = 'killed', completed_at = ?, updated_at = ? WHERE session_id = ? AND status = 'running';",
+        (now, now, session_id),
     )
     .await?;
 

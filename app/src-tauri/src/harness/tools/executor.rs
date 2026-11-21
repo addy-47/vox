@@ -36,7 +36,7 @@ impl ToolExecutor {
         registry: &ToolRegistry,
         mode: PipelineMode,
         call: CanonicalToolCall,
-        ctx: ToolExecutionContext,
+        mut ctx: ToolExecutionContext,
     ) -> ToolExecutionOutcome {
         let start = Instant::now();
         ctx.app_state.turn_metrics.record_tool_start(&call.name);
@@ -88,6 +88,7 @@ impl ToolExecutor {
             };
         }
 
+        ctx.call_id = call.id.clone();
         let (mut result, is_error) = run_with_guards(&tool, mode, &call, &ctx).await;
         let duration_ms = start.elapsed().as_millis() as u64;
 

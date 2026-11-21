@@ -92,7 +92,7 @@ impl ToolDefinition for BashTool {
                 .tasks
                 .spawn_supervised_task(
                     ctx.session_id,
-                    Some(ctx.step_id.clone()),
+                    Some(ctx.call_id.clone()),
                     command.clone(),
                 )
                 .map_err(|e| ToolError::ExecutionFailed(format!("Failed to spawn task: {}", e)))?;

@@ -239,6 +239,8 @@ pub fn on_session_start<R: Runtime + 'static>(
         .unwrap_or(0);
     let conv_id = session_id.map(|s| s as u64).unwrap_or(now);
     state.conversation_id.store(conv_id, Ordering::Relaxed);
+    // A fresh session is active by definition; task receipts must not be quiet-suppressed.
+    state.pipeline.record_user_activity();
 
     let persist_lock = state.persist_tx.lock();
     if let Some(ref tx) = *persist_lock {
@@ -481,6 +483,8 @@ pub fn on_resume<R: Runtime>(app: &AppHandle<R>, state: &AppState, _ctx: &Routin
         .owner
         .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
     state.pipeline.rearm_turn_cancel_token();
+    // Resuming counts as user presence for the quiet-window task announcement guard.
+    state.pipeline.record_user_activity();
 
     let assistant_ctx = RoutingContext::from_app_state(state);
 

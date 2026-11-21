@@ -231,7 +231,7 @@ const SCHEMA_TABLE_STATEMENTS: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS idx_session_tasks_status ON session_tasks(session_id, status);",
 ];
 
-/// Initializes the database schema to v1 and seeds initial static assets.
+/// Initializes the database schema to v19 and seeds initial static assets.
 pub async fn run_migrations(conn: &Connection) -> Result<()> {
     let current_version: u32 = {
         let mut rows = conn.query("PRAGMA user_version;", ()).await?;

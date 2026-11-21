@@ -84,6 +84,16 @@ pub fn on_task_finished<R: Runtime + 'static>(
         }
     });
 
+    // Terminal completions from an ended session must not steer the active conversation.
+    if session_id != state.conversation_id.load(Ordering::Relaxed) as i64 {
+        log::info!(
+            "[Pipeline::Tasks] Ignoring proactive handling for stale session {} (task {})",
+            session_id,
+            task_id
+        );
+        return;
+    }
+
     // 3. Evaluate 9-state handling matrix
     let current_state = state.pipeline.state();
     match current_state {
@@ -165,9 +175,39 @@ pub fn on_task_finished<R: Runtime + 'static>(
                     && state_arc.pipeline.peek_turn_id() == new_turn_id
                     && !state_arc.pipeline.is_turn_cancelled();
                 if still_valid {
+                    let mut final_query = query;
+                    if should_coalesce {
+                        let late_text = {
+                            let guard = state_arc.harness.lock();
+                            guard
+                                .as_ref()
+                                .map(|h| {
+                                    h.inbox()
+                                        .drain_immediate()
+                                        .into_iter()
+                                        .map(|m| m.text)
+                                        .collect::<Vec<_>>()
+                                        .join("\n")
+                                })
+                                .unwrap_or_default()
+                        };
+                        if !late_text.is_empty() {
+                            final_query = format!("{}\n{}", final_query, late_text);
+                            {
+                                let mut guard = state_arc.harness.lock();
+                                if let Some(ref mut harness) = *guard {
+                                    harness.stage_user_query(new_turn_id, final_query.clone());
+                                }
+                            }
+                            state_arc
+                                .pipeline_accumulator
+                                .lock()
+                                .set_user_transcript(final_query.clone());
+                        }
+                    }
                     super::transcript::spawn_harness_turn_task(
                         new_turn_id,
-                        query,
+                        final_query,
                         &app_clone,
                         &state_arc,
                         &ctx_clone,
@@ -226,6 +266,23 @@ pub fn check_and_dispatch_inbox_tasks<R: Runtime + 'static>(
     state: &AppState,
     ctx: &RoutingContext,
 ) {
+    // Acquire before draining: a competing turn must not swallow the drained messages.
+    if state
+        .pipeline
+        .proactive_turn_in_flight
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return;
+    }
+
+    let release_latch = || {
+        state
+            .pipeline
+            .proactive_turn_in_flight
+            .store(false, Ordering::Release);
+    };
+
     let inbox_msgs = {
         let guard = state.harness.lock();
         if let Some(ref harness) = *guard {
@@ -236,6 +293,7 @@ pub fn check_and_dispatch_inbox_tasks<R: Runtime + 'static>(
     };
 
     if inbox_msgs.is_empty() {
+        release_latch();
         return;
     }
 
@@ -244,9 +302,20 @@ pub fn check_and_dispatch_inbox_tasks<R: Runtime + 'static>(
         .unwrap_or_default()
         .as_millis() as u64;
     let last_activity = state.pipeline.last_user_activity_ms.load(Ordering::Relaxed);
-    if now.saturating_sub(last_activity) >= 5 * 60 * 1000 {
+    if now.saturating_sub(last_activity) >= 5 * 60 * 1000 || state.pipeline.state() != InteractionState::Ready {
+        release_latch();
         return;
     }
+
+    let state_arc = match app.try_state::<Arc<AppState>>() {
+        Some(st) => Arc::clone(st.inner()),
+        None => {
+            release_latch();
+            return;
+        }
+    };
+    let app_clone = app.clone();
+    let ctx_clone = ctx.clone();
 
     let combined_query = inbox_msgs
         .into_iter()
@@ -254,50 +323,42 @@ pub fn check_and_dispatch_inbox_tasks<R: Runtime + 'static>(
         .collect::<Vec<_>>()
         .join("\n");
 
-    let app_clone = app.clone();
-    let state_arc = match app.try_state::<Arc<AppState>>() {
-        Some(st) => Arc::clone(st.inner()),
-        None => return,
-    };
-    let ctx_clone = ctx.clone();
+    let (new_turn_id, _) = state.pipeline.next_turn();
+    state.pipeline_accumulator.lock().clear();
+    state.turn_metrics.start_turn(new_turn_id);
+    state.turn_metrics.record_speech_end();
+
+    {
+        let mut guard = state.harness.lock();
+        if let Some(ref mut harness) = *guard {
+            harness.stage_user_query(new_turn_id, combined_query.clone());
+        }
+    }
+    state
+        .pipeline_accumulator
+        .lock()
+        .set_user_transcript(combined_query.clone());
+    state.turn_metrics.record_transcript_final();
+
+    transition(InteractionState::Thinking, None, ctx, app, state);
 
     tauri::async_runtime::spawn(async move {
-        if state_arc.pipeline.state() != InteractionState::Ready {
-            return;
-        }
-
-        let (new_turn_id, _) = state_arc.pipeline.next_turn();
-        state_arc.pipeline_accumulator.lock().clear();
-        state_arc.turn_metrics.start_turn(new_turn_id);
-        state_arc.turn_metrics.record_speech_end();
-
-        {
-            let mut guard = state_arc.harness.lock();
-            if let Some(ref mut harness) = *guard {
-                harness.stage_user_query(new_turn_id, combined_query.clone());
-            }
+        let still_valid = state_arc.pipeline.state() == InteractionState::Thinking
+            && state_arc.pipeline.peek_turn_id() == new_turn_id
+            && !state_arc.pipeline.is_turn_cancelled();
+        if still_valid {
+            super::transcript::spawn_harness_turn_task(
+                new_turn_id,
+                combined_query,
+                &app_clone,
+                &state_arc,
+                &ctx_clone,
+            );
         }
         state_arc
-            .pipeline_accumulator
-            .lock()
-            .set_user_transcript(combined_query.clone());
-        state_arc.turn_metrics.record_transcript_final();
-
-        transition(
-            InteractionState::Thinking,
-            None,
-            &ctx_clone,
-            &app_clone,
-            &state_arc,
-        );
-
-        super::transcript::spawn_harness_turn_task(
-            new_turn_id,
-            combined_query,
-            &app_clone,
-            &state_arc,
-            &ctx_clone,
-        );
+            .pipeline
+            .proactive_turn_in_flight
+            .store(false, Ordering::Release);
     });
 }
 

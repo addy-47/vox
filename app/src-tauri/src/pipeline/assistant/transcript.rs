@@ -274,33 +274,6 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             return;
         }
 
-        // When background tasks have queued notifications in StepInbox, user speech during
-        // a speech hold acts as a steering message. Pushing to inbox releases the hold
-        // so the cognitive loop can drain both the task outcome and the user steering message.
-        let has_inbox_messages = {
-            let guard = state.harness.lock();
-            guard.as_ref().is_some_and(|h| !h.inbox().is_empty())
-        };
-        if has_inbox_messages {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
-            let guard = state.harness.lock();
-            if let Some(ref harness) = *guard {
-                harness.inbox().push(crate::harness::stages::inbox::InboxMessage::new(
-                    trimmed.clone(),
-                    crate::harness::stages::inbox::QueuedMessageDelivery::Immediate,
-                    now,
-                ));
-            }
-            log::info!(
-                "[Pipeline::Transcript] Pushed user steering message to inbox while tasks queued (turn {})",
-                turn_id
-            );
-            return;
-        }
-
         // Real barge-in during an active turn. Voice never enters StepInbox.
         let committed_work = {
             let guard = state.harness.lock();
@@ -331,14 +304,36 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             return;
         }
 
+        // Task notifications buffered during the hold ride along as one user turn.
+        // Voice is never re-inserted into StepInbox (RULE-EVT-08 §2b / RULE-HARN-18).
+        let held_task_text = {
+            let guard = state.harness.lock();
+            guard
+                .as_ref()
+                .map(|h| {
+                    h.inbox()
+                        .drain_immediate()
+                        .into_iter()
+                        .map(|m| m.text)
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default()
+        };
+        let combined_text = if held_task_text.is_empty() {
+            trimmed.clone()
+        } else {
+            format!("{}\n{}", held_task_text, trimmed)
+        };
+
         // RULE-EVT-08A merges only an uncommitted Step 0 query; Step K >= 1 stays standalone.
         let raw_query = if committed_work {
-            trimmed.clone()
+            combined_text
         } else if let Some(prefix) = staged.filter(|p| !p.trim().is_empty()) {
-            format!("{} {}", prefix.trim(), trimmed)
+            format!("{} {}", prefix.trim(), combined_text)
         } else {
             let mut acc = state.pipeline_accumulator.lock();
-            let merged = acc.resolve_merged_transcript(&trimmed);
+            let merged = acc.resolve_merged_transcript(&combined_text);
             acc.continuation_prefix.clear();
             acc.awaiting_continuation = false;
             acc.bound_utterance_id = None;
