@@ -1655,3 +1655,18 @@
 - **Verification:** `ANDROID_HOME=/opt/android-sdk ./scripts/verify-targets.sh` exits 0 (0 warnings / 0 errors on desktop + Android); `node app/scripts/lint-arch.mjs` passes. Full suite re-run recorded separately. Frontend `pnpm build` could not run: `node_modules` absent and offline install lacks `culori` tarball — reported unverified.
 - **Full suite after cleanup:** `RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1 --no-fail-fast` → **578 tests run: 578 passed, 2 skipped (205.438s)**, exit 0. All 12 D5 seams still pass with the real supervisor→router wiring active.
 - **Next:** commit and push.
+
+## 2026-11-21 — All Lead Review Findings Closed & Certified
+
+- **Role:** System Architect / Orchestrator with persistent Backend Engineer, Frontend Engineer, Test Engineer, and clean-room audit workflow.
+- **Backend fixes:** `1edafe94` — B2 removed voice-to-StepInbox branch in `transcript.rs` and prepends buffered task text to the `TranscriptFinal` turn; B4 added per-tool `call_id` into `session_tasks.tool_call_id`; M1 moved `check_and_dispatch_inbox_tasks` state mutations onto the router thread under the single-flight latch; M2 added the stale-session guard and merges newly buffered tasks after coalescing; M3 calls `record_user_activity()` in `on_session_start`/`on_resume`; nits fixed (schema doc comment, kill-path `completed_at`). `537ff308` — IPC `end_session` now returns `InvalidState` for unforced teardown with active tasks.
+- **Frontend fixes:** `99686cfa` — disengage awaits backend acceptance before clearing local state, opens ConfirmModal on active-tasks rejection, and removes dead `activeTasksCount` store state; `d839fd24` — `"task"` notification category recognized across union, known categories, tokens, panel visuals, copy, and CSS; `35ed8e47` — `resyncFromSnapshot` returns the correct `{ success }` shape.
+- **Test-side audit:** the Test Engineer confirmed the earlier 10/10 mutation score only covered downstream router handlers. D5-07/08/09 injected `TaskFinished` via `rig.send_event()`; D5-09 itself forced the voice-in-inbox production bug; multiple intent claims were unasserted; three bare sleeps were used as absence proof; frontend had a stale `end_session` arg assertion and zero disengage coverage. All gaps were closed without weakening assertions.
+- **Test fixes:** `dcf42194` — real-supervisor natural-exit seam, IPC capture in `Rig`, LLM staged-request capture, DB/notification assertions, D5-09 rewrite, quiescence watches, unasserted claims backed, new F11 mutants `D5-M11`–`D5-M13`; `c4bec849` — stale AppearanceCard copy assertions aligned to `APPEARANCE_COPY`.
+- **Certification:**
+  - Compile gate `ANDROID_HOME=/opt/android-sdk ./scripts/verify-targets.sh`: exit 0, desktop + Android, 0 warnings / 0 errors.
+  - Backend full suite `cargo nextest run --release --test-threads=1 --no-fail-fast`: **580 passed, 0 failed, 2 skipped (217.753s)**.
+  - Mutation campaign `--mode local`: **13/13 KILLED**, byte-exact reverts, report appended with prior history intact.
+  - Frontend `npx tsc --noEmit`: exit 0; Vite build under Node 22: `✓ built in 4.30s`; Vitest: **35 files / 276 tests passed**.
+  - Frontend environment note: local Node 18 cannot run jsdom 30 / Vite 7; Node 22 via `npx` used. A forced pnpm install was needed to fetch optional Tailwind oxide native bindings.
+- **Verdict:** every lead finding is closed and all gates are green. No open blockers.
